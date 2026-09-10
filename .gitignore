@@ -1,0 +1,28 @@
+# Airflow runtime (AIRFLOW_HOME when running natively)
+airflow/
+logs/
+*.db
+*.pid
+airflow.cfg
+simple_auth_manager_passwords.json.generated
+
+# Tutorial artifacts
+data/
+!data/.gitkeep
+model_registry/
+!model_registry/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Env
+.env
+
+# Scratch
+tmp/

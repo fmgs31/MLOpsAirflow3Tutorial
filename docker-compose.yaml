@@ -1,0 +1,161 @@
+# Airflow 3 tutorial stack - deliberately smaller than the official
+# docker-compose.yaml (https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml),
+# which uses CeleryExecutor + Redis + FAB auth. Here we use LocalExecutor and the
+# Simple auth manager so there are fewer moving parts while learning.
+#
+# Note the component list: in Airflow 3 the webserver is gone (it is now the
+# `api-server`) and the dag-processor is its own mandatory process.
+#
+#   postgres            metadata database
+#   airflow-init        one-shot `airflow db migrate`
+#   airflow-apiserver   REST API + React UI + Task Execution API   (was: webserver)
+#   airflow-scheduler   scheduling + LocalExecutor task slots
+#   airflow-dag-processor  parses Dag files                        (new: separate process)
+#   airflow-triggerer   runs async triggers for deferrable tasks
+---
+x-airflow-common: &airflow-common
+  build: .
+  image: airflow3-tutorial:3.3.1
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    # Airflow 3: workers talk to the Task Execution API instead of the metadata DB.
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-tutorial-jwt-secret-change-me}
+    # Local-only convenience: everyone who reaches the UI is an admin.
+    # The port below is bound to 127.0.0.1 so this never leaves your machine.
+    # For a login form instead, see docs/troubleshooting.md.
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    # Airflow 3 no longer seeds the default connections that `airflow db init`
+    # used to create, so FileSensor's `fs_default` has to be provided. Any
+    # AIRFLOW_CONN_<CONN_ID> env var defines a connection without touching the DB.
+    # CLI equivalent:
+    #   airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}'
+    AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/"}}'
+    # Our tutorial package lives in ./src and must be importable by the
+    # dag-processor (parsing) and the scheduler (LocalExecutor runs tasks there).
+    PYTHONPATH: /opt/airflow/src
+    TAGIFAI_DATA_DIR: /opt/airflow/data
+    TAGIFAI_MODEL_REGISTRY: /opt/airflow/model_registry
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./data:/opt/airflow/data
+    - ./model_registry:/opt/airflow/model_registry
+    - ./logs:/opt/airflow/logs
+    - ./config:/opt/airflow/config
+    - ./tests:/opt/airflow/tests
+    - ./pytest.ini:/opt/airflow/pytest.ini
+    # Read-only, and only so `pytest` can check that the README's code listings
+    # still match the files they quote (tests/test_readme_listings.py).
+    - ./README.md:/opt/airflow/README.md:ro
+    - ./scripts:/opt/airflow/scripts:ro
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    # `airflow db init` and `airflow db upgrade` were REMOVED in Airflow 3.
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        echo "Metadata database migrated."
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+    restart: on-failure
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # One-off CLI container: `docker compose run --rm airflow-cli airflow dags list`
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - cli
+    command: version
+
+volumes:
+  postgres-db-volume:

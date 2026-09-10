@@ -1,0 +1,69 @@
+# Airflow 3 settings worth knowing, with their 3.3.1 defaults.
+# This file is a reference, not something Airflow loads. To use it, mount or
+# copy it to $AIRFLOW_HOME/airflow.cfg, or point AIRFLOW_CONFIG at it.
+#
+# Every option has an env-var equivalent: AIRFLOW__<SECTION>__<KEY>.
+# Migrating a 2.x config?  `airflow config update --fix`
+
+[core]
+# SequentialExecutor was REMOVED. LocalExecutor is the default and works with SQLite.
+executor = LocalExecutor
+
+dags_folder = /opt/airflow/dags
+load_examples = True
+max_active_tasks_per_dag = 16
+parallelism = 32
+
+# Simple auth manager is the Airflow 3 default. For `airflow users create` and
+# database-backed roles, install apache-airflow-providers-fab and use:
+#   auth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+auth_manager = airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+
+# Users for the Simple auth manager: "username:role", roles viewer|user|op|admin.
+# simple_auth_manager_users = admin:admin,alice:op,bob:viewer
+# Local dev only - disables authentication entirely:
+# simple_auth_manager_all_admins = False
+
+# Where workers reach the Task Execution API. Required for remote/containerised
+# workers; tasks no longer touch the metadata database directly.
+# execution_api_server_url = http://airflow-apiserver:8080/execution/
+
+# Encrypts Connection and Variable secrets.
+# fernet_key =
+
+[database]
+sql_alchemy_conn = postgresql+psycopg2://airflow:airflow@postgres/airflow
+
+[api]
+# The api-server replaces the Airflow 2 webserver.
+port = 8080
+host = 0.0.0.0
+
+[api_auth]
+# Signs the JWTs workers present to the Task Execution API.
+# jwt_secret =
+
+[scheduler]
+# Airflow 3 default. Activating a Dag no longer backfills its whole history.
+catchup_by_default = False
+# False (the default) makes a cron `schedule` use CronTriggerTimetable, so a run
+# fires AT the cron time with logical_date = that time. Set True only to keep
+# Airflow 2's data-interval semantics during a migration.
+create_cron_data_intervals = False
+
+[dag_processor]
+# The Dag processor is a separate process in Airflow 3 and reads Dag *bundles*.
+# By default Airflow registers one LocalDagBundle named "dags-folder" pointing
+# at [core] dags_folder, so this can stay unset.
+#
+# dag_bundle_config_list = [
+#     {
+#       "name": "team-ml",
+#       "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
+#       "kwargs": {"git_conn_id": "git_default", "subdir": "dags", "tracking_ref": "main"}
+#     }
+#   ]
+
+[logging]
+base_log_folder = /opt/airflow/logs
+logging_level = INFO

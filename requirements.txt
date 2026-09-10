@@ -1,0 +1,22 @@
+# Airflow 3 tutorial - local (non-Docker) install.
+#
+# ALWAYS install Airflow with the matching constraints file, otherwise pip will
+# resolve a broken dependency set. See scripts/setup.sh, or run:
+#
+#   AIRFLOW_VERSION=3.3.1
+#   PYTHON_VERSION="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+#   CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+#   pip install -r requirements.txt --constraint "${CONSTRAINT_URL}"
+
+apache-airflow==3.3.1
+
+# Operators/sensors that used to live in airflow-core (BashOperator, PythonOperator,
+# FileSensor, ...). Pre-installed with apache-airflow, pinned here to be explicit.
+apache-airflow-providers-standard>=1.18.0
+
+# The ML workload used by the dataops/mlops Dags.
+pandas>=2.2
+scikit-learn>=1.5
+
+# Tests
+pytest>=8.0

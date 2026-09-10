@@ -1,0 +1,8 @@
+# Extra dependencies baked into the tutorial's Airflow image (see Dockerfile).
+# Airflow itself and its providers already ship in apache/airflow:3.3.1, so only
+# the ML workload deps go here. Never pin airflow itself in this file - that is
+# what makes an extended image break.
+pandas>=2.2
+scikit-learn>=1.5
+pytest>=8.0
+
