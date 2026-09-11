@@ -1,18 +1,19 @@
-"""Lesson 2 - operators, XComs, and the import moves that break Airflow 2 Dags.
+"""Lesson 2 - operators, XComs, and relationships.
 
-Two things bite everyone porting a Dag to Airflow 3:
+Lesson 1 used `@task`-decorated functions. This one uses **operators**, the
+pre-built task types, and shows that the two styles mix freely in one Dag.
 
-1. `BashOperator`, `PythonOperator`, `EmptyOperator`, `FileSensor` and friends
-   left airflow-core. They now live in `apache-airflow-providers-standard`
-   (pre-installed, but the import path changed):
+Two things to take away:
 
-       Airflow 2: from airflow.operators.bash   import BashOperator
-       Airflow 3: from airflow.providers.standard.operators.bash import BashOperator
+1. The common operators live in `apache-airflow-providers-standard`, which is
+   pre-installed. That is where you import them from:
 
-2. `xcom_pull()` without `task_ids` now pulls only from the *current* task.
-   In Airflow 2 it silently searched the whole Dag run and handed back the most
-   recent push. Any Dag relying on that returns None here - loudly wrong instead
-   of quietly wrong.
+       from airflow.providers.standard.operators.bash import BashOperator
+
+2. `xcom_pull()` pulls from the *current* task unless you name the source, so
+   an XCom read almost always wants `task_ids=`:
+
+       ti.xcom_pull(task_ids="push_seed", key="seed")
 
 The tail of the Dag is a tour of the ways to declare **relationships**: `>>`,
 fan-out and fan-in with a list, `chain()` with `Label()`, and
@@ -38,12 +39,17 @@ DEFAULT_ARGS = {
 
 
 def _push_seed(ti) -> None:
-    """Classic operator style: push an explicit key."""
+    """Operator style: push an XCom under an explicit key.
+
+    `ti` (the task instance) is injected because the parameter is named `ti` -
+    the same name-based injection `**context` does in lesson 1.
+    """
     ti.xcom_push(key="seed", value=7)
 
 
 def _multiply(ti, factor: int) -> None:
-    # REQUIRED in Airflow 3: name the task you are pulling from.
+    # Name the task you are pulling from. Without `task_ids` this reads the
+    # current task's own XComs and quietly returns None.
     seed = ti.xcom_pull(task_ids="push_seed", key="seed")
     ti.xcom_push(key="product", value=seed * factor)
 
@@ -68,15 +74,16 @@ def operators_and_xcoms():
         op_kwargs={"factor": 6},
     )
 
-    # Templated fields still work the same way; only the variable names changed.
-    # `ds` and `ts` survive, `execution_date`/`next_ds`/`tomorrow_ds` do not.
+    # Some operator arguments are *templated*: Airflow renders them with Jinja
+    # just before the task runs, so `{{ run_id }}`, `{{ ds }}` and
+    # `{{ ti.xcom_pull(...) }}` are filled in with this run's values.
     #
-    # But `ds` is derived from `logical_date`, and a manual or asset-triggered
-    # run in Airflow 3 has none - the variable is then *undefined*, and
-    # `{{ ds }}` fails the task with `UndefinedError: 'ds' is undefined`. Note
-    # that `airflow dags test` always supplies a logical date, so this only
-    # breaks once a real trigger reaches it. Guard it with `default`, or
-    # template `{{ dag_run.run_after }}`, which every run has.
+    # Careful with `ds`: it is derived from `logical_date`, and a manual or
+    # asset-triggered run has none. The variable is then *undefined* and the
+    # task fails with `UndefinedError: 'ds' is undefined` while rendering.
+    # `airflow dags test` always supplies a logical date, so this only shows up
+    # once a real trigger reaches it. Guard it with `default`, or template
+    # `{{ dag_run.run_after }}`, which every run has.
     describe = BashOperator(
         task_id="describe",
         bash_command=(

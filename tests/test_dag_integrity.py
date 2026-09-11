@@ -14,24 +14,24 @@ from pathlib import Path
 
 import pytest
 
-# Airflow 3 moved DagBag out of `airflow.models` (importing it from there still
-# works but warns) and dropped the `include_examples` argument.
 from airflow.dag_processing.dagbag import DagBag
 
 DAGS_FOLDER = Path(__file__).resolve().parents[1] / "dags"
 
-# Constructs that were removed or renamed in Airflow 3. A hit here means the Dag
-# would break on upgrade even if it happens to import today.
-AIRFLOW_2_PATTERNS = {
+# Constructs that do not exist in this version of Airflow. Most of the Airflow
+# code on the internet is older than Airflow 3, so a copy-pasted snippet can
+# bring one of these in - and several of them still *import*, failing only once
+# the task runs. This grep keeps them out.
+STALE_CONSTRUCTS = {
     r"\bschedule_interval\s*=": "use `schedule=`",
     r"from airflow\.operators\.": "use `airflow.providers.standard.operators.*`",
     r"from airflow\.sensors\.": "use `airflow.providers.standard.sensors.*`",
     r"from airflow\.decorators import": "use `airflow.sdk`",
-    r"from airflow\.utils\.dates import": "`days_ago` was removed; use a fixed start_date",
-    r"\bdays_ago\s*\(": "removed; use pendulum.datetime(...)",
-    r"\bexecution_date\b": "removed from context; use `logical_date`",
-    r"\bSubDagOperator\b": "removed; use TaskGroups",
-    r"\bsla\s*=": "SLAs were removed; use DeadlineAlert",
+    r"from airflow\.utils\.dates import": "use a fixed `start_date`",
+    r"\bdays_ago\s*\(": "does not exist; use pendulum.datetime(...)",
+    r"\bexecution_date\b": "not a context key; use `logical_date`",
+    r"\bSubDagOperator\b": "does not exist; use TaskGroups",
+    r"\bsla\s*=": "not a valid argument; use `deadline=DeadlineAlert(...)`",
 }
 
 
@@ -49,9 +49,10 @@ def test_dags_were_found(dagbag: DagBag) -> None:
 
 
 @pytest.mark.parametrize("dag_file", sorted(DAGS_FOLDER.glob("*.py")), ids=lambda p: p.name)
-def test_no_airflow_2_constructs(dag_file: Path) -> None:
+def test_no_stale_constructs(dag_file: Path) -> None:
     source = dag_file.read_text(encoding="utf-8")
-    # Strip comments so the migration notes in the docstrings do not trip this.
+    # Comments and docstrings are prose, and some of them name these constructs
+    # on purpose, so only real code is checked.
     code = "\n".join(
         line for line in source.splitlines() if not line.lstrip().startswith("#")
     )
@@ -59,10 +60,10 @@ def test_no_airflow_2_constructs(dag_file: Path) -> None:
 
     offenders = [
         f"{pattern} ({advice})"
-        for pattern, advice in AIRFLOW_2_PATTERNS.items()
+        for pattern, advice in STALE_CONSTRUCTS.items()
         if re.search(pattern, code)
     ]
-    assert not offenders, f"{dag_file.name} uses Airflow 2 constructs: {offenders}"
+    assert not offenders, f"{dag_file.name} uses constructs that no longer exist: {offenders}"
 
 
 def test_every_dag_has_owner_tags_and_docs(dagbag: DagBag) -> None:

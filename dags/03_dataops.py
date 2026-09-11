@@ -1,21 +1,21 @@
 """Lesson 3 - the DataOps Dag: extract -> validate -> transform -> validate.
 
-Same shape as the original lesson (Airbyte EL, Great Expectations checkpoints,
-dbt transforms), with the vendor pieces swapped for local equivalents so it runs
-anywhere. Every task is a drop-in slot:
+The first Dag that does real work. Every task is a slot you can swap for the
+vendor tool of a production stack, without changing the Dag's shape:
 
     extract_projects   -> AirbyteTriggerSyncOperator / FivetranOperator / an EL job
     validate_*         -> GreatExpectationsOperator / SodaOperator / dbt test
     transform          -> DbtCloudRunJobOperator / astronomer-cosmos task group
 
-What is genuinely Airflow 3 here:
+Three things to watch for:
 
 * The Dag **produces Assets** (`outlets=[...]`). Finishing the producing task
-  emits an asset event, which is what schedules the MLOps Dag. No cron guessing,
-  no ExternalTaskSensor, no polling.
+  emits an asset event, and that event is what schedules the MLOps Dag - no
+  cron guessing, no sensor, no polling.
 * Asset events carry metadata (`outlet_events[asset].extra`), so the consumer
   can see the row count that triggered it.
 * Validation results move through XCom as small dicts; the dataframes never do.
+  Tasks exchange paths and counts, not payloads.
 
 Run it:
     airflow dags test dataops
@@ -28,9 +28,8 @@ from typing import Any
 import pendulum
 from airflow.sdk import dag, task, task_group
 
-# `airflow.exceptions` still resolves but is deprecated for task code in
-# Airflow 3 - the Task SDK is the supported namespace, and it is the only one
-# available to remote/Edge workers that do not install airflow-core.
+# Task code imports exceptions from the Task SDK. It is the namespace a remote
+# worker has, and the one to reach for in a task.
 from airflow.sdk.exceptions import AirflowFailException
 
 from tagifai import config, data, validate
@@ -45,9 +44,9 @@ DEFAULT_ARGS = {
 
 @dag(
     dag_id="dataops",
-    # Airflow 3 defaults to CronTriggerTimetable: the run fires *at* 03:00 and
-    # `logical_date` is 03:00 - it is no longer shifted back by one interval the
-    # way CronDataIntervalTimetable did in Airflow 2.
+    # A cron string uses CronTriggerTimetable: the run fires *at* 03:00 and its
+    # `logical_date` is 03:00. Straightforward, but worth stating, because a
+    # timetable is free to define that differently.
     schedule="0 3 * * *",
     start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
     catchup=False,
@@ -79,7 +78,7 @@ def dataops():
 
     @task
     def transform(fp: str) -> str:
-        """Raw -> curated `labeled_projects` (the dbt model of the original lesson)."""
+        """Raw -> curated `labeled_projects` - the dbt model of a real stack, in pandas."""
         df = data.transform(data.load_raw(fp))
         out = data.save_labeled(df)
         print(f"Wrote {len(df)} rows to {out}")
@@ -109,7 +108,7 @@ def dataops():
 
     @task_group(group_id="quality_report")
     def quality_report(raw_report: dict[str, Any], curated_report: dict[str, Any]):
-        """Task groups replace SubDags, which were removed in Airflow 3."""
+        """A task group nests tasks under one collapsible node in the UI."""
 
         @task
         def summarize(raw: dict[str, Any], curated: dict[str, Any]) -> None:

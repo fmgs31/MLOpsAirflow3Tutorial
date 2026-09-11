@@ -40,8 +40,8 @@ def clean_text(text: str) -> str:
 def transform(df: pd.DataFrame, min_tag_freq: int = config.MIN_TAG_FREQ) -> pd.DataFrame:
     """Raw projects -> the curated `labeled_projects` table.
 
-    This is the dbt model of the original tutorial, expressed in pandas so the
-    tutorial runs with no warehouse attached.
+    In a production stack this would be a dbt model running inside the
+    warehouse. Here it is pandas, so the tutorial needs no warehouse attached.
     """
     df = df.dropna(subset=["title", "tag"]).copy()
     df["description"] = df["description"].fillna("")

@@ -20,10 +20,10 @@ pip install -r requirements.txt --constraint "${CONSTRAINT_URL}"
 export AIRFLOW_HOME="${PWD}/airflow"
 export PYTHONPATH="${PWD}/src"
 
-# `airflow db init` was REMOVED in Airflow 3.
+# `airflow db migrate` creates the metadata schema and brings it up to date.
 airflow db migrate
 
-# Airflow 3 no longer seeds default connections; FileSensor needs fs_default.
+# Airflow creates no connections for you; FileSensor needs fs_default.
 airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}' 2>/dev/null || true
 
 cat <<EOF
@@ -42,7 +42,7 @@ Then either the all-in-one:
 
 or the four processes separately (this is what production looks like):
 
-    airflow api-server --port 8080   # was 'airflow webserver' in Airflow 2
+    airflow api-server --port 8080   # REST API + UI + Task Execution API
     airflow scheduler
     airflow dag-processor            # its own process in Airflow 3
     airflow triggerer                # needed for deferrable tasks and async deadlines

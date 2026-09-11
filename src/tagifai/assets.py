@@ -1,6 +1,6 @@
-"""Airflow 3 Assets shared by the Dags.
+"""The Assets shared by the Dags.
 
-Assets replace Airflow 2's Datasets and are how the Dags in this tutorial are
+An Asset is a named piece of data, and it is how the Dags in this tutorial are
 wired together: the DataOps Dag *produces* `labeled_projects`, and the MLOps Dag
 is scheduled on it (`schedule=[LABELED_PROJECTS]`) instead of guessing a cron
 that runs "some time after" DataOps finishes.
@@ -30,8 +30,9 @@ LABELED_PROJECTS = Asset(
     extra={"layer": "warehouse", "owner": "data-engineering"},
 )
 
-# Produced by `mlops` when a model clears the promotion gate. `monitoring`
-# reacts to it.
+# Produced by `mlops` when a model clears the promotion gate. Nothing is
+# scheduled on it yet - point a Dag's `schedule` at it and the edge appears in
+# the UI's Assets graph.
 PRODUCTION_MODEL = Asset(
     name="production_model",
     group="model",

@@ -11,9 +11,9 @@ Everything below was hit while building and running this repo against Airflow
 airflow.sdk.exceptions.AirflowNotFoundException: The conn_id `fs_default` isn't defined
 ```
 
-`FileSensor` needs the `fs_default` connection. Airflow 2's `airflow db init`
-seeded a set of default connections; **Airflow 3's `airflow db migrate` does
-not**. Create it yourself:
+`FileSensor` needs the `fs_default` connection, and **`airflow db migrate` does
+not create any default connections** — the metadata database starts empty.
+Create it yourself:
 
 ```bash
 airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}'
@@ -88,23 +88,21 @@ real trigger. Both of these were live bugs in this repo's own `dags/01` and
 
 ## `DagBag.__init__() got an unexpected keyword argument 'include_examples'`
 
-Airflow 3 moved and trimmed `DagBag`:
+`DagBag` lives in `airflow.dag_processing.dagbag` and takes no
+`include_examples`. Whether the bundled example Dags are loaded is a config
+setting (`[core] load_examples`, `False` here), not an argument:
 
 ```python
-# Airflow 2
-from airflow.models.dagbag import DagBag
-DagBag(dag_folder=..., include_examples=False)
-
-# Airflow 3
 from airflow.dag_processing.dagbag import DagBag
 DagBag(dag_folder=...)
 ```
 
-The old import path still resolves but emits `DeprecatedImportWarning`.
+A snippet using `from airflow.models.dagbag import DagBag` is out of date; that
+path still resolves but emits `DeprecatedImportWarning`.
 
 ## `airflow dags list-runs -d mlops` prints the help text
 
-`dag_id` is a positional argument in Airflow 3:
+`dag_id` is a positional argument:
 
 ```bash
 airflow dags list-runs mlops -o plain
@@ -112,9 +110,9 @@ airflow dags list-runs mlops -o plain
 
 ## `airflow.exceptions.X is deprecated ... Use airflow.sdk.exceptions.X`
 
-Task code should import exceptions from the Task SDK. `airflow.exceptions` still
-works, but only because airflow-core happens to be installed — a remote/Edge
-worker only has the SDK.
+Task code imports exceptions from the Task SDK. `airflow.exceptions` resolves
+only because airflow-core happens to be installed in the same place — a
+remote/Edge worker only has the SDK.
 
 ```python
 from airflow.sdk.exceptions import AirflowFailException, AirflowSkipException
@@ -157,8 +155,7 @@ depend on the **triggerer**. Without `airflow triggerer` running they sit in
 
 Not an Airflow bug — macOS's Objective-C runtime aborts a forked child when a
 class was mid-initialisation in another thread at `fork()` time, and Airflow's
-`LocalExecutor` forks to run tasks. The long-standing workaround, which the
-original 2022 lesson also exports:
+`LocalExecutor` forks to run tasks. The long-standing workaround:
 
 ```bash
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES

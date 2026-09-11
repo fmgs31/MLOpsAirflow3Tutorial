@@ -1,6 +1,12 @@
 # Airflow 2 → Airflow 3: what actually changes
 
-Reference for porting the original [Made With ML orchestration
+> **Not part of the tutorial.** The tutorial in `README.md` teaches Airflow 3 on
+> its own terms and never mentions Airflow 2. This file is kept for one
+> situation: you inherit an Airflow 2 codebase, or you find Airflow 2 code
+> online and need to know what it maps to. Nothing links here; ignore it while
+> learning.
+
+Reference for porting the [Made With ML orchestration
 lesson](https://madewithml.com/courses/mlops/orchestration/) (Airflow 2.3.3) to
 Airflow 3.3.1. Everything here is from the official docs, and the "verified"
 notes are things this repo's stack actually exercised.

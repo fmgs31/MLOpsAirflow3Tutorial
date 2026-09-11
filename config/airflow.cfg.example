@@ -14,7 +14,7 @@ load_examples = True
 max_active_tasks_per_dag = 16
 parallelism = 32
 
-# Simple auth manager is the Airflow 3 default. For `airflow users create` and
+# Simple auth manager is the default. For `airflow users create` and
 # database-backed roles, install apache-airflow-providers-fab and use:
 #   auth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
 auth_manager = airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
@@ -25,7 +25,7 @@ auth_manager = airflow.api_fastapi.auth.managers.simple.simple_auth_manager.Simp
 # simple_auth_manager_all_admins = False
 
 # Where workers reach the Task Execution API. Required for remote/containerised
-# workers; tasks no longer touch the metadata database directly.
+# workers; tasks never touch the metadata database directly.
 # execution_api_server_url = http://airflow-apiserver:8080/execution/
 
 # Encrypts Connection and Variable secrets.
@@ -35,7 +35,7 @@ auth_manager = airflow.api_fastapi.auth.managers.simple.simple_auth_manager.Simp
 sql_alchemy_conn = postgresql+psycopg2://airflow:airflow@postgres/airflow
 
 [api]
-# The api-server replaces the Airflow 2 webserver.
+# The api-server serves the REST API, the UI and the Task Execution API.
 port = 8080
 host = 0.0.0.0
 
@@ -44,15 +44,14 @@ host = 0.0.0.0
 # jwt_secret =
 
 [scheduler]
-# Airflow 3 default. Activating a Dag no longer backfills its whole history.
+# The default. Un-pausing a Dag does not backfill its whole history.
 catchup_by_default = False
 # False (the default) makes a cron `schedule` use CronTriggerTimetable, so a run
-# fires AT the cron time with logical_date = that time. Set True only to keep
-# Airflow 2's data-interval semantics during a migration.
+# fires AT the cron time with logical_date = that time.
 create_cron_data_intervals = False
 
 [dag_processor]
-# The Dag processor is a separate process in Airflow 3 and reads Dag *bundles*.
+# The Dag processor is a separate process and reads Dag *bundles*.
 # By default Airflow registers one LocalDagBundle named "dags-folder" pointing
 # at [core] dags_folder, so this can stay unset.
 #
