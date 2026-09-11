@@ -1,15 +1,8 @@
-"""Lesson 7 - Deadline Alerts, the Airflow 3 replacement for SLAs.
+"""Lesson 7 - Deadline Alerts: "tell me if this run is taking too long".
 
-SLAs were **removed** in Airflow 3.0 and replaced by Deadline Alerts in 3.1.
-The difference is not cosmetic:
-
-    Airflow 2 SLA          per-task, measured from the Dag run's start, fired
-                           after the fact, configured with `sla=timedelta(...)`
-                           plus a Dag-level `sla_miss_callback`.
-
-    Airflow 3 deadline     per-Dag-run, measured from a reference point you
-                           choose, evaluated while the run is still going, and
-                           the callback is a first-class object.
+A deadline is attached to the **Dag**, applies to the whole run, and is
+evaluated *while the run is still going* - so you hear about a stuck pipeline
+during the incident, not in the morning report.
 
 Three mandatory pieces: a **reference** (where the clock starts), an
 **interval** (how long after it), and a **callback**.
@@ -28,7 +21,7 @@ This Dag deliberately misses its own 30-second deadline, so the callback in
 
     docker compose logs -f airflow-scheduler | grep "DEADLINE MISSED"
 
-KNOWN ISSUE (verified on Airflow 3.3.1): `airflow dags test <dag_id>` crashes on
+KNOWN ISSUE (verified on 3.3.1): `airflow dags test <dag_id>` crashes on
 any Dag with a `deadline=`, with
 `psycopg2.ProgrammingError: can't adapt type 'dict'` raised from
 `DagRun.update_state`. The tasks themselves run to completion first - only the

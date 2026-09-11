@@ -7,8 +7,8 @@ Three ways to react to the outside world, cheapest last:
    the slot is released, and the triggerer resumes it. This is what you want for
    anything measured in minutes or hours.
 3. **Event-driven scheduling** (`AssetWatcher`) - no task waits at all: an
-   external event emits an asset update and *that* starts the Dag run. Airflow 3
-   only; see the note at the bottom.
+   external event emits an asset update and *that* starts the Dag run. See the
+   note at the bottom.
 
 Run it:
     airflow dags test sensors_and_events
@@ -74,7 +74,7 @@ def sensors_and_events():
 sensors_and_events()
 
 
-# --- Event-driven scheduling (Airflow 3) -------------------------------------
+# --- Event-driven scheduling -------------------------------------------------
 #
 # Instead of a task that waits, attach a watcher to an Asset. The trigger runs in
 # the triggerer; when it fires, the asset updates and every Dag scheduled on that

@@ -1,19 +1,19 @@
 """Lesson 6 - continual learning: monitor, decide, and act.
 
-The original lesson ends on four responses to a monitoring event. This Dag makes
-them explicit branches:
+A monitoring event has four sensible responses, and this Dag makes them
+explicit branches:
 
     continue  keep serving; log the alert and move on
     improve   retrain on new data (triggers the mlops Dag)
     inspect   the label space or schema changed - a human should look
     rollback  live performance collapsed - revert to the previous model
 
-Airflow 3 pieces on show:
+Pieces on show:
 
 * `@task.branch` picking one arm of the response.
-* `ApprovalOperator` (human-in-the-loop, Airflow 3.1+): retraining waits for a
-  person to click Approve in the UI. `defaults` + `response_timeout` mean an
-  unattended run still resolves instead of hanging forever.
+* `ApprovalOperator` (human-in-the-loop): retraining waits for a person to
+  click Approve in the UI. `defaults` + `response_timeout` mean an unattended
+  run still resolves instead of hanging forever.
 * `TriggerDagRunOperator` for cross-Dag orchestration.
 
 Run it:

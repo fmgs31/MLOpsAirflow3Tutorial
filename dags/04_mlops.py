@@ -1,8 +1,8 @@
 """Lesson 4 - the MLOps Dag: asset-triggered training, tuning, and promotion.
 
-This is the payoff of Airflow 3's data-aware scheduling. The Dag has no cron.
-It runs when `dataops` emits the `labeled_projects` asset event - which only
-happens when the data passed validation.
+The payoff of data-aware scheduling. This Dag has no cron. It runs when
+`dataops` emits the `labeled_projects` asset event - which only happens when
+the data passed validation.
 
 Also shown:
 
@@ -17,8 +17,8 @@ Also shown:
 * **XCom discipline** - tasks exchange run ids and metric dicts. The models and
   dataframes live in the registry and on disk.
 
-Deadline alerts (the replacement for SLAs) live in `07_deadline_alerts.py` -
-see the note there for why they are not attached to this Dag.
+Deadline alerts live in `07_deadline_alerts.py` - see the note there for why
+they are not attached to this Dag.
 
 Run it:
     airflow dags test mlops

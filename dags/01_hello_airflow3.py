@@ -1,9 +1,10 @@
-"""Lesson 1 - a Dag, tasks, and dependencies in Airflow 3.
+"""Lesson 1 - a Dag, tasks, and dependencies.
 
-Everything a Dag author needs now comes from one place: `airflow.sdk`. That is
-the Task SDK, and it is the *only* supported authoring surface in Airflow 3 -
-`airflow.decorators`, `airflow.models.dag`, `airflow.operators.*` are gone or
-deprecated.
+Everything a Dag author needs comes from one place: `airflow.sdk`, the Task SDK.
+`dag`, `task`, `DAG`, `Param`, `Asset`, `chain`, `Label` - all of it is there.
+
+Four tasks, wired by passing one task's output to another. Read `make_greeting`
+first, then the four lines at the bottom that build the graph.
 
 Run it without a scheduler:
     airflow dags test hello_airflow3
@@ -13,8 +14,6 @@ from __future__ import annotations
 
 import pendulum
 
-# Airflow 2:  from airflow.decorators import dag, task
-# Airflow 3:
 from airflow.sdk import Param, dag, task
 
 DEFAULT_ARGS = {
@@ -26,14 +25,13 @@ DEFAULT_ARGS = {
 
 @dag(
     dag_id="hello_airflow3",
-    # Airflow 2 called this `schedule_interval`. That argument is REMOVED.
-    # `schedule` takes None, a cron string, a timedelta, a Timetable, or a
-    # list of Assets (see 03_dataops / 04_mlops).
+    # `schedule` takes None (manual/API only), a cron string, a timedelta, a
+    # Timetable, or a list of Assets (see 03_dataops / 04_mlops).
     schedule=None,
+    # Required. Runs are never scheduled before it.
     start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
-    # Airflow 3 default is already False, but being explicit is good manners:
-    # it is the flag that decides whether activating a Dag floods you with
-    # historical runs.
+    # Defaults to False; being explicit is good manners. This is the flag that
+    # decides whether un-pausing a Dag floods you with historical runs.
     catchup=False,
     default_args=DEFAULT_ARGS,
     tags=["tutorial", "basics"],
@@ -48,14 +46,14 @@ def hello_airflow3():
 
     @task
     def make_greeting(**context) -> str:
-        # Context keys are injected by name. `logical_date` replaces Airflow 2's
-        # `execution_date`, which no longer exists in the context at all.
+        # `**context` gives you the run's metadata: run_id, params, ti,
+        # dag_run, ds, data_interval_start/end, var, conn, macros.
         #
-        # Read it with `.get()`, never `context["logical_date"]`: in Airflow 3 a
-        # manual or asset-triggered run has no logical date, and the key is then
-        # missing from the context entirely - indexing it raises KeyError at
-        # runtime while `airflow dags test` (which always supplies one) stays
-        # green. Use `run_id` when you need something that is always there.
+        # Read `logical_date` with `.get()`, never `context["logical_date"]`:
+        # a manual or asset-triggered run has no logical date, and the key is
+        # then missing from the context entirely - indexing it raises KeyError
+        # at runtime while `airflow dags test` (which always supplies one)
+        # stays green. `run_id` is always there; prefer it for naming things.
         greeting = context["params"]["greeting"]
         when = context.get("logical_date") or "no logical date (manual run)"
         return f"{greeting} from run {context['run_id']} at {when}"

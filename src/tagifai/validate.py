@@ -1,10 +1,10 @@
 """A tiny expectation-suite runner.
 
-The original lesson used Great Expectations through
-`airflow-provider-great-expectations`. The *orchestration* lesson is about the
-gate, not the library, so this keeps the same shape - a named suite of
-expectations, a pass/fail result per expectation, and a task that fails the Dag
-run when a critical expectation breaks - with zero extra dependencies.
+A real project would use Great Expectations, Pandera or Soda here. This
+tutorial is about the *gate*, not the library, so it keeps the same shape - a
+named suite of expectations, a pass/fail result per expectation, and a task
+that fails the Dag run when a critical expectation breaks - with zero extra
+dependencies.
 
 Swap `run_suite` for a `GreatExpectationsOperator` (or Pandera / Soda / dbt
 tests) and the Dag structure is unchanged. That substitutability is the point.

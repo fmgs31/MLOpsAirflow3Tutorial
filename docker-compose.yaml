@@ -22,16 +22,16 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-    # Airflow 3: workers talk to the Task Execution API instead of the metadata DB.
+    # Workers reach the Task Execution API, not the metadata DB directly.
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-tutorial-jwt-secret-change-me}
     # Local-only convenience: everyone who reaches the UI is an admin.
     # The port below is bound to 127.0.0.1 so this never leaves your machine.
     # For a login form instead, see docs/troubleshooting.md.
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
-    # Airflow 3 no longer seeds the default connections that `airflow db init`
-    # used to create, so FileSensor's `fs_default` has to be provided. Any
-    # AIRFLOW_CONN_<CONN_ID> env var defines a connection without touching the DB.
+    # Airflow creates no connections for you, so FileSensor's `fs_default` has to
+    # be provided. Any AIRFLOW_CONN_<CONN_ID> env var defines a connection
+    # without touching the DB.
     # CLI equivalent:
     #   airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}'
     AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/"}}'

@@ -7,16 +7,16 @@ In Docker, prefix with `docker compose exec airflow-scheduler ` (or
 
 ```bash
 airflow standalone              # everything at once, for local dev
-airflow api-server --port 8080  # REST API + UI + Task Execution API (was: webserver)
+airflow api-server --port 8080  # REST API + UI + Task Execution API
 airflow scheduler
-airflow dag-processor           # mandatory in Airflow 3
+airflow dag-processor           # mandatory: nothing is parsed without it
 airflow triggerer               # deferrable tasks, async deadline callbacks
 ```
 
 ## Database
 
 ```bash
-airflow db migrate              # create or upgrade  (was: db init / db upgrade)
+airflow db migrate              # create or upgrade the metadata database
 airflow db check
 airflow db clean --clean-before-timestamp 2026-01-01
 airflow db reset -y             # destructive
@@ -36,7 +36,7 @@ airflow dags unpause DAG_ID
 airflow dags trigger DAG_ID -c '{"key": "value"}' -r MY_RUN_ID
                                         # a PAUSED Dag's triggered run stays `queued`
                                         # no -l/--logical-date => the run has none
-airflow dags list-runs DAG_ID -o plain  # dag_id is POSITIONAL in Airflow 3
+airflow dags list-runs DAG_ID -o plain  # dag_id is POSITIONAL
 airflow dags list-runs DAG_ID --state queued -o plain
 airflow dags state DAG_ID RUN_ID
 airflow dags next-execution DAG_ID
@@ -53,7 +53,7 @@ airflow tasks states-for-dag-run DAG_ID RUN_ID
 airflow tasks clear DAG_ID --task-regex 'train.*' --start-date 2026-01-01
 ```
 
-## Backfill (replaces `airflow dags backfill`)
+## Backfill
 
 ```bash
 airflow backfill create \
@@ -99,7 +99,6 @@ export AIRFLOW_VAR_MIN_F1=0.7
 ```bash
 airflow config list
 airflow config get-value core executor
-airflow config update --fix     # migrate a 2.x airflow.cfg to 3.x
 airflow info
 airflow version
 airflow providers list
