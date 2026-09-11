@@ -1,107 +1,142 @@
 # Handoff
 
-Working dir: `D:\Proyectos\Airflow3Tutorial`. Last session: 2026-09-09/10.
-This is a note for whoever picks the work up next, not documentation — delete it
-once it stops being true.
+Working dir: `D:\Proyectos\Airflow3Tutorial`. Last session: 2026-09-11.
+A note for whoever picks the work up next, not documentation — delete it once
+it stops being true.
 
 ## What this is
 
-A hands-on **Airflow 3.3.1** tutorial. Seven Dags that build into one system:
-DataOps → Asset → MLOps → monitoring/retraining. Runs entirely in Docker with no
-cloud account. The ML project being orchestrated lives in `src/tagifai/` and
-imports no Airflow.
+A hands-on **Airflow 3.3.1** tutorial: seven Dags that build into one system
+(DataOps → Asset → MLOps → monitoring/retraining), all in Docker, no cloud
+account. The ML project being orchestrated is `src/tagifai/` and imports no
+Airflow. The pipeline's shape follows the Made With ML orchestration lesson;
+the Airflow is 3.x, written from scratch.
 
-The pipeline's shape follows the [Made With ML orchestration
-lesson](https://madewithml.com/courses/mlops/orchestration/); the Airflow is all
-3.x and written from scratch.
+## The reader, and the rule that follows
 
-## The reader, and the one rule that follows from it
+**Francisco is learning Airflow 3 as his first Airflow** and does not care
+about Airflow 2. So: **no Airflow 2 anywhere in the tutorial** — no "used to
+be", no migration framing; behaviour is explained as how Airflow works and a
+gotcha is written as a gotcha. Applies to README prose, Dag comments and
+docstrings, cheatsheet, troubleshooting. The one exception is
+`docs/airflow2-to-airflow3.md`, deliberately unlinked. This rule is also in
+project memory.
 
-**The reader is learning Airflow 3 as their first Airflow.** They have said
-plainly that they know nothing about Airflow 2 and do not care about it.
+## The standard this tutorial is held to
 
-So: **no Airflow 2 anywhere in the tutorial.** No "this used to be called…", no
-"replaces the old…", no migration framing. Behaviour that would once have been
-explained as a *change* is explained as how Airflow works, and a gotcha is
-written as a gotcha ("`xcom_pull` without `task_ids` reads the current task's own
-XComs") rather than as a comparison. This applies to README prose, Dag comments
-and docstrings, the cheatsheet and troubleshooting.
+Trust broke mid-session on 2026-09-11 and was rebuilt; the lesson is now the
+working rule:
 
-The one exception is `docs/airflow2-to-airflow3.md`, kept deliberately and
-**unlinked from everything**, with a banner at the top saying it is not part of
-the tutorial. It is there for the day someone inherits an Airflow 2 codebase.
-Do not link it from the README.
+- **Every sentence in the README body must stand on its own for a reader.**
+  A number they cannot see by running the command in front of them is junk
+  (the case in point: "the run appeared 11 seconds later", from a stopwatch
+  around a shell loop that matched the wrong run).
+- **Measured evidence lives in §17 ("What was actually verified")**, with how
+  it was measured. The body says what the reader will see; §17 says how we
+  know.
+- **Mechanism explanations are fine without numbers**; specifics must be read
+  off the stack, the source, or the config — never recalled.
+- **A cold run is the acceptance test**: `reset.sh`, `up.sh`, every command in
+  §2–§14 in order. Two have been done (both 2026-09-11); the second, after all
+  edits, held except for the backfill finding below, which is now fixed.
 
 ## State
 
-- Branch **`airflow3-only-tutorial`**, off `main` at commit `f95aa9a` (the
-  pre-rewrite snapshot). The rewrite is **not committed** — `git diff` on the
-  branch is the whole change.
-- **30 tests pass** in the container; **0 import errors**; `dags test` green on
-  `hello_airflow3` and `operators_and_xcoms` after the comment rewrite.
-- Docker stack was left running on <http://localhost:8080> (no login;
-  `./scripts/up.sh` or `.\scripts\up.ps1` restarts it).
+- Branch `airflow3-only-tutorial`, last commit `e48eba4`. **Uncommitted:**
+  `README.md` (+~660/−50), `dags/01_hello_airflow3.py` (one comment),
+  `dags/05_sensors_and_events.py` (docstring, one comment, `enough_rows` now
+  counts rows with pandas). Committing and merging to `main` are Francisco's
+  call — ask.
+- **30 tests pass**, 0 import errors, listings in sync.
+- Docker stack running on <http://localhost:8080>, no login. It carries the
+  second cold run's debris (30 `backfill__` dataops runs, ~8 mlops runs);
+  `./scripts/reset.sh` then `up.sh` gives a clean one in ~30s. Docker Desktop
+  gets closed overnight — a missing engine pipe means shut down, not broken.
+- Pause state after the cold run: `dataops`, `mlops`, `hello_airflow3`,
+  `deadline_alerts` un-paused; `monitoring`, `operators_and_xcoms`,
+  `sensors_and_events` paused.
 
-### What the last session did
+## What the 2026-09-11 session did
 
-1. Rewrote `README.md` as a follow-along tutorial: every section has something to
-   run and a **Checkpoint** telling the reader what they should see, several have
-   a **Try it** exercise. 17 sections; §16 is the generated appendix.
-2. Stripped every Airflow 2 reference from README, all seven Dags,
-   `src/tagifai/assets.py`, `src/tagifai/validate.py`, the cheatsheet and
-   troubleshooting.
-3. Renamed the integrity test's `AIRFLOW_2_PATTERNS` → `STALE_CONSTRUCTS` and
-   `test_no_airflow_2_constructs` → `test_no_stale_constructs`, reframed as
-   "most Airflow code online predates Airflow 3, keep it out of this repo" —
-   which is a real risk for this reader and worth keeping.
+1. **Fixed the four cold-run defects** (§5 `(7 words)`; missing checkpoints in
+   §7/§8/§11/§12/§14; §12's 60s `awaiting_input` warning). The fourth was
+   misdiagnosed in the previous handoff: a paused consumer does **not** queue
+   an asset event for later — it is filtered at enqueue time
+   (`assets/manager.py:354`) and un-pausing replays nothing. The extra run
+   came from `airflow dags test dataops` emitting a real asset event while
+   `mlops` was un-paused. Both facts are in §8/§9 now.
+2. **Added the depth the previous handoff asked for** — executor, scheduler
+   loop, workers, metadata DB, task lifecycle (`queued` vs `running`), retries,
+   pools/concurrency — in §3/§5/§10, then re-verified every claim after the
+   trust break.
+3. **Walked §1–§15 as a first-time reader** and fixed 23 findings: Jinja
+   templating (§6), data intervals and what a scheduled run is *for* (§7),
+   what `dags test` does differently (§5 box), "trigger" the noun (§11),
+   `dataops`/`monitoring` have real crons (§9), TaskFlow/bundle/owner/Timetable
+   named at first use, `start_date` is not required (it isn't — verified with
+   `DagBag`), PowerShell `curl.exe`, §13 unpause-before-trigger, §10 Try-it as
+   one runnable command, XCom-vs-"never touches the DB" contradiction, FAB
+   expanded, and more — all listed in §17.
+4. **Second cold run** found one real defect: §7's backfill example
+   (`2026-01-01`→`01-31`) created 30 queued runs against the paused `dataops`,
+   which all ran at §10 and re-triggered `mlops` behind them; the 3.3.1 CLI has
+   only `backfill create`. §7 now leads with `--dry-run`, states `--to-date` is
+   exclusive, and gives the cancel route (`PUT /api/v2/backfills/{id}/cancel`,
+   the Backfills tab) and the brake (pause the Dag).
 
 ## Do not break: the generated appendix
 
-README §16 lists every Dag **in full**, and those listings are generated:
-
-```bash
-python scripts/sync_readme.py            # inject file contents into the markers
-python scripts/sync_readme.py --check    # exit 1 if stale; this is what pytest runs
-```
-
-Never hand-edit anything between `<!-- BEGIN FILE: path -->` and
-`<!-- END FILE: path -->`. **After editing any Dag, re-run the script**, or
-`tests/test_readme_listings.py` fails. Add a listing by pasting an empty marker
-pair into the README and running the script. `docker-compose.yaml` mounts
-`./README.md` and `./scripts` read-only so the check works inside the container.
-
-Consequence worth remembering: **Dag comments are tutorial text.** They are
-rendered into the README verbatim, so write them for a learner.
+README §16 lists every Dag in full, injected between `<!-- BEGIN FILE -->` /
+`<!-- END FILE -->` markers by `python scripts/sync_readme.py`. Never hand-edit
+inside the markers. **After editing any Dag, re-run the script**, or
+`tests/test_readme_listings.py` fails. Dag comments are tutorial text — they
+render into the README.
 
 ## Hard-won facts — do not re-derive
 
-Verified against the running stack.
+All verified on the running 3.3.1 stack or in its source.
 
-- **`airflow dags test` always supplies a logical date; real triggers may not.**
-  A manual or asset-triggered run has none, so `context["logical_date"]` raises
-  `KeyError` (the key is absent, not `None`) and `{{ ds }}` raises
-  `UndefinedError` while rendering. Both were live bugs here, found only by
-  triggering for real. Use `.get()`, `{{ ds | default(...) }}` or
-  `{{ dag_run.run_after }}`. `mlops` is asset-triggered, so every one of its runs
-  is in this state.
-- **`airflow dags test` crashes on any Dag with `deadline=`** on 3.3.1:
-  `psycopg2.ProgrammingError: can't adapt type 'dict'`. The tasks complete
-  first; only the CLI's final state update fails. This is why deadlines live
-  only in `dags/07` and `mlops` has none.
-- **No default connections are created.** `FileSensor` needs `fs_default`;
-  compose supplies it via `AIRFLOW_CONN_FS_DEFAULT`.
-- **A TaskFlow argument named `params` collides with the context key** — the
-  mlops training task uses `hparams`.
-- **`[a, b] >> [c, d]` is a TypeError**; `chain([a, b], [c, d])` pairs
-  element-wise; `cross_downstream` is the all-to-all form.
-- **`airflow dags list` prints one row per Dag version**, so an edited Dag
-  appears several times. Not a bug — that is Dag versioning.
-- **Parallel `docker compose build` races** on the shared image tag; build one
-  service: `docker compose build airflow-init`.
-- **Git Bash mangles container paths.** Prefix with `MSYS_NO_PATHCONV=1`.
-- `select_best` logs a benign `XCom not found … offset=4`: that is how the lazy
-  mapped-XCom sequence finds its end.
-- Assets are **name-only** so identity matches in Docker and native runs.
+- **`airflow dags test`** runs tasks one at a time; always supplies a logical
+  date (a real manual/asset run has none — `context["logical_date"]` raises
+  `KeyError`, `{{ ds }}` raises `UndefinedError`); is **not a dry run** (real
+  files, real asset events); runs triggers inline (`_run_inline_trigger`), so
+  `settle` never reaches the triggerer under it — and never even defers,
+  because its 5s target is measured from the logical date the command set
+  earlier; crashes on any Dag with `deadline=` (`can't adapt type 'dict'`).
+- **Asset events**: written when the outlet task succeeds; a **paused**
+  consumer is skipped at enqueue and never catches up; events that arrive
+  while the consumer is busy **coalesce** into the next run (22 events → 6
+  `mlops` runs, 2–6 each).
+- **Scheduler**: 1s idle sleep; event→queued run gap observed 0.12–0.65s.
+  `min_file_process_interval=30`, `refresh_interval=300`.
+- **LocalExecutor** is a `multiprocessing` component of the scheduler process;
+  no executor container. Limits here: `parallelism=32`,
+  `max_active_tasks_per_dag=16`, `default_pool=128`; `train_candidate` is
+  capped by `max_active_tis_per_dag=2` → two waves of two.
+- **Timetables**: cron string → `CronTriggerTimetable`
+  (`create_cron_data_intervals=False`), `run_after == start == end`;
+  `timedelta` → `DeltaDataIntervalTimetable`, run at interval end,
+  `logical_date` = start.
+- **HITL on 3.3**: `ApprovalOperator` parks in `awaiting_input`, no trigger;
+  the scheduler's sweep resolves it after `response_timeout`; `responded_by`
+  is empty for a timeout default.
+- **Backfill**: `--to-date` exclusive; runs created `queued`; CLI has only
+  `create` (with `--dry-run`); cancel via `PUT /api/v2/backfills/{id}/cancel`
+  (no token on this stack; `/auth/token` hands anyone an admin JWT).
+- `default_task_retries=0`; the integrity test demands `retries>=1` except
+  `hello_airflow3`, `sensors_and_events`, `deadline_alerts`, and a non-`airflow`
+  owner everywhere.
+- `dataops` is `0 3 * * *`, `monitoring` `0 6 * * *`; both `catchup=False`.
+- `[a, b] >> [c, d]` is a TypeError; `chain` pairs; `cross_downstream` is
+  all-to-all. A TaskFlow argument named `params` collides with the context.
+- No default connections; `fs_default` comes from `AIRFLOW_CONN_FS_DEFAULT`.
+- `airflow dags list` prints one row per Dag version. Git Bash mangles
+  `/opt/...` paths: prefix `MSYS_NO_PATHCONV=1`. PowerShell's `curl` is
+  `Invoke-WebRequest`; use `curl.exe`. Build one service
+  (`docker compose build airflow-init`) — parallel builds race.
+- `select_best` logs a benign `XCom not found … offset=4`. Assets are
+  name-only so identity matches in Docker and native runs. `extract` downloads
+  the CSV (764 rows) over HTTPS — the one task that needs internet.
 
 ## Verify after any change
 
@@ -110,35 +145,27 @@ docker compose exec airflow-scheduler airflow dags list-import-errors
 docker compose exec airflow-scheduler airflow dags test <dag_id>
 MSYS_NO_PATHCONV=1 docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 python scripts/sync_readme.py            # after editing a Dag
-
-# what tests cannot replace — trigger it the way it will really run:
-docker compose exec airflow-scheduler bash -c '
-  airflow dags unpause <dag_id> && airflow dags trigger <dag_id> -r smoke-1'
+# and trigger it the way it will really run:
+docker compose exec airflow-scheduler bash -c 'airflow dags unpause <dag_id> && airflow dags trigger <dag_id> -r smoke-1'
 ```
-
-The integrity tests enforce, per Dag: no import errors, no cycles, tags +
-`doc_md` + an explicit non-`airflow` owner, `retries >= 1` (except the three demo
-Dags), the `mlops`↔`labeled_projects` asset wiring, `validate_training_data`
-upstream of `train_candidate`, and the stale-construct grep.
 
 ## Open
 
-- **The rewrite is uncommitted on the branch.** Commit it, or merge to `main`,
-  once the reader has read it.
-- **Length.** README is ~2340 lines, ~1000 of them the generated appendix. If it
-  needs to shrink, move §§9–13 (the pipeline walkthrough) to `docs/`; do not
-  delete the appendix, it is the only complete code in the docs.
-- No CI. One `docker compose run pytest` job would carry all 30 tests.
-- The tutorial has never been read end-to-end by a beginner. The checkpoints are
-  the part most likely to be wrong — they were written from real output, but a
-  reader following in order is the real test.
+1. **Commit / merge** — Francisco's call. Three files uncommitted.
+2. **A human in the UI.** Everything CLI-observable has been cold-run twice.
+   Nobody has clicked **Approve** on the Required Actions tab, opened the
+   Gantt to see the two waves, or used the Backfills tab's cancel; those
+   sentences rest on §4's verified UI strings, not on a click.
+3. No CI. One `docker compose run pytest` job would carry all 30 tests.
+4. **Length.** README ≈ 2,950 lines, ~1,000 of them the appendix. If it must
+   shrink, move §§9–13 to `docs/`; keep the appendix.
+5. `05`'s `settle` only defers through the scheduler; if that demo should
+   work under `dags test` too, measure its target from `run_after` instead —
+   a Dag design change, not done.
 
 ## Conventions
 
-- Prose in files is normal English. The chat mode used in these sessions
-  ("caveman") does **not** apply to anything written to disk.
-- Dag comments explain the thing at the point it matters, for a learner.
-- `src/tagifai/` never imports Airflow.
-- Temporary files go in the session scratchpad, not the repo.
-- `env.example` is the template; `.env.example` is blocked by a permission deny
-  rule — do not recreate it.
+- Prose on disk is normal English; the chat "caveman" mode never applies to
+  files.
+- `src/tagifai/` never imports Airflow. Temp files go in the session
+  scratchpad. `env.example` is the template; do not create `.env.example`.
