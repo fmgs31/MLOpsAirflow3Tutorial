@@ -28,7 +28,8 @@ DEFAULT_ARGS = {
     # `schedule` takes None (manual/API only), a cron string, a timedelta, a
     # Timetable, or a list of Assets (see 03_dataops / 04_mlops).
     schedule=None,
-    # Required. Runs are never scheduled before it.
+    # No run is ever scheduled before it. A Dag without one still parses, so
+    # Airflow will not remind you - set it.
     start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
     # Defaults to False; being explicit is good manners. This is the flag that
     # decides whether un-pausing a Dag floods you with historical runs.

@@ -11,7 +11,14 @@ Three ways to react to the outside world, cheapest last:
    note at the bottom.
 
 Run it:
-    airflow dags test sensors_and_events
+    airflow dags test sensors_and_events       # everything it waits for is already true
+    airflow dags trigger sensors_and_events    # through the scheduler (unpause first):
+                                               # `settle` visibly sits in `deferred`
+
+`dags test` never defers `settle`: the sensor's five-second target is measured
+from the run's logical date, which the command fixes before the task starts, so
+the moment has passed by the time the task runs and it returns at once. Only a
+scheduler-driven run shows the `deferred` state.
 """
 
 from __future__ import annotations
@@ -23,7 +30,7 @@ from airflow.providers.standard.sensors.filesystem import FileSensor
 from airflow.providers.standard.sensors.time_delta import TimeDeltaSensorAsync
 from airflow.sdk import PokeReturnValue, dag, task
 
-from tagifai import config
+from tagifai import config, data
 
 DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
 
@@ -38,7 +45,8 @@ DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
     doc_md=__doc__,
 )
 def sensors_and_events():
-    # Deferrable: releases its worker slot while waiting. Needs `airflow triggerer`.
+    # Deferrable: releases its worker slot while waiting. Needs `airflow triggerer`,
+    # and a scheduler-driven run to see it - `dags test` returns at once (docstring).
     settle = TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
 
     # `reschedule` mode is the non-deferrable way to free a slot between pokes:
@@ -60,7 +68,9 @@ def sensors_and_events():
         """
         if not config.LABELED_PROJECTS_FP.exists():
             return PokeReturnValue(is_done=False)
-        rows = sum(1 for _ in config.LABELED_PROJECTS_FP.open(encoding="utf-8")) - 1
+        # Read it as a table: descriptions contain newlines, so counting lines
+        # would overstate the row count.
+        rows = len(data.load_labeled())
         print(f"curated table has {rows} rows")
         return PokeReturnValue(is_done=rows >= 500, xcom_value=rows)
 
