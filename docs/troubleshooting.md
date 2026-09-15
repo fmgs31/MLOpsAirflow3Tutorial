@@ -129,6 +129,43 @@ docker compose build airflow-init
 
 `scripts/up.sh` and `scripts/up.ps1` already do this.
 
+## `.\scripts\up.ps1` — "running scripts is disabled on this system"
+
+Windows PowerShell's default execution policy refuses every `.ps1` file. Pass a
+policy for that one invocation instead of changing the machine's setting:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
+```
+
+The README's PowerShell lines are written this way.
+
+## `up` never finishes; `docker compose ps` shows the Airflow services `Restarting`
+
+Their logs all say `Database migration required. Please run 'airflow db
+migrate'`. Do not run it by hand — `airflow-init` is the service that migrates,
+the other four wait for it to exit successfully, and its log says why it did
+not:
+
+```bash
+docker compose logs airflow-init
+```
+
+Fix whatever it reports, then `docker compose up -d`: init runs again, migrates
+the empty database, and the restarting services recover on their own.
+
+One known cause, fixed in the compose file on 2026-09-14: `airflow-init` used
+to bypass the image's `/entrypoint` with a bare `bash -c "airflow db migrate;
+echo ..."`. With an `AIRFLOW_UID` other than `50000` in `.env` — `scripts/up.sh`
+writes yours on Linux and WSL2 — that user has no `/etc/passwd` entry, Docker
+sets `HOME=/`, and the `airflow` console script's interpreter looks for
+Airflow's user-site install under `$HOME/.local`, the wrong place. The
+entrypoint's job is to set `HOME=/home/airflow` for exactly that case; the
+trailing `echo` then made the failed container exit 0, so the others started
+anyway. Symptom in the init log: `ModuleNotFoundError: No module named
+'airflow'`. Note that `.env` is shared by every `up` script run from the same
+checkout, WSL2 or PowerShell — whichever ran last set the uid.
+
 ## My Dag does not show up in the UI
 
 In Airflow 3 parsing is done by a **separate process**. If you started the
@@ -206,6 +243,7 @@ export PYTHONPATH="${PWD}/src"
 
 ```bash
 ./scripts/reset.sh          # containers + DB volume + artifacts
+powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1   # same, Windows PowerShell
 # or, natively:
 airflow db reset -y
 ```

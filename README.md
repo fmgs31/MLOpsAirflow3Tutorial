@@ -7,7 +7,7 @@ promoted to production, and a monitoring Dag decides whether to retrain.
 
 Everything runs on your machine in Docker. No cloud account, no warehouse, no
 vendor signup. Every command below was executed against a real Airflow 3.3.1
-stack — see [What was actually verified](#what-was-actually-verified).
+stack — see [What was actually verified](#17-what-was-actually-verified).
 
 **Assumed:** Python, the command line, and Docker installed. No Airflow
 experience — this teaches Airflow 3 as it is today, and nothing about older
@@ -35,7 +35,7 @@ versions.
 14. [Testing Dags](#14-testing-dags)
 15. [Taking it to production](#15-taking-it-to-production)
 16. [Appendix: every Dag in full](#16-appendix-every-dag-in-full)
-17. [What was actually verified](#what-was-actually-verified)
+17. [What was actually verified](#17-what-was-actually-verified)
 
 Reference material: [CLI cheatsheet](docs/cheatsheet.md) ·
 [Troubleshooting](docs/troubleshooting.md)
@@ -127,8 +127,8 @@ git clone <this repo> && cd Airflow3Tutorial
 # Linux / macOS / WSL2 / Git Bash
 ./scripts/up.sh
 
-# Windows PowerShell
-.\scripts\up.ps1
+# Windows PowerShell — a default install refuses to run .ps1 files, hence the flag
+powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
 ```
 
 **Checkpoint.** The script waits for the API server, then prints the service
@@ -152,21 +152,28 @@ learning.
 > UI has no login, and the port is bound to `127.0.0.1` so it stays on your
 > machine. Do not deploy this configuration anywhere else.
 
-Commands you will use constantly:
+One more script, for later. Everything the stack accumulates — runs, task
+logs, the data and models the Dags write — survives a restart of the
+containers, because it lives in a Docker volume and in the `data/`,
+`model_registry/` and `logs/` folders of this repo (§3 comes back to this). To
+throw all of it away and start the tutorial over from a clean slate:
 
 ```bash
-docker compose logs -f airflow-scheduler
-docker compose exec airflow-scheduler airflow dags list-import-errors
-docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
-./scripts/reset.sh        # nuke containers, DB volume and artifacts
+# Linux / macOS / WSL2 / Git Bash
+./scripts/reset.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
-`airflow-cli` is not one of the five services `docker compose ps` lists: it is
-a one-off container the compose file defines under a profile, which `run`
-creates for that command and `--rm` removes afterwards.
+It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. No step
+in this tutorial needs it; it is here for the day something is wedged and
+[troubleshooting](docs/troubleshooting.md) has not helped.
 
-> On **Git Bash**, prefix container commands that take a `/opt/...` path with
-> `MSYS_NO_PATHCONV=1`, or Git will rewrite the path into a Windows one.
+> On **Git Bash**, a few later commands pass a `/opt/...` path into a
+> container, and each carries the prefix `MSYS_NO_PATHCONV=1`. It is not
+> decoration: without it Git rewrites the path into a Windows one before Docker
+> sees it.
 
 ### Native (Linux / macOS / WSL2)
 
@@ -569,6 +576,34 @@ them at the same time (§3 says what decides that):
 make_greeting ─┬─► shout ──────┬─► report
                └─► count_words ┘
 ```
+
+That parse step is worth knowing about now, because it is the first thing that
+fails once you start writing your own files. The Dag processor (§3) imports
+each file in `dags/`; a file that raises on import — a typo, a missing package,
+a `@dag` function that throws — is not a broken Dag in the list, it is **no Dag
+at all**: absent from the UI, absent from `airflow dags list`. It surfaces on
+the Home page (§4) and in this command:
+
+```bash
+docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
+```
+
+**Checkpoint.** `No data found` — all seven files import. When one does not,
+you get the file and the full traceback instead:
+
+```
+bundle_name    filepath                 error
+dags-folder    zz_broken_on_purpose.py  Traceback (most recent call last):
+                                          File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+                                          File "/opt/airflow/dags/zz_broken_on_purpose.py", line 2, in <module>
+                                            import a_module_that_does_not_exist
+                                        ModuleNotFoundError: No module named 'a_module_that_does_not_exist'
+```
+
+Mistake 1 above — a file that defines a Dag and never calls it — is the other
+kind of nothing: it imports cleanly, so it does not appear here either, and the
+only symptom is a Dag that is not there. Check this list first, then the bottom
+of the file.
 
 **`default_args` is a dictionary applied to every task in the Dag.** Anything a
 task accepts can go in it, and a task that sets the same argument itself wins.
@@ -1803,6 +1838,10 @@ python scripts/sync_readme.py --check     # exit 1 when a listing is stale
 python scripts/sync_readme.py             # fix it
 ```
 
+`airflow-cli` is not one of the five services `docker compose ps` lists: it is
+a one-off container the compose file defines under a profile, which `run`
+creates for that command and `--rm` removes afterwards.
+
 **Checkpoint.** A row of dots and `30 passed`, in well under a minute:
 
 ```
@@ -2867,7 +2906,12 @@ imports no Airflow. It is in the repo; it is not reproduced here.
 
 ---
 
-## What was actually verified
+## 17. What was actually verified
+
+The body of this tutorial says what you will see. This section says how that
+is known: every figure and claim above was read off a live stack, and this is
+the record of when, and how it was measured. Nothing here is a step to run.
+Skip it, or come back when you want to know how far to trust a number.
 
 Against a live `apache/airflow:3.3.1` stack (Postgres 16, LocalExecutor,
 api-server + scheduler + dag-processor + triggerer), on 2026-09-09:
@@ -2893,10 +2937,10 @@ api-server + scheduler + dag-processor + triggerer), on 2026-09-09:
 - `pytest`: **30 passed**.
 
 Re-verified on 2026-09-11, against the same stack, for the numbers and claims
-this tutorial now prints back to you:
+the body prints back to you:
 
-- §5's checkpoint: the first Dag really logs `(7 words)`, not four — the
-  greeting carries the run id *and* the date.
+- §5's checkpoint: the first Dag logs `(7 words)` — the greeting carries the
+  run id *and* the date.
 - §8's asset rules, tested both ways. With `mlops` **unpaused**, `airflow dags
   test dataops` triggered a real `asset_triggered__` run of `mlops` — `dags
   test` writes genuine asset events, it is not a dry run. With `mlops`
@@ -2945,18 +2989,18 @@ this tutorial now prints back to you:
   under `DagBag`, for `schedule=None` and `@daily` alike.
 - §5's `dags test` box: `hello_airflow3` ran `make_greeting → shout →
   count_words → report`, each finishing before the next started.
-- §13, reordered to unpause-then-trigger and re-run: `DEADLINE MISSED` at
-  +31s, `slow_step` still running.
+- §13, unpause then trigger: `DEADLINE MISSED` at +31s, `slow_step` still
+  running.
 - §10's Try-it in its explicit form (`bash -c 'export TAGIFAI_MIN_F1=0.99;
   airflow dags test mlops'`): `promote_model` skipped, `keep_current_model`
   success.
 - §3's `curl` note: on a Windows machine PowerShell resolves `curl` to
   `Invoke-WebRequest`; `curl.exe` is in `System32`.
-- `enough_rows` now reads the table with pandas and reports **764** rows, the
-  number `dataops` wrote; the line count it used before said 812.
+- §11's `enough_rows` reads the table with pandas and reports **764** rows, the
+  number `dataops` wrote.
 
-Second cold run, 2026-09-11, after all of the above — `reset.sh`, `up.sh`,
-then every command in §2–§14 in order:
+Finally, a cold run on 2026-09-11 — `reset.sh`, `up.sh`, then every command
+in §2–§14 in order:
 
 - 28s from `up.sh` to seven Dags listed, all paused; the health endpoint
   `healthy` four times.
@@ -2964,13 +3008,12 @@ then every command in §2–§14 in order:
   `count_words` before `shout` this time; the order between siblings varies.
 - §6 `product=42`. §7 `manual-demo-1` success; `demo` queued while paused,
   success after un-pause with `start_date` 14s after `run_after`.
-- §7's backfill **as previously written** (`2026-01-01` to `01-31`, no
-  dry-run) created 30 queued `backfill__` runs against the paused `dataops`.
-  At §10 they ran three at a time and re-triggered `mlops` behind them. The
-  CLI has only `backfill create`; `PUT /api/v2/backfills/1/cancel` returned
-  200 and turned the six still-queued runs `failed`. §7 now leads with
-  `--dry-run`, verified to list three rows for `02-01`→`02-04` and create
-  nothing.
+- §7's backfill, both ways. Without `--dry-run`, `2026-01-01`→`01-31` created
+  30 queued `backfill__` runs against the paused `dataops`; at §10 they ran
+  three at a time and re-triggered `mlops` behind them. The CLI has only
+  `backfill create`; `PUT /api/v2/backfills/1/cancel` returned 200 and turned
+  the six still-queued runs `failed`. With `--dry-run`, `02-01`→`02-04` listed
+  three rows and created nothing — which is why §7 leads with it.
 - §8's coalescing: 22 asset events became 6 `mlops` runs, consuming 2–6 each
   (`dagrun_asset_event`).
 - §9 `passed=4/4`, `6/6`, `Wrote 764 rows`; with `mlops` paused, one event and
@@ -2982,12 +3025,31 @@ then every command in §2–§14 in order:
 - §13 `DEADLINE MISSED` at +33s with `slow_step` still `running`. §14 30
   passed, listings in sync.
 
-Five real defects were found while building this, all documented in
+Added on 2026-09-14, same stack: §5's `list-import-errors`. With the seven
+lesson files, `No data found`. With an eighth file whose second line imports a
+module that does not exist, one row carrying the traceback — and `airflow dags
+list` still showed seven, because a file that fails to import is no Dag, not a
+broken one. Deleting the file and restarting the dag-processor cleared the row.
+
+Also on 2026-09-14: §2's start-up, cold, with `AIRFLOW_UID=1000` in `.env`
+(what `up.sh` writes on WSL2). With the previous compose file, `airflow-init`
+failed inside 0.2 s — `ModuleNotFoundError: No module named 'airflow'` — and
+exited 0 anyway; the four services then restarted forever on `Database
+migration required`, and `up.ps1` waited forever. Replayed in a one-off
+container under the same conditions, the failure is deterministic: `HOME=/`,
+so the `airflow` script's interpreter never sees `/home/airflow/.local`. With
+init routed through the image entrypoint, the same `.env` and the same empty
+database: `Database migration done!`, health endpoint `healthy` 33 s after
+`up`, seven Dags listed.
+
+Six real defects were found while building this, all documented in
 [troubleshooting](docs/troubleshooting.md): `fs_default` is not created for you,
 `airflow dags test` breaks on Dags with a `deadline=`, `DagBag` needs importing
-from `airflow.dag_processing.dagbag`, and — found by a manual trigger, after
-every test in §14 had passed — `context["logical_date"]` raises `KeyError` and
-`{{ ds }}` raises `UndefinedError` on any run without a logical date.
+from `airflow.dag_processing.dagbag`, — found by a manual trigger, after every
+test in §14 had passed — `context["logical_date"]` raises `KeyError` and
+`{{ ds }}` raises `UndefinedError` on any run without a logical date, and —
+found by a cold start with a WSL2 uid in `.env` — `airflow-init` bypassed the
+image entrypoint, could not import Airflow, and still exited 0.
 
 ## Repository layout
 
