@@ -18,7 +18,16 @@ docker compose up -d
 
 echo
 echo "Waiting for the API server..."
-until curl -sf http://localhost:8080/api/v2/monitor/health >/dev/null 2>&1; do sleep 3; done
+tries=0
+until curl -sf http://localhost:8080/api/v2/monitor/health >/dev/null 2>&1; do
+  sleep 3
+  tries=$((tries + 1))
+  if [ "$tries" -eq 20 ]; then
+    echo "Still waiting after 60s. In another terminal:"
+    echo "  docker compose ps                  # anything 'Restarting'?"
+    echo "  docker compose logs airflow-init   # did the migration succeed?"
+  fi
+done
 
 echo "Airflow 3 UI: http://localhost:8080"
 docker compose ps --format "table {{.Service}}\t{{.Status}}"

@@ -77,15 +77,14 @@ services:
   airflow-init:
     <<: *airflow-common
     # `airflow db init` and `airflow db upgrade` were REMOVED in Airflow 3.
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db migrate
-        echo "Metadata database migrated."
-    environment:
-      <<: *airflow-common-env
-      _AIRFLOW_DB_MIGRATE: "true"
+    #
+    # Goes through the image's own /entrypoint on purpose. When AIRFLOW_UID is
+    # not 50000 (up.sh writes yours on Linux/WSL2) the entrypoint is what sets
+    # HOME=/home/airflow, and Airflow is installed under that HOME's .local -
+    # a bare `bash -c "airflow db migrate; echo done"` skipped it, failed with
+    # "No module named 'airflow'", and still exited 0, so the other services
+    # started against an unmigrated database and restarted forever.
+    command: ["db", "migrate"]
     restart: on-failure
 
   airflow-apiserver:
