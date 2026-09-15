@@ -121,18 +121,26 @@ Cada uno es un hueco que puedes cambiar por una herramienta real — las tablas 
 
 ## 2. Ponlo en marcha
 
-### Docker (recomendado, y la única opción en Windows)
+### Docker (recomendado, y en Windows la única opción fuera de WSL2)
 
 Airflow no tiene soporte nativo en Windows. En Windows usa Docker Desktop, o haz
 la instalación nativa dentro de WSL2.
 
 ```bash
-git clone <this repo> && cd Airflow3Tutorial
+git clone <this repo>
+cd Airflow3Tutorial
+```
 
-# Linux / macOS / WSL2 / Git Bash
+Luego levanta el stack. En Linux, macOS, WSL2 o Git Bash en Windows:
+
+```bash
 ./scripts/up.sh
+```
 
-# Windows PowerShell — una instalación por defecto se niega a ejecutar ficheros .ps1, de ahí el flag
+En Windows PowerShell, donde una instalación por defecto se niega a ejecutar
+ficheros `.ps1`, de ahí el flag:
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
 ```
 
@@ -146,6 +154,13 @@ docker compose ps
 docker compose exec airflow-scheduler airflow dags list
 ```
 
+Esas dos líneas son la forma de todos los comandos de aquí en adelante. `docker
+compose …` corre en tu máquina; `airflow …` corre dentro del contenedor del
+scheduler, que es lo que hace el prefijo `docker compose exec
+airflow-scheduler`. Donde este tutorial muestre un comando `airflow …` a secas —
+en una transcripción, o como una línea suelta en el texto — significa lo mismo,
+prefijo incluido.
+
 El stack es deliberadamente más pequeño que el [docker-compose.yaml
 oficial](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
 `LocalExecutor` en vez de Celery + Redis (el §3 explica qué es un executor), y el
@@ -154,20 +169,24 @@ Airflow usuarios, roles y una página de login. Menos piezas móviles mientras
 estás aprendiendo.
 
 > **Auth:** está puesto `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true`, así
-> que la UI no tiene login, y el puerto está atado a `127.0.0.1` para que se
-> quede en tu máquina. No despliegues esta configuración en ningún otro sitio.
+> que la UI no tiene login, y el puerto 8080 se publica solo en `127.0.0.1` — la
+> dirección de loopback — así que nada de fuera de tu máquina puede llegar a él.
+> No despliegues esta configuración en ningún otro sitio.
 
 Un script más, para más adelante. Todo lo que el stack acumula — runs, logs de
 tasks, los datos y modelos que escriben los Dags — sobrevive a un reinicio de
 los contenedores, porque vive en un volumen de Docker y en las carpetas
 `data/`, `model_registry/` y `logs/` de este repo (el §3 vuelve sobre esto).
-Para tirarlo todo y empezar el tutorial de cero:
+Para tirarlo todo y empezar el tutorial de cero, en Linux, macOS, WSL2 o Git
+Bash:
 
 ```bash
-# Linux / macOS / WSL2 / Git Bash
 ./scripts/reset.sh
+```
 
-# Windows PowerShell
+o en Windows PowerShell:
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
@@ -175,6 +194,13 @@ Pregunta antes de borrar, y `up.sh` / `up.ps1` vuelve a levantar el stack.
 Ningún paso de este tutorial lo necesita; está aquí para el día en que algo se
 atasque y [troubleshooting](docs/troubleshooting.md) no haya ayudado.
 
+> **Una sola shell para el resto.** Todos los comandos a partir de aquí están
+> escritos para bash: Linux, macOS, WSL2 o Git Bash en Windows. Los dos scripts
+> `.ps1` existen para que PowerShell pueda levantar y resetear el stack, pero
+> los comandos del tutorial usan continuaciones de línea con `\`, `grep` y JSON
+> entre comillas simples, y PowerShell lee todo eso de otra manera. En Windows,
+> abre Git Bash para todo lo que sigue.
+>
 > En **Git Bash**, unos pocos comandos de más adelante pasan una ruta `/opt/...`
 > a un contenedor, y cada uno lleva el prefijo `MSYS_NO_PATHCONV=1`. No es
 > decorativo: sin él, Git reescribe la ruta a una de Windows antes de que Docker
@@ -420,8 +446,10 @@ por su cuenta.
 
 ```bash
 curl -s localhost:8080/api/v2/monitor/health
-# PowerShell: `curl` there is an alias for Invoke-WebRequest and rejects `-s`; use `curl.exe`
 ```
+
+(Si aun así estás en PowerShell, ahí `curl` es un alias de `Invoke-WebRequest`
+y rechaza `-s`; llama a `curl.exe` en su lugar.)
 
 Deberías obtener `healthy` cuatro veces — un objeto JSON por cada uno: la
 metadatabase, el scheduler, el triggerer y el dag processor, los tres últimos con
@@ -677,9 +705,9 @@ rápido que existe: un run completo con logs reales y sin UI.
 > comando — sin scheduler, sin executor, sin triggerer — y eso cambia cuatro
 > cosas que te encontrarás más adelante:
 >
-> - Las tasks corren **de una en una**, en orden de dependencias. En el log de
->   arriba, una de `shout`/`count_words` terminó antes de que empezara la otra —
->   cuál va primero varía — lo que permita el grafo.
+> - Las tasks corren **de una en una**, en un orden que el grafo permita. En el
+>   log de arriba, una de `shout`/`count_words` terminó antes de que empezara la
+>   otra; cuál va primero varía de un run a otro.
 > - **Siempre aporta una logical date.** Un trigger manual de verdad no (§7), que
 >   es la forma en la que un Dag puede pasar aquí y fallar en producción.
 > - **No es un dry run**: las tasks escriben ficheros reales y asset events
@@ -915,12 +943,13 @@ schedule=None                       # manual / API only
 schedule="0 3 * * *"                # cron
 schedule=timedelta(days=1)          # interval
 schedule=[some_asset]               # data-aware (§8)
-schedule=CronTriggerTimetable(...)  # custom timetable
+schedule=CronTriggerTimetable(...)  # a Timetable, named directly
 ```
 
-Cada una de esas es un atajo para un **Timetable**, el objeto que posee las dos
-decisiones que toma un schedule; la última línea nombra uno directamente, y
-escribir el tuyo propio es como consigues una cadencia que cron no sabe expresar.
+Cada una de las cuatro primeras es un atajo para un **Timetable**, el objeto que
+posee las dos decisiones que toma un schedule; la última línea nombra uno
+directamente, y escribir tu propia clase Timetable es como consigues una
+cadencia que cron no sabe expresar.
 
 Las dos decisiones: *cuándo* crear un run, y para qué trozo de tiempo es ese run
 — su **data interval**, expuesto a todas las tasks como `data_interval_start` y
@@ -1002,7 +1031,7 @@ hello_airflow3  demo    queued  2026-09-09T12:19:29.483234+00:00             ←
 $ airflow dags unpause hello_airflow3     # ahora arranca
 ```
 
-**Comprobación.** Ejecuta esas cuatro líneas tú mismo contra `hello_airflow3`.
+**Comprobación.** Ejecuta esos cuatro comandos tú mismo contra `hello_airflow3`.
 Mientras el Dag está en pausa el run está `queued` y ahí se queda por mucho que
 esperes — el scheduler lo ve en cada bucle y lo salta deliberadamente. Poco
 después del `unpause`, `list-runs` muestra el mismo `run_id` como `success`, y su
@@ -1491,10 +1520,11 @@ docker compose exec airflow-scheduler bash -c '
 docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 ```
 
-**Comprobación.** Un run id que empieza por `asset_triggered__` en estado
-`success`, con una `logical_date` vacía — los runs disparados por asset no tienen
-logical date, exactamente igual que los manuales (§7). En la UI, abre **Assets**
-y verás la arista que lo causó.
+**Comprobación.** Un run id que empieza por `asset_triggered__` — `running` si
+has sido rápido, `success` en cuanto sus cuatro candidatos hayan entrenado — con
+una `logical_date` vacía: los runs disparados por asset no tienen logical date,
+exactamente igual que los manuales (§7). En la UI, abre **Assets** y verás la
+arista que lo causó.
 
 Dale un momento antes de ejecutar el segundo comando, y ten claro de qué es esa
 espera. Casi toda es `dataops` corriendo sus cuatro tasks — `extract` descarga el
@@ -1520,7 +1550,8 @@ diseño.
 ## 11. Esperar: sensors, deferrable tasks, eventos
 
 [`dags/05_sensors_and_events.py`](dags/05_sensors_and_events.py). Tres formas de
-reaccionar al mundo exterior, la más barata la última:
+esperar al mundo exterior, la más barata la última — y, después de ellas, la
+única forma de no esperar en absoluto:
 
 ```python
 # 1. Poking sensor — holds a worker slot the entire time. Seconds, not hours.
@@ -1642,8 +1673,9 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
     mv /tmp/labeled_projects.csv /opt/airflow/data/warehouse/labeled_projects.csv
 ```
 
-El siguiente poke lo encuentra y el run se completa. Déjalo movido y la task
-acabará fallando por su `timeout` declarado (300 segundos para este sensor).
+El siguiente poke lo encuentra y el run se completa. Déjalo movido y cada sensor
+acabará fallando por su `timeout` declarado: 120 segundos para `enough_rows`,
+300 para `wait_for_curated_data`, así que el run se acaba a los dos minutos.
 
 Lo importante es lo que *no* estaba pasando durante la espera: la task instance
 no estaba corriendo entre pokes — estaba en `up_for_reschedule`, que lo has
@@ -2056,7 +2088,7 @@ Everything a Dag author needs comes from one place: `airflow.sdk`, the Task SDK.
 `dag`, `task`, `DAG`, `Param`, `Asset`, `chain`, `Label` - all of it is there.
 
 Four tasks, wired by passing one task's output to another. Read `make_greeting`
-first, then the four lines at the bottom that build the graph.
+first, then the two lines at the bottom that build the graph.
 
 Run it without a scheduler:
     airflow dags test hello_airflow3
@@ -2095,7 +2127,7 @@ DEFAULT_ARGS = {
     },
 )
 def hello_airflow3():
-    """A three-task Dag: one source, two branches of work, one join."""
+    """A four-task Dag: one source, two branches of work, one join."""
 
     @task
     def make_greeting(**context) -> str:
@@ -3116,14 +3148,19 @@ mismo `.env` y la misma base de datos vacía: `Database migration done!`,
 endpoint de salud `healthy` 33 s después de `up`, siete Dags listados.
 
 Se encontraron seis defectos reales mientras se construía esto, todos
-documentados en [troubleshooting](docs/troubleshooting.md): `fs_default` no se
-crea solo, `airflow dags test` se rompe con Dags que llevan un `deadline=`,
-`DagBag` hay que importarlo de `airflow.dag_processing.dagbag`, — encontrado
-por un trigger manual, después de que todos los tests del §14 pasaran —
-`context["logical_date"]` lanza `KeyError` y `{{ ds }}` lanza `UndefinedError` en
-cualquier run sin logical date, y — encontrado por un arranque en frío con un
-uid de WSL2 en `.env` — `airflow-init` se saltaba el entrypoint de la imagen, no
-podía importar Airflow, y aun así salía con 0.
+documentados en [troubleshooting](docs/troubleshooting.md):
+
+- `fs_default` no se crea solo.
+- `airflow dags test` se rompe con Dags que llevan un `deadline=`.
+- `DagBag` hay que importarlo de `airflow.dag_processing.dagbag`.
+- `context["logical_date"]` lanza `KeyError` en cualquier run sin logical date
+  — encontrado por un trigger manual, después de que todos los tests del §14
+  pasaran.
+- `{{ ds }}` lanza `UndefinedError` en esos mismos runs — encontrado de la misma
+  forma.
+- `airflow-init` se saltaba el entrypoint de la imagen, no podía importar
+  Airflow, y aun así salía con 0 — encontrado por un arranque en frío con un uid
+  de WSL2 en `.env`.
 
 ## Estructura del repositorio
 
