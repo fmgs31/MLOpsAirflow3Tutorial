@@ -4,7 +4,7 @@ Everything a Dag author needs comes from one place: `airflow.sdk`, the Task SDK.
 `dag`, `task`, `DAG`, `Param`, `Asset`, `chain`, `Label` - all of it is there.
 
 Four tasks, wired by passing one task's output to another. Read `make_greeting`
-first, then the four lines at the bottom that build the graph.
+first, then the two lines at the bottom that build the graph.
 
 Run it without a scheduler:
     airflow dags test hello_airflow3
@@ -43,7 +43,7 @@ DEFAULT_ARGS = {
     },
 )
 def hello_airflow3():
-    """A three-task Dag: one source, two branches of work, one join."""
+    """A four-task Dag: one source, two branches of work, one join."""
 
     @task
     def make_greeting(**context) -> str:

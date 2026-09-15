@@ -116,18 +116,26 @@ Each is a slot you can swap for a real tool — the tables in §9 and §10 say w
 
 ## 2. Get it running
 
-### Docker (recommended, and the only option on Windows)
+### Docker (recommended, and on Windows the only option outside WSL2)
 
 Airflow has no native Windows support. On Windows use Docker Desktop, or run the
 native install inside WSL2.
 
 ```bash
-git clone <this repo> && cd Airflow3Tutorial
+git clone <this repo>
+cd Airflow3Tutorial
+```
 
-# Linux / macOS / WSL2 / Git Bash
+Then start the stack. On Linux, macOS, WSL2 or Git Bash on Windows:
+
+```bash
 ./scripts/up.sh
+```
 
-# Windows PowerShell — a default install refuses to run .ps1 files, hence the flag
+In Windows PowerShell, where a default install refuses to run `.ps1` files,
+hence the flag:
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
 ```
 
@@ -141,6 +149,12 @@ docker compose ps
 docker compose exec airflow-scheduler airflow dags list
 ```
 
+Those two lines are the shape of every command from here on. `docker compose …`
+runs on your machine; `airflow …` runs inside the scheduler container, which is
+what the `docker compose exec airflow-scheduler` prefix does. Where this
+tutorial shows an `airflow …` command bare — in a transcript, or as a one-liner
+in prose — it means the same thing, prefix included.
+
 The stack is deliberately smaller than the [official
 docker-compose.yaml](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
 `LocalExecutor` instead of Celery + Redis (§3 explains what an executor is), and
@@ -149,20 +163,24 @@ gives Airflow users, roles and a login page. Fewer moving parts while you are
 learning.
 
 > **Auth:** `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true` is set, so the
-> UI has no login, and the port is bound to `127.0.0.1` so it stays on your
-> machine. Do not deploy this configuration anywhere else.
+> UI has no login, and port 8080 is published on `127.0.0.1` only — the loopback
+> address — so nothing outside your machine can reach it. Do not deploy this
+> configuration anywhere else.
 
 One more script, for later. Everything the stack accumulates — runs, task
 logs, the data and models the Dags write — survives a restart of the
 containers, because it lives in a Docker volume and in the `data/`,
 `model_registry/` and `logs/` folders of this repo (§3 comes back to this). To
-throw all of it away and start the tutorial over from a clean slate:
+throw all of it away and start the tutorial over from a clean slate, on Linux,
+macOS, WSL2 or Git Bash:
 
 ```bash
-# Linux / macOS / WSL2 / Git Bash
 ./scripts/reset.sh
+```
 
-# Windows PowerShell
+or in Windows PowerShell:
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
@@ -170,6 +188,13 @@ It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. No step
 in this tutorial needs it; it is here for the day something is wedged and
 [troubleshooting](docs/troubleshooting.md) has not helped.
 
+> **One shell for the rest.** Every command after this point is written for
+> bash: Linux, macOS, WSL2, or Git Bash on Windows. The two `.ps1` scripts
+> exist so that PowerShell can start and reset the stack, but the tutorial's
+> commands use `\` line continuations, `grep` and single-quoted JSON, all of
+> which PowerShell reads differently. On Windows, open Git Bash for everything
+> below.
+>
 > On **Git Bash**, a few later commands pass a `/opt/...` path into a
 > container, and each carries the prefix `MSYS_NO_PATHCONV=1`. It is not
 > decoration: without it Git rewrites the path into a Windows one before Docker
@@ -409,8 +434,10 @@ open a database session and query `DagRun` itself.
 
 ```bash
 curl -s localhost:8080/api/v2/monitor/health
-# PowerShell: `curl` there is an alias for Invoke-WebRequest and rejects `-s`; use `curl.exe`
 ```
+
+(If you are in PowerShell after all, `curl` there is an alias for
+`Invoke-WebRequest` and rejects `-s`; call `curl.exe` instead.)
 
 You should get `healthy` four times — one JSON object each for the
 metadatabase, scheduler, triggerer and dag processor, the last three with the
@@ -657,9 +684,9 @@ authoring loop there is: a full run with real logs and no UI.
 > command — no scheduler, no executor, no triggerer — and that changes four
 > things you will meet later:
 >
-> - Tasks run **one at a time**, in dependency order. In the log above, one of
->   `shout`/`count_words` finished before the other started — which one first
->   varies — whatever the graph allows.
+> - Tasks run **one at a time**, in an order the graph allows. In the log
+>   above, one of `shout`/`count_words` finished before the other started;
+>   which goes first varies from run to run.
 > - It **always supplies a logical date**. A real manual trigger does not (§7),
 >   which is how a Dag can pass here and fail in production.
 > - It is **not a dry run**: tasks write real files and real asset events (§9).
@@ -884,12 +911,12 @@ schedule=None                       # manual / API only
 schedule="0 3 * * *"                # cron
 schedule=timedelta(days=1)          # interval
 schedule=[some_asset]               # data-aware (§8)
-schedule=CronTriggerTimetable(...)  # custom timetable
+schedule=CronTriggerTimetable(...)  # a Timetable, named directly
 ```
 
-Every one of those is shorthand for a **Timetable**, the object that owns the
-two decisions a schedule makes; the last line names one directly, and writing
-your own is how you get a cadence cron cannot express.
+Every one of the first four is shorthand for a **Timetable**, the object that
+owns the two decisions a schedule makes; the last line names one directly, and
+writing your own Timetable class is how you get a cadence cron cannot express.
 
 The two decisions: *when* to create a run, and which slice of time that run is
 *for* — its **data interval**, exposed to every task as `data_interval_start`
@@ -969,7 +996,7 @@ hello_airflow3  demo    queued  2026-09-09T12:19:29.483234+00:00             ←
 $ airflow dags unpause hello_airflow3     # now it starts
 ```
 
-**Checkpoint.** Run those four lines yourself against `hello_airflow3`. While
+**Checkpoint.** Run those four commands yourself against `hello_airflow3`. While
 the Dag is paused the run is `queued` and stays there however long you wait —
 the scheduler sees it every loop and deliberately passes over it. Shortly after
 the `unpause`, `list-runs` shows the same `run_id` as `success`, and its
@@ -1447,10 +1474,10 @@ docker compose exec airflow-scheduler bash -c '
 docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 ```
 
-**Checkpoint.** A run id beginning `asset_triggered__` in state `success`, with
-an empty `logical_date` — asset-triggered runs have no logical date, exactly
-like manual ones (§7). In the UI, open **Assets** and you will see the edge that
-caused it.
+**Checkpoint.** A run id beginning `asset_triggered__` — `running` if you were
+quick, `success` once its four candidates have trained — with an empty
+`logical_date`: asset-triggered runs have no logical date, exactly like manual
+ones (§7). In the UI, open **Assets** and you will see the edge that caused it.
 
 Give it a moment before running the second command, and know what the wait is.
 Almost all of it is `dataops` itself running its four tasks — `extract`
@@ -1474,7 +1501,8 @@ succeeded — a failed `validate_transformed` emits no event, by design.
 ## 11. Waiting: sensors, deferrable tasks, events
 
 [`dags/05_sensors_and_events.py`](dags/05_sensors_and_events.py). Three ways to
-react to the outside world, cheapest last:
+wait for the outside world, cheapest last — and, after them, the one way not to
+wait at all:
 
 ```python
 # 1. Poking sensor — holds a worker slot the entire time. Seconds, not hours.
@@ -1592,8 +1620,10 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
     mv /tmp/labeled_projects.csv /opt/airflow/data/warehouse/labeled_projects.csv
 ```
 
-The next poke finds it and the run completes. Leave it moved instead and the
-task eventually fails on its declared `timeout` (300 seconds for this sensor).
+The next poke finds it and the run completes. Leave it moved instead and each
+sensor eventually fails on its declared `timeout`: 120 seconds for
+`enough_rows`, 300 for `wait_for_curated_data`, so the run is over after two
+minutes.
 
 The point is what was *not* happening during the wait: the task instance was
 not running between pokes — it was in `up_for_reschedule`, which you saw — so
@@ -1993,7 +2023,7 @@ Everything a Dag author needs comes from one place: `airflow.sdk`, the Task SDK.
 `dag`, `task`, `DAG`, `Param`, `Asset`, `chain`, `Label` - all of it is there.
 
 Four tasks, wired by passing one task's output to another. Read `make_greeting`
-first, then the four lines at the bottom that build the graph.
+first, then the two lines at the bottom that build the graph.
 
 Run it without a scheduler:
     airflow dags test hello_airflow3
@@ -2032,7 +2062,7 @@ DEFAULT_ARGS = {
     },
 )
 def hello_airflow3():
-    """A three-task Dag: one source, two branches of work, one join."""
+    """A four-task Dag: one source, two branches of work, one join."""
 
     @task
     def make_greeting(**context) -> str:
@@ -3043,13 +3073,16 @@ database: `Database migration done!`, health endpoint `healthy` 33 s after
 `up`, seven Dags listed.
 
 Six real defects were found while building this, all documented in
-[troubleshooting](docs/troubleshooting.md): `fs_default` is not created for you,
-`airflow dags test` breaks on Dags with a `deadline=`, `DagBag` needs importing
-from `airflow.dag_processing.dagbag`, — found by a manual trigger, after every
-test in §14 had passed — `context["logical_date"]` raises `KeyError` and
-`{{ ds }}` raises `UndefinedError` on any run without a logical date, and —
-found by a cold start with a WSL2 uid in `.env` — `airflow-init` bypassed the
-image entrypoint, could not import Airflow, and still exited 0.
+[troubleshooting](docs/troubleshooting.md):
+
+- `fs_default` is not created for you.
+- `airflow dags test` breaks on Dags with a `deadline=`.
+- `DagBag` needs importing from `airflow.dag_processing.dagbag`.
+- `context["logical_date"]` raises `KeyError` on any run without a logical
+  date — found by a manual trigger, after every test in §14 had passed.
+- `{{ ds }}` raises `UndefinedError` on the same runs — found the same way.
+- `airflow-init` bypassed the image entrypoint, could not import Airflow, and
+  still exited 0 — found by a cold start with a WSL2 uid in `.env`.
 
 ## Repository layout
 

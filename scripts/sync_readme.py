@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Keep the full-file listings in README.md byte-identical to the files themselves.
+"""Keep the full-file listings in README.md and README_ES.md byte-identical to the files.
 
 A tutorial that quotes its own code is only useful while the quotes are true, and
-hand-maintained listings rot the first time a Dag is edited. So the README does
-not contain those listings in the ordinary sense: it contains markers, and this
+hand-maintained listings rot the first time a Dag is edited. So the READMEs do
+not contain those listings in the ordinary sense: they contain markers, and this
 script fills them in from the files on disk.
 
     <!-- BEGIN FILE: dags/01_hello_airflow3.py -->
@@ -19,7 +19,7 @@ Two modes:
 
 `--check` is what `tests/test_readme_listings.py` runs, so a Dag edited without
 re-syncing fails the test suite instead of shipping a lie. Add a listing by
-pasting an empty marker pair into the README and running the script.
+pasting an empty marker pair into both READMEs and running the script.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-README = ROOT / "README.md"
+READMES = [ROOT / "README.md", ROOT / "README_ES.md"]
 
 MARKER = re.compile(
     r"<!-- BEGIN FILE: (?P<path>[^\s>]+) -->\n(?P<body>.*?)<!-- END FILE: (?P=path) -->",
@@ -77,32 +77,35 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    original = README.read_text(encoding="utf-8")
-    updated, stale = render(original)
-    count = len(MARKER.findall(original))
+    exit_code = 0
+    for readme in READMES:
+        original = readme.read_text(encoding="utf-8")
+        updated, stale = render(original)
+        count = len(MARKER.findall(original))
 
-    if not count:
-        print("No <!-- BEGIN FILE: ... --> markers found in README.md")
-        return 0
+        if not count:
+            print(f"No <!-- BEGIN FILE: ... --> markers found in {readme.name}")
+            continue
 
-    if args.check:
+        if args.check:
+            if stale:
+                print(f"{readme.name} is out of date for {len(stale)} of {count} listings:")
+                for rel_path in stale:
+                    print(f"  - {rel_path}")
+                print("\nRun: python scripts/sync_readme.py")
+                exit_code = 1
+            else:
+                print(f"{readme.name} listings are in sync ({count} files)")
+            continue
+
         if stale:
-            print(f"README.md is out of date for {len(stale)} of {count} listings:")
+            readme.write_text(updated, encoding="utf-8")
+            print(f"Updated {len(stale)} of {count} listings in {readme.name}:")
             for rel_path in stale:
                 print(f"  - {rel_path}")
-            print("\nRun: python scripts/sync_readme.py")
-            return 1
-        print(f"README.md listings are in sync ({count} files)")
-        return 0
-
-    if stale:
-        README.write_text(updated, encoding="utf-8")
-        print(f"Updated {len(stale)} of {count} listings in README.md:")
-        for rel_path in stale:
-            print(f"  - {rel_path}")
-    else:
-        print(f"README.md listings already in sync ({count} files)")
-    return 0
+        else:
+            print(f"{readme.name} listings already in sync ({count} files)")
+    return exit_code
 
 
 if __name__ == "__main__":
