@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Keep the full-file listings in README.md and README_ES.md byte-identical to the files.
+"""Keep the full-file listings in the Dag appendices byte-identical to the files.
 
 A tutorial that quotes its own code is only useful while the quotes are true, and
-hand-maintained listings rot the first time a Dag is edited. So the READMEs do
-not contain those listings in the ordinary sense: they contain markers, and this
-script fills them in from the files on disk.
+hand-maintained listings rot the first time a Dag is edited. So the appendices in
+`docs/` do not contain those listings in the ordinary sense: they contain
+markers, and this script fills them in from the files on disk.
 
     <!-- BEGIN FILE: solutions/01_hello_airflow3.py -->
     ```python
@@ -19,7 +19,7 @@ Two modes:
 
 `--check` is what `tests/test_readme_listings.py` runs, so a Dag edited without
 re-syncing fails the test suite instead of shipping a lie. Add a listing by
-pasting an empty marker pair into both READMEs and running the script.
+pasting an empty marker pair into both appendices and running the script.
 """
 
 from __future__ import annotations
@@ -30,7 +30,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-READMES = [ROOT / "README.md", ROOT / "README_ES.md"]
+# The listings live in the appendices, not in the READMEs: §16 of each README
+# links here instead of carrying ~37 kB of injected code inline.
+APPENDICES = [ROOT / "docs" / "appendix-dags.md", ROOT / "docs" / "appendix-dags_ES.md"]
 
 MARKER = re.compile(
     r"<!-- BEGIN FILE: (?P<path>[^\s>]+) -->\n(?P<body>.*?)<!-- END FILE: (?P=path) -->",
@@ -55,7 +57,7 @@ def listing_for(rel_path: str) -> str:
 
 
 def render(text: str) -> tuple[str, list[str]]:
-    """Return the README with every marker filled in, plus the stale paths."""
+    """Return the appendix with every marker filled in, plus the stale paths."""
     stale: list[str] = []
 
     def replace(match: re.Match[str]) -> str:
@@ -78,33 +80,37 @@ def main() -> int:
     args = parser.parse_args()
 
     exit_code = 0
-    for readme in READMES:
-        original = readme.read_text(encoding="utf-8")
+    for appendix in APPENDICES:
+        original = appendix.read_text(encoding="utf-8")
         updated, stale = render(original)
         count = len(MARKER.findall(original))
 
         if not count:
-            print(f"No <!-- BEGIN FILE: ... --> markers found in {readme.name}")
+            # Not a no-op worth shrugging at: an appendix with no markers is one
+            # whose listings have been deleted or hand-pasted, and staying quiet
+            # here would make --check pass on exactly the rot it exists to catch.
+            print(f"No <!-- BEGIN FILE: ... --> markers found in {appendix.name}")
+            exit_code = 1
             continue
 
         if args.check:
             if stale:
-                print(f"{readme.name} is out of date for {len(stale)} of {count} listings:")
+                print(f"{appendix.name} is out of date for {len(stale)} of {count} listings:")
                 for rel_path in stale:
                     print(f"  - {rel_path}")
                 print("\nRun: python scripts/sync_readme.py")
                 exit_code = 1
             else:
-                print(f"{readme.name} listings are in sync ({count} files)")
+                print(f"{appendix.name} listings are in sync ({count} files)")
             continue
 
         if stale:
-            readme.write_text(updated, encoding="utf-8")
-            print(f"Updated {len(stale)} of {count} listings in {readme.name}:")
+            appendix.write_text(updated, encoding="utf-8")
+            print(f"Updated {len(stale)} of {count} listings in {appendix.name}:")
             for rel_path in stale:
                 print(f"  - {rel_path}")
         else:
-            print(f"{readme.name} listings already in sync ({count} files)")
+            print(f"{appendix.name} listings already in sync ({count} files)")
     return exit_code
 
 
