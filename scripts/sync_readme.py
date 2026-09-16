@@ -6,11 +6,11 @@ hand-maintained listings rot the first time a Dag is edited. So the READMEs do
 not contain those listings in the ordinary sense: they contain markers, and this
 script fills them in from the files on disk.
 
-    <!-- BEGIN FILE: dags/01_hello_airflow3.py -->
+    <!-- BEGIN FILE: solutions/01_hello_airflow3.py -->
     ```python
     ...the entire file, injected...
     ```
-    <!-- END FILE: dags/01_hello_airflow3.py -->
+    <!-- END FILE: solutions/01_hello_airflow3.py -->
 
 Two modes:
 

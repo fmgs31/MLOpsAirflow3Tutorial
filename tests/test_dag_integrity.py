@@ -4,11 +4,17 @@ They catch the failures that otherwise show up as a red "Import Error" banner in
 the UI hours later: a typo, a missing dependency, a cycle, a Dag that lost its
 owner. Run them in the same image your scheduler uses:
 
-    docker compose run --rm airflow-cli pytest /opt/airflow/tests -q
+    docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
+
+They read the Dags you wrote in `dags/`. To run the same suite against the
+finished versions in `solutions/`, point them there:
+
+    docker compose run --rm -e DAGS_DIR=solutions --entrypoint pytest airflow-cli /opt/airflow/tests -q
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -16,7 +22,19 @@ import pytest
 
 from airflow.dag_processing.dagbag import DagBag
 
-DAGS_FOLDER = Path(__file__).resolve().parents[1] / "dags"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DAGS_FOLDER = REPO_ROOT / os.environ.get("DAGS_DIR", "dags")
+
+# The seven Dags this tutorial has you write, by dag_id.
+EXPECTED_DAGS = {
+    "hello_airflow3",
+    "operators_and_xcoms",
+    "dataops",
+    "mlops",
+    "sensors_and_events",
+    "monitoring",
+    "deadline_alerts",
+}
 
 # Constructs that do not exist in this version of Airflow. Most of the Airflow
 # code on the internet is older than Airflow 3, so a copy-pasted snippet can
@@ -40,12 +58,20 @@ def dagbag() -> DagBag:
     return DagBag(dag_folder=str(DAGS_FOLDER))
 
 
+def _dag(dagbag: DagBag, dag_id: str):
+    """One Dag by id, with a readable failure when it has not been written yet."""
+    if dag_id not in dagbag.dags:
+        pytest.fail(f"no Dag with dag_id={dag_id!r} in {DAGS_FOLDER} - found {sorted(dagbag.dag_ids)}")
+    return dagbag.dags[dag_id]
+
+
 def test_no_import_errors(dagbag: DagBag) -> None:
     assert not dagbag.import_errors, f"Dag import errors: {dagbag.import_errors}"
 
 
 def test_dags_were_found(dagbag: DagBag) -> None:
-    assert len(dagbag.dags) >= 7, f"only found {sorted(dagbag.dag_ids)}"
+    missing = EXPECTED_DAGS - set(dagbag.dag_ids)
+    assert not missing, f"Dags not yet written in {DAGS_FOLDER}: {sorted(missing)}"
 
 
 @pytest.mark.parametrize("dag_file", sorted(DAGS_FOLDER.glob("*.py")), ids=lambda p: p.name)
@@ -69,7 +95,7 @@ def test_no_stale_constructs(dag_file: Path) -> None:
 def test_every_dag_has_owner_tags_and_docs(dagbag: DagBag) -> None:
     for dag_id, dag in dagbag.dags.items():
         assert dag.tags, f"{dag_id} has no tags"
-        assert dag.doc_md, f"{dag_id} has no doc_md"
+        assert dag.doc_md, f"{dag_id} has no doc_md - pass doc_md=__doc__ and write a module docstring"
         owner = dag.default_args.get("owner", dag.owner)
         assert owner and owner != "airflow", f"{dag_id} has no explicit owner"
 
@@ -83,13 +109,13 @@ def test_no_cycles(dagbag: DagBag) -> None:
 
 def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag: DagBag) -> None:
     """The wiring this whole tutorial is built on."""
-    mlops = dagbag.dags["mlops"]
+    mlops = _dag(dagbag, "mlops")
     asset_names = {asset.name for asset in mlops.timetable.asset_condition.objects}
     assert "labeled_projects" in asset_names
 
 
 def test_dataops_produces_the_labeled_projects_asset(dagbag: DagBag) -> None:
-    dataops = dagbag.dags["dataops"]
+    dataops = _dag(dagbag, "dataops")
     produced = {
         outlet.name
         for task in dataops.tasks
@@ -101,7 +127,7 @@ def test_dataops_produces_the_labeled_projects_asset(dagbag: DagBag) -> None:
 
 def test_mlops_validates_before_it_trains(dagbag: DagBag) -> None:
     """No model is fitted on a snapshot nobody checked."""
-    mlops = dagbag.dags["mlops"]
+    mlops = _dag(dagbag, "mlops")
     trainer = mlops.get_task("train_candidate")
     assert "validate_training_data" in trainer.upstream_task_ids
 

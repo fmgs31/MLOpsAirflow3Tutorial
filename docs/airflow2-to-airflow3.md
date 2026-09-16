@@ -138,7 +138,7 @@ context.get("logical_date")    # None
 {{ dag_run.run_after }}        {# safe: every run has one #}
 ```
 
-*(Verified: both raised on real triggers of this repo's `dags/01` and `dags/02`,
+*(Verified: both raised on real triggers of this repo's `solutions/01` and `solutions/02`,
 and both were fixed there.)* Audit every `{{ ds }}` in a Dag you are porting —
 in Airflow 2 that variable always existed.
 
@@ -154,7 +154,7 @@ value = ti.xcom_pull(task_ids="upstream_task", key="x")
 
 Also: `enable_xcom_pickling` is gone — XCom values must be JSON-serialisable.
 The original lesson enabled pickling for Great Expectations; on Airflow 3 you
-return a plain dict instead (see `dags/03_dataops.py`).
+return a plain dict instead (see `solutions/03_dataops.py`).
 
 ## 6. No direct metadata-DB access from tasks
 

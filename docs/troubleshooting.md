@@ -45,7 +45,7 @@ airflow dags unpause deadline_alerts
 airflow dags trigger deadline_alerts
 ```
 
-That path works correctly — `dags/07_deadline_alerts.py` fires its callback at
+That path works correctly — `solutions/07_deadline_alerts.py` fires its callback at
 exactly +30s. This is why the `mlops` Dag has no `deadline=`: it would make the
 lesson's own "run it with `airflow dags test`" instruction fail.
 
@@ -83,8 +83,8 @@ in templates and the task fails while rendering, before it executes.
 ```
 
 `airflow dags test` supplies a logical date, so this too only shows up under a
-real trigger. Both of these were live bugs in this repo's own `dags/01` and
-`dags/02` until a manual trigger found them.
+real trigger. Both of these were live bugs in this tutorial's own lesson 1 and
+lesson 2 Dags until a manual trigger found them.
 
 ## `DagBag.__init__() got an unexpected keyword argument 'include_examples'`
 

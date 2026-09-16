@@ -3,15 +3,12 @@
 # which uses CeleryExecutor + Redis + FAB auth. Here we use LocalExecutor and the
 # Simple auth manager so there are fewer moving parts while learning.
 #
-# Note the component list: in Airflow 3 the webserver is gone (it is now the
-# `api-server`) and the dag-processor is its own mandatory process.
-#
-#   postgres            metadata database
-#   airflow-init        one-shot `airflow db migrate`
-#   airflow-apiserver   REST API + React UI + Task Execution API   (was: webserver)
-#   airflow-scheduler   scheduling + LocalExecutor task slots
-#   airflow-dag-processor  parses Dag files                        (new: separate process)
-#   airflow-triggerer   runs async triggers for deferrable tasks
+#   postgres               metadata database
+#   airflow-init           one-shot `airflow db migrate`
+#   airflow-apiserver      REST API + React UI + Task Execution API
+#   airflow-scheduler      scheduling + LocalExecutor task slots
+#   airflow-dag-processor  parses Dag files - its own mandatory process
+#   airflow-triggerer      runs async triggers for deferrable tasks
 ---
 x-airflow-common: &airflow-common
   build: .
@@ -21,6 +18,12 @@ x-airflow-common: &airflow-common
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    # You write the Dags in this tutorial yourself, one file at a time, so the
+    # Dag processor is told to look for new and changed files every 5 seconds.
+    # The defaults (300 and 30) would make a file you just saved take up to
+    # five minutes to appear in the UI.
+    AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+    AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: "5"
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
     # Workers reach the Task Execution API, not the metadata DB directly.
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
@@ -41,7 +44,12 @@ x-airflow-common: &airflow-common
     TAGIFAI_DATA_DIR: /opt/airflow/data
     TAGIFAI_MODEL_REGISTRY: /opt/airflow/model_registry
   volumes:
+    # `dags/` is the Dag folder Airflow parses - the one you write into.
+    # `solutions/` is the finished version of every lesson, mounted read-only
+    # so `pytest` can be pointed at it (DAGS_DIR=solutions); Airflow never
+    # parses it.
     - ./dags:/opt/airflow/dags
+    - ./solutions:/opt/airflow/solutions:ro
     - ./src:/opt/airflow/src
     - ./data:/opt/airflow/data
     - ./model_registry:/opt/airflow/model_registry
@@ -77,7 +85,7 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    # `airflow db init` and `airflow db upgrade` were REMOVED in Airflow 3.
+    # `airflow db migrate` creates the metadata schema and brings it up to date.
     #
     # Goes through the image's own /entrypoint on purpose. When AIRFLOW_UID is
     # not 50000 (up.sh writes yours on Linux/WSL2) the entrypoint is what sets
