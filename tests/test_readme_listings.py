@@ -2,9 +2,9 @@
 
 The appendix in §16 of README.md and README_ES.md does not contain hand-copied
 code; it contains markers that `scripts/sync_readme.py` fills in from the files
-on disk. This test runs that script's `--check` logic on both files, so a Dag
-edited without re-syncing fails here instead of leaving a plausible-looking lie
-in the tutorial.
+in `solutions/`. This test runs that script's `--check` logic on both files, so
+a solution edited without re-syncing fails here instead of leaving a
+plausible-looking lie in the tutorial.
 
     python scripts/sync_readme.py     # the fix when this test fails
 """
@@ -48,13 +48,13 @@ def test_listings_are_in_sync(sync) -> None:
         )
 
 
-def test_every_dag_is_listed(sync) -> None:
-    """A new Dag file should not be able to skip either appendix unnoticed."""
-    dags = {f"dags/{p.name}" for p in (REPO_ROOT / "dags").glob("*.py")}
+def test_every_solution_is_listed(sync) -> None:
+    """A new solution file should not be able to skip either appendix unnoticed."""
+    solutions = {f"solutions/{p.name}" for p in (REPO_ROOT / "solutions").glob("*.py")}
     for readme in READMES:
         listed = {path for path, _ in sync.MARKER.findall(readme.read_text(encoding="utf-8"))}
-        assert dags <= listed, (
-            f"Dags missing from the {readme.name} appendix: {sorted(dags - listed)}"
+        assert solutions <= listed, (
+            f"Solutions missing from the {readme.name} appendix: {sorted(solutions - listed)}"
         )
 
 
@@ -66,7 +66,7 @@ def test_a_changed_file_is_detected(sync) -> None:
     """
     text = README.read_text(encoding="utf-8")
     block = next(
-        m for m in sync.MARKER.finditer(text) if m["path"] == "dags/01_hello_airflow3.py"
+        m for m in sync.MARKER.finditer(text) if m["path"] == "solutions/01_hello_airflow3.py"
     )
     tampered = (
         text[: block.start("body")]
@@ -75,4 +75,4 @@ def test_a_changed_file_is_detected(sync) -> None:
     )
 
     _, stale = sync.render(tampered)
-    assert stale == ["dags/01_hello_airflow3.py"]
+    assert stale == ["solutions/01_hello_airflow3.py"]

@@ -34,6 +34,8 @@ Done. Every shell that runs Airflow needs:
     export PYTHONPATH=${PWD}/src
     export AIRFLOW__CORE__DAGS_FOLDER=${PWD}/dags
     export AIRFLOW__CORE__LOAD_EXAMPLES=False
+    export AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5          # pick up a new file in seconds, not minutes
+    export AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL=5
     source .venv/bin/activate
 
 Then either the all-in-one:

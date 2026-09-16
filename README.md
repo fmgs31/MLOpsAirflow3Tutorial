@@ -1,9 +1,10 @@
 # Learn Apache Airflow 3 by building an ML pipeline
 
-A hands-on tutorial for **Airflow 3.3.1**. You will build seven Dags that grow
-into one working system: data is extracted, validated and transformed, that
-publishes an **Asset**, the Asset triggers model training, the best model is
-promoted to production, and a monitoring Dag decides whether to retrain.
+A hands-on tutorial for **Airflow 3.3.1**. You will write seven Dags, one file
+at a time, that grow into one working system: data is extracted, validated and
+transformed, that publishes an **Asset**, the Asset triggers model training,
+the best model is promoted to production, and a monitoring Dag decides whether
+to retrain.
 
 Everything runs on your machine in Docker. No cloud account, no warehouse, no
 vendor signup. Every command below was executed against a real Airflow 3.3.1
@@ -13,7 +14,8 @@ stack — see [What was actually verified](#17-what-was-actually-verified).
 experience — this teaches Airflow 3 as it is today, and nothing about older
 versions.
 
-**Time:** ~20 minutes to your first Dag run, a few hours for all seven.
+**Time:** ~30 minutes to your first Dag run. A day for all seven if you type
+them yourself, which is the point.
 
 ---
 
@@ -22,10 +24,10 @@ versions.
 1. [What you're building](#1-what-youre-building)
 2. [Get it running](#2-get-it-running)
 3. [The pieces of Airflow](#3-the-pieces-of-airflow)
-4. [The UI](#4-the-ui)
-5. [Your first Dag](#5-your-first-dag)
+4. [Your first Dag](#4-your-first-dag)
+5. [The UI](#5-the-ui)
 6. [Operators, XComs and relationships](#6-operators-xcoms-and-relationships)
-7. [Scheduling, logical dates and backfills](#7-scheduling-logical-dates-and-backfills)
+7. [Scheduling and logical dates](#7-scheduling-and-logical-dates)
 8. [Assets: scheduling on data, not on time](#8-assets-scheduling-on-data-not-on-time)
 9. [The DataOps Dag](#9-the-dataops-dag)
 10. [The MLOps Dag](#10-the-mlops-dag)
@@ -34,7 +36,7 @@ versions.
 13. [Deadline alerts](#13-deadline-alerts)
 14. [Testing Dags](#14-testing-dags)
 15. [Taking it to production](#15-taking-it-to-production)
-16. [Appendix: every Dag in full](#16-appendix-every-dag-in-full)
+16. [Appendix: the finished Dags in full](#16-appendix-the-finished-dags-in-full)
 17. [What was actually verified](#17-what-was-actually-verified)
 
 Reference material: [CLI cheatsheet](docs/cheatsheet.md) ·
@@ -81,6 +83,27 @@ Four more Dags exist to teach one thing each: `hello_airflow3` (a first Dag),
 (waiting for the outside world) and `deadline_alerts` (being told when a run is
 too slow).
 
+### How this tutorial works
+
+You write every one of those seven Dags yourself. The folder Airflow reads,
+`dags/`, is **empty** when you clone this repo. Each section explains a piece of
+Airflow, then has you build the Dag that uses it — a few lines at a time, with
+the reason for each piece next to it — and then run it and check what happened.
+The code is given; the work is typing it, seeing it parse, and watching it run.
+
+Two safety nets:
+
+- **[`solutions/`](solutions/)** holds a finished copy of every file, with the
+  teaching comments left in. Compare when something does not parse, or skip a
+  lesson by copying its file in: `cp solutions/03_dataops.py dags/`. §16 prints
+  every solution in full.
+- **§14's tests** read *your* `dags/` folder. When all seven are written, they
+  tell you whether you built what the tutorial meant.
+
+The lessons build on each other from §9 on — `mlops` is scheduled on an asset
+`dataops` produces, `sensors_and_events` waits for a file `dataops` writes — so
+do them in order, or copy the earlier solutions in first.
+
 ### Why Airflow
 
 Airflow is not the only orchestrator — Prefect, Dagster, Luigi, Metaflow, Flyte,
@@ -99,7 +122,7 @@ worth learning first because:
 
 Airflow orchestrates code; it does not contain it. The code being orchestrated
 lives in `src/tagifai/` and imports no Airflow at all — a small text classifier
-that tags ML projects:
+that tags ML projects. You do not write this part; the Dags call it:
 
 | Module | Role |
 |---|---|
@@ -140,20 +163,22 @@ powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
 ```
 
 **Checkpoint.** The script waits for the API server, then prints the service
-table. Open <http://localhost:8080> — there is no login — and you should see
-seven Dags, all paused. If you don't, jump to
-[troubleshooting](docs/troubleshooting.md).
+table. Open <http://localhost:8080> — there is no login. The Dags list is
+**empty**, and it should be: you have not written one yet. The Home page shows
+the scheduler, triggerer and Dag processor as healthy. If the page does not
+load, jump to [troubleshooting](docs/troubleshooting.md).
 
 ```bash
 docker compose ps
 docker compose exec airflow-scheduler airflow dags list
 ```
 
-Those two lines are the shape of every command from here on. `docker compose …`
-runs on your machine; `airflow …` runs inside the scheduler container, which is
-what the `docker compose exec airflow-scheduler` prefix does. Where this
-tutorial shows an `airflow …` command bare — in a transcript, or as a one-liner
-in prose — it means the same thing, prefix included.
+The second prints `No data found` — the same empty list. Those two lines are
+the shape of every command from here on. `docker compose …` runs on your
+machine; `airflow …` runs inside the scheduler container, which is what the
+`docker compose exec airflow-scheduler` prefix does. Where this tutorial shows
+an `airflow …` command bare — in a transcript, or as a one-liner in prose — it
+means the same thing, prefix included.
 
 The stack is deliberately smaller than the [official
 docker-compose.yaml](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
@@ -171,8 +196,8 @@ One more script, for later. Everything the stack accumulates — runs, task
 logs, the data and models the Dags write — survives a restart of the
 containers, because it lives in a Docker volume and in the `data/`,
 `model_registry/` and `logs/` folders of this repo (§3 comes back to this). To
-throw all of it away and start the tutorial over from a clean slate, on Linux,
-macOS, WSL2 or Git Bash:
+throw all of it away and start over from a clean slate, on Linux, macOS, WSL2
+or Git Bash:
 
 ```bash
 ./scripts/reset.sh
@@ -184,8 +209,9 @@ or in Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
-It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. No step
-in this tutorial needs it; it is here for the day something is wedged and
+It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. It does
+not touch `dags/` — the files you write survive a reset. No step in this
+tutorial needs it; it is here for the day something is wedged and
 [troubleshooting](docs/troubleshooting.md) has not helped.
 
 > **One shell for the rest.** Every command after this point is written for
@@ -199,6 +225,10 @@ in this tutorial needs it; it is here for the day something is wedged and
 > container, and each carries the prefix `MSYS_NO_PATHCONV=1`. It is not
 > decoration: without it Git rewrites the path into a Windows one before Docker
 > sees it.
+
+> **Your editor.** You will be creating files in `dags/` from §4 on. Any editor
+> works; the container sees the folder through a bind mount, so a file saved on
+> your machine is a file inside Airflow a moment later. Nothing needs copying.
 
 ### Native (Linux / macOS / WSL2)
 
@@ -219,6 +249,8 @@ export AIRFLOW_HOME=${PWD}/airflow
 export PYTHONPATH=${PWD}/src                    # so tasks can import `tagifai`
 export AIRFLOW__CORE__DAGS_FOLDER=${PWD}/dags
 export AIRFLOW__CORE__LOAD_EXAMPLES=False
+export AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5            # see §3: pick up a new file in seconds
+export AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL=5
 
 airflow db migrate                              # create the metadata database
 airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}'
@@ -312,12 +344,13 @@ a second at most, and you will not notice it. What you *will* notice is the time
 the upstream tasks themselves take, and that has nothing to do with the
 scheduler.
 
-Parsing is a separate clock. The Dag processor re-reads a changed file at most
-every `[dag_processor] min_file_process_interval` seconds (**30** here) and
-re-scans the folder for new files every `refresh_interval` (**300**). So a Dag
-you just edited can take up to half a minute to change in the UI, and a
-brand-new file up to five — a wait that looks like a broken Dag if you do not
-know the two numbers exist.
+Parsing is a separate clock, and it is the one you are about to depend on. The
+Dag processor re-reads a changed file at most every `[dag_processor]
+min_file_process_interval` seconds and re-scans the folder for new files every
+`refresh_interval`. This stack sets both to **5**, so a file you save shows up
+in the UI within a few seconds. The defaults are 30 and 300: on a stack that
+keeps them, a brand-new file can take five minutes to appear, which looks
+exactly like a broken Dag if you do not know the number exists.
 
 All three numbers are settings, and you can print yours:
 
@@ -419,7 +452,7 @@ The distinction that catches everyone first is **`queued` vs `running`**:
 - **`running`** — a worker has it and your Python is executing. Now there are
   logs.
 
-The rest you will meet as you go: `up_for_retry` between attempts (§5),
+The rest you will meet as you go: `up_for_retry` between attempts (§4),
 `skipped` from a branch (§10), `up_for_reschedule` from a sensor that exits
 between pokes and `deferred` from one suspended onto the triggerer (§11),
 `awaiting_input` while a human decides (§12), and `upstream_failed` on
@@ -444,93 +477,7 @@ metadatabase, scheduler, triggerer and dag processor, the last three with the
 time of their most recent heartbeat. The interactive API docs are at
 <http://localhost:8080/docs>.
 
-## 4. The UI
-
-The UI is a React application on top of the REST API, served by the api-server
-at <http://localhost:8080>. Half of what this tutorial teaches is easier to see
-than to read about, so take the tour with the stack running.
-
-The nav is **Home · Dags · Assets · Browse · Admin · Plugins · Security · Docs**.
-
-**Home** — health of the scheduler, triggerer and Dag processor, import errors,
-failed runs and tasks, recent asset events, deadlines and pool slots. Open it
-first when something is not running: a Dag that never appears in the list is
-usually an import error sitting on this page.
-
-**Dags** — the list, as cards or a table, filtered by tag, owner or state, with
-the pause toggle and a **Trigger** button on each row. A Dag scheduled on assets
-shows its asset condition where a cron Dag shows its schedule.
-
-**A Dag's page** puts the run history on the left and detail tabs on the right.
-The left panel holds **Grid** and **Graph** — `g` toggles between them — plus
-**Show Gantt**, a graph direction control, and filters worth knowing:
-
-- **Dependencies: All Dag Dependencies / External conditions / Only tasks.**
-  Switch it away from "Only tasks" on `mlops` and the graph draws the
-  `labeled_projects` asset that triggered the run, not just the tasks inside it.
-- **Min. map index** — "shows mapped tasks expanded to at least this index". A
-  mapped task like `train_candidate` (§10) is one collapsed node until you raise
-  this; raise it and each hyperparameter set gets its own.
-- Version indicators, and **Download graph image**.
-
-The tabs are Overview, Runs, Tasks, Backfills, Asset Events, Audit Log,
-Calendar, Code, Details and — when a task is waiting on a human — **Required
-Actions**. Click a run, then a task, and the same strip becomes that task
-instance's: **Logs**, **XCom**, **Rendered Templates**, and **Task Instances**
-for a mapped fan-out.
-
-**The Dag version selector.** Every Dag run records the version of the code it
-ran with, so the picker (`v1`, `v2`, … or **All Versions**) lets you look at a
-run through the code that actually produced it, with the bundle name, bundle
-version and parse time on the **Code** tab. A *bundle* is a place the Dag
-processor loads Dags from; this stack has one, the `dags/` folder, and it is
-named `dags-folder` — which is the `bundle_name` column you saw in `airflow dags
-list` (§15 has the other kinds). Edit a Dag and its version count goes up; last
-week's run still shows last week's graph.
-
-**The Trigger form is generated from your `params`.** This is why params are
-worth declaring with types:
-
-```python
-params={"greeting": Param("hello", type="string")}              # dags/01
-POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
-```
-
-A string param becomes a text field, a number a numeric one, an enum a dropdown,
-and required fields are validated before the run is created. Under **Advanced
-Options** the same thing is editable as raw **Configuration JSON**, and the form
-also offers a run id, a logical date, a manual data interval, and an *"Unpause …
-on trigger"* checkbox — which exists because triggering a paused Dag leaves the
-run **queued** forever (§7).
-
-The same dialog has a second mode, **Backfill**: a date range, a **Reprocess
-Behavior** (missing runs / missing and errored runs / all runs), max active runs,
-"run backwards", and a dry run that tells you *"N runs will be triggered"*
-before you commit. Asset-scheduled Dags say *"This Dag's schedule does not
-support backfills"* — `mlops` cannot be backfilled, because there is no date
-range to replay, only asset events.
-
-**Assets** — the tab this tutorial was built for. It lists every asset with its
-producing tasks, consuming Dags and event history, and draws the cross-Dag
-graph: `dataops` → `labeled_projects` → `mlops` → `production_model` (produced
-by the promotion, consumed by nobody yet — point a Dag's `schedule` at it and
-the edge appears). That graph is the one picture of the whole pipeline; the Dags
-list cannot show it, because the connection is not a dependency between Dags, it
-is an asset between them. **Create Event** on an asset either materializes it
-(run the Dag upstream) or records a manual event — which is how you trigger a
-downstream Dag without pretending to produce the data.
-
-**Browse** — Audit Log (who triggered, paused, cleared what), **Deadlines**
-(pending and missed deadline alerts, §13), and XComs.
-
-**Admin** — Connections, Variables, Pools, Providers, Plugins, Jobs and the
-rendered Airflow **Config**. Connections and Variables are the two you will use:
-never put a credential in a Dag file.
-
-> **Security and Plugins** are near-empty here. This stack runs the Simple auth
-> manager with everyone an admin, so there are no users or roles to manage.
-
-## 5. Your first Dag
+## 4. Your first Dag
 
 Everything a Dag author needs is in `airflow.sdk`, the Task SDK:
 
@@ -538,99 +485,34 @@ Everything a Dag author needs is in `airflow.sdk`, the Task SDK:
 from airflow.sdk import dag, task, DAG, Param, Asset, chain, Label
 ```
 
-Here is [`dags/01_hello_airflow3.py`](dags/01_hello_airflow3.py), trimmed to its
-shape:
+You are going to write `dags/01_hello_airflow3.py`: four tasks that build a
+greeting, shout it, count its words and print the result. Small enough to hold
+in your head, and every idea in it comes back in every later Dag.
 
-```python
+### Build it
+
+Create the file `dags/01_hello_airflow3.py` and start it with a docstring, the
+imports, and a dictionary of defaults:
+
+```python dags/01_hello_airflow3.py
+"""Lesson 1 - a Dag, tasks, and dependencies."""
+
+from __future__ import annotations
+
 import pendulum
 from airflow.sdk import Param, dag, task
 
-@dag(
-    dag_id="hello_airflow3",
-    schedule=None,                                        # manual / API only
-    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),   # no run before this (§7)
-    catchup=False,
-    default_args={"owner": "mlops-course", "retries": 2,
-                  "retry_delay": pendulum.duration(seconds=30)},
-    tags=["tutorial", "basics"],
-    params={"greeting": Param("hello", type="string")},
-)
-def hello_airflow3():
-
-    @task
-    def make_greeting(**context) -> str:
-        greeting = context["params"]["greeting"]
-        # `.get`, never `context["logical_date"]` — on a manual run the key is
-        # absent from the context entirely, and indexing it raises (§7).
-        when = context.get("logical_date") or "no logical date (manual run)"
-        return f"{greeting} from run {context['run_id']} at {when}"
-
-    @task
-    def shout(message: str) -> str:
-        return message.upper()
-
-    @task
-    def count_words(message: str) -> int:
-        return len(message.split())
-
-    @task
-    def report(loud: str, words: int) -> None:
-        print(f"{loud}  ({words} words)")
-
-    message = make_greeting()
-    report(loud=shout(message), words=count_words(message))
-
-hello_airflow3()          # the decorator defines it; calling it registers it
+DEFAULT_ARGS = {
+    "owner": "mlops-course",
+    "retries": 2,
+    "retry_delay": pendulum.duration(seconds=30),
+}
 ```
 
-This decorator style has a name, **TaskFlow**, and the name will keep coming up.
-Three things are happening:
-
-1. **`@dag` turns a function into a Dag**, and calling that function at the
-   bottom of the file registers it. A Dag file that defines a Dag but never
-   calls it produces nothing — a common first mistake.
-2. **`@task` turns a function into a task.** Calling it does *not* run it: it
-   returns an `XComArg`, a lazy reference to that task's future output.
-3. **Passing that reference to another task draws the edge.** `shout(message)`
-   is what makes `shout` run after `make_greeting`. The graph is built when the
-   file is parsed; the code runs later, possibly on another machine.
-
-So the four calls at the bottom produce this shape. Nothing makes `shout` and
-`count_words` wait for each other, so a scheduler-driven run is free to execute
-them at the same time (§3 says what decides that):
-
-```
-make_greeting ─┬─► shout ──────┬─► report
-               └─► count_words ┘
-```
-
-That parse step is worth knowing about now, because it is the first thing that
-fails once you start writing your own files. The Dag processor (§3) imports
-each file in `dags/`; a file that raises on import — a typo, a missing package,
-a `@dag` function that throws — is not a broken Dag in the list, it is **no Dag
-at all**: absent from the UI, absent from `airflow dags list`. It surfaces on
-the Home page (§4) and in this command:
-
-```bash
-docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
-```
-
-**Checkpoint.** `No data found` — all seven files import. When one does not,
-you get the file and the full traceback instead:
-
-```
-bundle_name    filepath                 error
-dags-folder    zz_broken_on_purpose.py  Traceback (most recent call last):
-                                          File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
-                                          File "/opt/airflow/dags/zz_broken_on_purpose.py", line 2, in <module>
-                                            import a_module_that_does_not_exist
-                                        ModuleNotFoundError: No module named 'a_module_that_does_not_exist'
-```
-
-Mistake 1 above — a file that defines a Dag and never calls it — is the other
-kind of nothing: it imports cleanly, so it does not appear here either, and the
-only symptom is a Dag that is not there. Check this list first, then the bottom
-of the file.
+The docstring is not decoration: in a moment you will pass it as the Dag's
+in-UI documentation. `pendulum` is the timezone-aware datetime library Airflow
+uses everywhere; a naive `datetime` for a `start_date` is a mistake you would
+rather not learn about at 03:00 UTC.
 
 **`default_args` is a dictionary applied to every task in the Dag.** Anything a
 task accepts can go in it, and a task that sets the same argument itself wins.
@@ -640,8 +522,7 @@ It exists so you do not repeat `owner=` and `retries=` on twenty tasks.
 says who to ask when the Dag breaks. This repo's integrity tests (§14) reject
 the default, `airflow`, because an owner that is nobody means nobody gets paged.
 
-The other two are worth knowing now, because they are the first thing you will
-wish you had set:
+The other two are the first thing you will wish you had set:
 
 - **`retries=2`** — if the task raises, Airflow will run it up to two more
   times. The task instance goes to `up_for_retry`, waits, and is scheduled
@@ -662,8 +543,170 @@ throttled API, a node that died. For a failure that *will* happen again, raising
 `AirflowFailException` (§9) skips the remaining attempts and fails immediately:
 bad data does not become good on the third read.
 
-**Run it now.** This executes a complete Dag run in your terminal, no scheduler
-involved:
+Now the Dag itself. Add the decorator and the function it decorates:
+
+```python dags/01_hello_airflow3.py
+
+@dag(
+    dag_id="hello_airflow3",
+    schedule=None,
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    tags=["tutorial", "basics"],
+    doc_md=__doc__,
+    params={"greeting": Param("hello", type="string", description="What to say.")},
+)
+def hello_airflow3():
+```
+
+Line by line:
+
+- **`@dag` turns a function into a Dag.** This decorator style has a name,
+  **TaskFlow**, and the name will keep coming up.
+- **`schedule=None`** — this Dag runs only when something asks it to: you, the
+  UI, or the API. §7 has the other values a schedule can take.
+- **`start_date`** — no run is ever scheduled before this moment (§7). A Dag
+  without one still parses, so Airflow will not remind you.
+- **`catchup=False`** — the default, stated explicitly because it is the flag
+  that decides whether un-pausing a Dag floods you with historical runs (§7).
+- **`tags`** — free-form labels; the Dags list filters on them.
+- **`doc_md=__doc__`** — the module docstring you just wrote, rendered as
+  markdown on the Dag's page in the UI. `description=` is the shorter cousin,
+  one line shown next to the Dag in the list.
+- **`params`** — declared inputs, with types. The UI turns these into a form
+  when you trigger the Dag (§5), and a run records the values it used.
+
+Inside the function, the tasks. Indent them — they are the body of
+`hello_airflow3()`:
+
+```python dags/01_hello_airflow3.py
+    @task
+    def make_greeting(**context) -> str:
+        greeting = context["params"]["greeting"]
+        when = context.get("logical_date") or "no logical date (manual run)"
+        return f"{greeting} from run {context['run_id']} at {when}"
+
+    @task
+    def shout(message: str) -> str:
+        return message.upper()
+
+    @task
+    def count_words(message: str) -> int:
+        return len(message.split())
+
+    @task
+    def report(loud: str, words: int) -> None:
+        print(f"{loud}  ({words} words)")
+```
+
+**`@task` turns a function into a task.** Calling it does *not* run it: it
+returns an `XComArg`, a lazy reference to that task's future output. Whatever
+the function returns becomes the task's XCom (§6), and whatever it prints lands
+in the task log, viewable in the UI.
+
+`**context` is how a task sees the run it belongs to: `run_id`, `params`, `ti`
+(the task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`,
+`conn`, `macros`. Read `logical_date` with `.get()`, never
+`context["logical_date"]`: a manual or asset-triggered run has no logical date,
+and the key is then missing from the context entirely — indexing it raises
+`KeyError` at runtime, while `airflow dags test` (which always supplies one)
+stays green. §7 explains the why. `run_id` is always there; prefer it for
+naming things.
+
+Finish the file by wiring the tasks together and registering the Dag:
+
+```python dags/01_hello_airflow3.py
+    message = make_greeting()
+    report(loud=shout(message), words=count_words(message))
+
+
+hello_airflow3()
+```
+
+**Passing one task's output to another draws the edge.** `shout(message)` is
+what makes `shout` run after `make_greeting`. The graph is built when the file
+is parsed; the code runs later, possibly on another machine. Nothing makes
+`shout` and `count_words` wait for each other, so a scheduler-driven run is
+free to execute them at the same time (§3 says what decides that):
+
+```
+make_greeting ─┬─► shout ──────┬─► report
+               └─► count_words ┘
+```
+
+And the last line: **the decorator only defines the Dag; calling the function
+registers it.** A Dag file that defines a Dag and never calls it produces
+nothing — imports cleanly, appears nowhere. It is the most common first mistake
+and the hardest to spot, because there is no error to read.
+
+Save the file. Compare with
+[`solutions/01_hello_airflow3.py`](solutions/01_hello_airflow3.py) if you want
+— it is the same code with the comments left in.
+
+### See it parse
+
+The Dag processor (§3) scans `dags/` every five seconds on this stack, imports
+each `.py` file it finds, and writes what it parsed into the metadata database.
+Within a few seconds of saving:
+
+```bash
+docker compose exec airflow-scheduler airflow dags list -o plain
+```
+
+**Checkpoint.** One row: `hello_airflow3`, owner `['mlops-course']`,
+`is_paused True`, `bundle_name dags-folder`. Reload the UI and the Dag is in
+the list, paused. (Every Dag starts paused — §7.)
+
+If the row is not there, two things can be wrong, and they look identical from
+here. The first is a file that raises on import — a typo, a missing package, a
+`@dag` function that throws. That is not a broken Dag in the list, it is **no
+Dag at all**: absent from the UI, absent from `airflow dags list`. It surfaces
+on the Home page (§5) and in this command:
+
+```bash
+docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
+```
+
+**Checkpoint.** `No data found` — your file imports. See what the other case
+looks like by making one: save this as `dags/zz_broken_on_purpose.py`,
+
+```python
+# An airflow dag file that does not import
+import a_module_that_does_not_exist
+```
+
+wait a few seconds, and run the command again:
+
+```
+bundle_name    filepath                 error
+dags-folder    zz_broken_on_purpose.py  Traceback (most recent call last):
+                                          File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+                                          File "/opt/airflow/dags/zz_broken_on_purpose.py", line 2, in <module>
+                                            import a_module_that_does_not_exist
+                                        ModuleNotFoundError: No module named 'a_module_that_does_not_exist'
+```
+
+The file, the line and the full traceback. Delete the file and the row clears
+by itself on the next scan.
+
+That first comment line is not filler. The Dag processor does not import every
+`.py` it finds: with `[core] dag_discovery_safe_mode` on — the default — it
+first reads the file as text and skips it unless the lowercased contents
+contain `airflow` *and* either `dag` or `asset`. Leave the comment out of that
+broken file and it is never parsed, never listed, and never reported — silence,
+not an error. Every real Dag file passes this test by importing from
+`airflow.sdk`, so it only bites helper modules and experiments; but it is the
+second thing to check when a file is simply not there.
+
+The other kind of nothing is Mistake 1 above — a file that defines a Dag and
+never calls it. It imports cleanly, so `list-import-errors` is empty too, and
+the only symptom is a Dag that is not there. Check this list first, then the
+bottom of the file.
+
+### Run it
+
+This executes a complete Dag run in your terminal, no scheduler involved:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test hello_airflow3
@@ -674,11 +717,12 @@ seven words, because `make_greeting` appends the run id *and* the logical date,
 and the printed date has a space in the middle of it:
 
 ```
-HELLO FROM RUN MANUAL__2026-09-11T08:41:20.514549+00:00 AT 2026-09-11 08:41:19.117857+00:00  (7 words)
+HELLO FROM RUN MANUAL__2026-09-15T12:18:32.454459+00:00 AT 2026-09-15 12:18:33.500053+00:00  (7 words)
 ```
 
 and, at the end, `DagRun Finished: ... state=success`. That is the fastest
-authoring loop there is: a full run with real logs and no UI.
+authoring loop there is: a full run with real logs and no UI. You will use it
+after every Dag you write.
 
 > **What `airflow dags test` is, and is not.** It runs the Dag inside this one
 > command — no scheduler, no executor, no triggerer — and that changes four
@@ -695,8 +739,14 @@ authoring loop there is: a full run with real logs and no UI.
 >
 > It is the fastest way to see a Dag work; §14 says when to stop trusting it.
 
+> **Try it.** Change the greeting without touching the file:
+> `airflow dags test hello_airflow3 --conf '{"greeting": "hola"}'`. The
+> `report` line now starts with `HOLA`. That `--conf` reached the task through
+> `context["params"]` — the `Param` you declared, overridden for one run.
+
 **The other way to declare a Dag** is the context manager, which is fully
-supported and reads better when the tasks are operators rather than functions:
+supported and reads better when the tasks are operators (§6) rather than
+functions. Not for this file — just so you recognise it:
 
 ```python
 from airflow.sdk import DAG
@@ -713,21 +763,115 @@ with DAG(
 Anything created inside the `with` block attaches to that Dag automatically.
 Both forms produce the same object, and one file may hold several Dags.
 
-Two documentation arguments are worth setting on either form: `description=` is
-the one-line summary shown next to the Dag in the list, and `doc_md=` is
-markdown rendered on the Dag's page — every Dag here passes `doc_md=__doc__`, so
-the module docstring *is* the in-UI documentation. `@task(doc_md=...)` does the
-same for a single task.
+## 5. The UI
 
-> **Try it.** Change the greeting without touching the file:
-> `airflow dags test hello_airflow3 --conf '{"greeting": "hola"}'`. Then open the
-> Dag in the UI, press **Trigger**, and notice the form field generated from the
-> `Param`.
+The UI is a React application on top of the REST API, served by the api-server
+at <http://localhost:8080>. Half of what this tutorial teaches is easier to see
+than to read about, so take the tour now that there is a Dag to look at.
+
+The nav is **Home · Dags · Assets · Browse · Admin · Plugins · Security · Docs**.
+
+**Home** — health of the scheduler, triggerer and Dag processor, import errors,
+failed runs and tasks, recent asset events, deadlines and pool slots. Open it
+first when something is not running: a Dag that never appears in the list is
+usually an import error sitting on this page.
+
+**Dags** — the list, as cards or a table, filtered by tag, owner or state, with
+the pause toggle and a **Trigger** button on each row. Yours shows
+`hello_airflow3`, its owner, its two tags, and the one run `airflow dags test`
+made. A Dag scheduled on assets shows its asset condition where a cron Dag
+shows its schedule; yours, with `schedule=None`, shows neither.
+
+**A Dag's page** puts the run history on the left and detail tabs on the right.
+The left panel holds **Grid** and **Graph** — `g` toggles between them — plus
+**Show Gantt**, a graph direction control, and filters worth knowing:
+
+- **Dependencies: All Dag Dependencies / External conditions / Only tasks.**
+  Switch it away from "Only tasks" on `mlops` (§10) and the graph draws the
+  `labeled_projects` asset that triggered the run, not just the tasks inside it.
+- **Min. map index** — "shows mapped tasks expanded to at least this index". A
+  mapped task like `train_candidate` (§10) is one collapsed node until you raise
+  this; raise it and each hyperparameter set gets its own.
+- Version indicators, and **Download graph image**.
+
+The tabs are Overview, Runs, Tasks, Backfills, Asset Events, Audit Log,
+Calendar, Code, Details and — when a task is waiting on a human — **Required
+Actions**. Click a run, then a task, and the same strip becomes that task
+instance's: **Logs**, **XCom**, **Rendered Templates**, and **Task Instances**
+for a mapped fan-out.
+
+**Do it now.** Open `hello_airflow3`, look at the Graph — the fan-out and
+fan-in you drew with two function calls — then click the run, click `report`,
+and open **Logs**: the `(7 words)` line, in the browser this time. Click
+`make_greeting` and open **XCom**: the greeting string, stored under the key
+`return_value`. That is the value `shout` and `count_words` received.
+
+**The Dag version selector.** Every Dag run records the version of the code it
+ran with, so the picker (`v1`, `v2`, … or **All Versions**) lets you look at a
+run through the code that actually produced it, with the bundle name, bundle
+version and parse time on the **Code** tab. A *bundle* is a place the Dag
+processor loads Dags from; this stack has one, the `dags/` folder, and it is
+named `dags-folder` — the `bundle_name` column you saw in `airflow dags list`
+(§15 has the other kinds). Every time you save a change to a Dag file its
+version count goes up, and last week's run still shows last week's graph.
+
+**The Trigger form is generated from your `params`.** This is why params are
+worth declaring with types:
+
+```python
+params={"greeting": Param("hello", type="string")}              # dags/01
+POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
+```
+
+A string param becomes a text field, a number a numeric one, an enum a dropdown,
+and required fields are validated before the run is created. Under **Advanced
+Options** the same thing is editable as raw **Configuration JSON**, and the form
+also offers a run id, a logical date, a manual data interval, and an *"Unpause …
+on trigger"* checkbox — which exists because triggering a paused Dag leaves the
+run **queued** forever (§7).
+
+**Do it now.** Press **Trigger** on `hello_airflow3`. The form has one field,
+`greeting`, pre-filled with `hello` — type something else, tick *Unpause
+hello_airflow3 on trigger*, and submit. A second run appears in the Grid; its
+`report` log has your word in capitals. That is the same `Param` reaching the
+same task by a third route: a default in the file, `--conf` on the command
+line, a form in the browser.
+
+The same dialog has a second mode, **Backfill**: a date range, a **Reprocess
+Behavior** (missing runs / missing and errored runs / all runs), max active runs,
+"run backwards", and a dry run that tells you *"N runs will be triggered"*
+before you commit. It needs a Dag with a schedule, so it waits for §9.
+Asset-scheduled Dags say *"This Dag's schedule does not support backfills"* —
+`mlops` (§10) cannot be backfilled, because there is no date range to replay,
+only asset events.
+
+**Assets** — the tab this tutorial was built for, and empty until §9. Once the
+Dags that use them exist, it lists every asset with its producing tasks,
+consuming Dags and event history, and draws the cross-Dag graph: `dataops` →
+`labeled_projects` → `mlops` → `production_model`. That graph is the one picture
+of the whole pipeline; the Dags list cannot show it, because the connection is
+not a dependency between Dags, it is an asset between them. **Create Event** on
+an asset either materializes it (run the Dag upstream) or records a manual
+event — which is how you trigger a downstream Dag without pretending to produce
+the data.
+
+**Browse** — Audit Log (who triggered, paused, cleared what — your UI trigger
+is in it now), **Deadlines** (pending and missed deadline alerts, §13), and
+XComs.
+
+**Admin** — Connections, Variables, Pools, Providers, Plugins, Jobs and the
+rendered Airflow **Config**. Connections and Variables are the two you will use:
+never put a credential in a Dag file.
+
+> **Security and Plugins** are near-empty here. This stack runs the Simple auth
+> manager with everyone an admin, so there are no users or roles to manage.
 
 ## 6. Operators, XComs and relationships
 
-Operators are the pre-built task types. The common ones ship in
-`apache-airflow-providers-standard`, which is already installed:
+Lesson 1 used `@task`-decorated functions. This one uses **operators**, the
+pre-built task types, and shows that the two styles mix freely in one Dag. The
+common ones ship in `apache-airflow-providers-standard`, which is already
+installed:
 
 ```python
 from airflow.providers.standard.operators.bash import BashOperator
@@ -743,7 +887,8 @@ sensors, installed as `apache-airflow-providers-<name>` and listed in the UI
 under Admin → Providers. Reach for one before writing HTTP calls by hand: a
 provider's operator already handles connections, retries and secret lookup.
 
-When none fits, subclass `BaseOperator`:
+When none fits, subclass `BaseOperator` — not in this lesson, but this is the
+shape:
 
 ```python
 from airflow.sdk import BaseOperator
@@ -763,43 +908,209 @@ That is the right move when a step is reused across Dags and needs its own
 parameters, retries or template fields. For everything else `@task` is less code
 and this repo uses it throughout.
 
+### Build it: XComs first
+
+The Dag you are about to write, `dags/02_operators_and_xcoms.py`, pushes a
+number through five tasks of three different kinds. The thing it teaches is how
+tasks hand values to each other.
+
+**XComs** ("cross-communications") are how tasks pass small values. They are
+stored in the metadata database — and, as everything a task does, a task reads
+and writes them through the Task Execution API, never by touching the database
+itself. TaskFlow used them implicitly in lesson 1: every `return` was an XCom
+push, every argument an XCom pull. With operators you push and pull explicitly.
+
+Create `dags/02_operators_and_xcoms.py` with the imports and two plain Python
+functions that a `PythonOperator` will call:
+
+```python dags/02_operators_and_xcoms.py
+"""Lesson 2 - operators, XComs, and relationships."""
+
+from __future__ import annotations
+
+import pendulum
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import Label, chain, cross_downstream, dag, task
+
+DEFAULT_ARGS = {
+    "owner": "mlops-course",
+    "retries": 1,
+    "retry_delay": pendulum.duration(seconds=30),
+}
+
+
+def _push_seed(ti) -> None:
+    ti.xcom_push(key="seed", value=7)
+
+
+def _multiply(ti, factor: int) -> None:
+    seed = ti.xcom_pull(task_ids="push_seed", key="seed")
+    ti.xcom_push(key="product", value=seed * factor)
+```
+
+`ti` — the task instance — is injected because the parameter is named `ti`,
+the same name-based injection `**context` did in lesson 1. Two things to
+notice:
+
+**`xcom_pull` without `task_ids` reads the current task's own XComs** and
+quietly returns `None`. Almost every pull you write wants `task_ids=`; the
+`_multiply` above names its source.
+
+> **XComs are for metadata, not payloads.** They live in the metadata database.
+> Pass a path, a run id, a row count; put the dataframe in object storage and
+> the model in a registry. Values must be JSON-serialisable.
+
+Now the Dag header and the first three operators:
+
+```python dags/02_operators_and_xcoms.py
+
+@dag(
+    dag_id="operators_and_xcoms",
+    schedule=None,
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    tags=["tutorial", "basics"],
+    doc_md=__doc__,
+)
+def operators_and_xcoms():
+    start = EmptyOperator(task_id="start")
+    push_seed = PythonOperator(task_id="push_seed", python_callable=_push_seed)
+    multiply = PythonOperator(
+        task_id="multiply",
+        python_callable=_multiply,
+        op_kwargs={"factor": 6},
+    )
+```
+
+An operator is instantiated, not called: `task_id` names it, and the rest are
+its own arguments. `EmptyOperator` does nothing and is used as a marker or a
+join point; `PythonOperator` calls the function you give it, with `op_kwargs`
+as keyword arguments.
+
 ### Templates
 
-`template_fields` above is the door into Airflow's templating. Some operator
-arguments — `BashOperator`'s `bash_command`, and any field an operator names in
+The next operator is a `BashOperator`, and its command is not a plain string.
+Some operator arguments — `bash_command`, and any field an operator names in
 its `template_fields` — are **Jinja templates**: strings in which `{{ … }}` is
 filled in *just before the task instance runs*, from that run's context. It is
 how one task, written once, acts on a different run id, date or upstream value
-every time. `dags/02` does exactly this:
+every time. Add it below `multiply`:
 
-```python
-describe = BashOperator(
-    task_id="describe",
-    bash_command=(
-        'echo "run={{ run_id }} ds={{ ds | default(\'none (manual run)\') }} '
-        'product={{ ti.xcom_pull(task_ids=\'multiply\', key=\'product\') }}"'
-    ),
-)
+```python dags/02_operators_and_xcoms.py
+    describe = BashOperator(
+        task_id="describe",
+        bash_command=(
+            'echo "run={{ run_id }} ds={{ ds | default(\'none (manual run)\') }} '
+            'run_after={{ dag_run.run_after }} '
+            'product={{ ti.xcom_pull(task_ids=\'multiply\', key=\'product\') }}"'
+        ),
+    )
 ```
 
 Three consequences. Rendering happens per task instance, in the task's own
 process, so a template can reach anything in the task context — `run_id`,
 `ds`, `ti`, `params`, `var`, `conn`, `dag_run` — and the result is kept: it is
-the **Rendered Templates** tab on the task instance (§4), the place to look
+the **Rendered Templates** tab on the task instance (§5), the place to look
 when a command did not say what you meant. A string that is *not* in
 `template_fields` is never rendered, however many braces it contains. And a
 `@task` function needs none of this — it receives the context as Python
 (`**context`, or a named argument like `ti`) — so templating is mostly an
-operator concern. That is why, in §7, the `{{ ds }}` trap bites `BashOperator`
-and the `context["logical_date"]` trap bites `@task`: the same missing value,
-through two different doors.
+operator concern.
+
+The `| default(...)` on `ds` is the template-side twin of `.get()` in lesson
+1: `ds` is derived from `logical_date`, and a manual or asset-triggered run has
+none. Without the default the task fails with `UndefinedError: 'ds' is
+undefined` while rendering, before it executes — and, as with `KeyError`,
+`airflow dags test` never shows it. §7 is where both traps are explained;
+`{{ dag_run.run_after }}` is the safe alternative, because every run has one.
+
+Now a TaskFlow task in the same Dag, reading an operator's XCom:
+
+```python dags/02_operators_and_xcoms.py
+    @task
+    def taskflow_reader(**context) -> int:
+        product = context["ti"].xcom_pull(task_ids="multiply", key="product")
+        print(f"TaskFlow saw product={product}")
+        return product
+```
+
+TaskFlow tasks and operators mix freely: a `@task` can read an operator's XCom
+and vice versa, and the same `ti.xcom_pull` works from either side.
+
+### Relationships
+
+Nothing above is connected yet. An edge between two tasks is declared one of
+four ways, and this Dag uses all of them. Finish the file with the wiring:
+
+```python dags/02_operators_and_xcoms.py
+    chain(start, push_seed, Label("seed -> product"), multiply, describe)
+
+    product = taskflow_reader()
+    describe >> product
+
+    check_parity = BashOperator(task_id="check_parity", bash_command='echo "parity checked"')
+    check_range = BashOperator(task_id="check_range", bash_command='echo "range checked"')
+    product >> [check_parity, check_range] >> EmptyOperator(task_id="checks_done")
+
+    publish = EmptyOperator(task_id="publish")
+    notify = EmptyOperator(task_id="notify")
+    cross_downstream([check_parity, check_range], [publish, notify])
+
+
+operators_and_xcoms()
+```
+
+1. **Implicitly, by passing one task's output to another.** TaskFlow only, and
+   lesson 1 was made of it. Here `taskflow_reader` takes no argument, so
+   nothing draws its edge for it.
+2. **The shift operators**, when no data flows — `describe >> product` is
+   "describe, then product". `product << describe` is the same edge backwards,
+   and so are `describe.set_downstream(product)` and
+   `product.set_upstream(describe)`, the methods the operators call underneath;
+   use those when the tasks are built in a loop and `>>` reads badly.
+3. **Fan-out and fan-in**: a list on either side of `>>` broadcasts the edge,
+   so `product >> [check_parity, check_range] >> checks_done` is four
+   dependencies, not two.
+4. **`chain()`** — the readable form of a long `>>` line, and the only one that
+   can carry a `Label`, which annotates the edge in the Graph view.
+
+And the fifth thing, `cross_downstream`, for the shape that looks like it
+should work with a list and does not:
+
+```python
+[a, b] >> [c, d]              # TypeError: no operator between two lists
+chain([a, b], [c, d])         # legal, but PAIRS them: a->c and b->d only,
+                              # and raises if the lists differ in length
+cross_downstream([a, b], [c, d])   # what you actually wanted: all-to-all
+```
+
+`cross_downstream` is the Cartesian product — every task on the left upstream of
+every task on the right. `chain_linear` is its sibling for chaining several such
+groups in sequence.
+
+### Run it and look at the graph
+
+```bash
+docker compose exec airflow-scheduler airflow dags test operators_and_xcoms
+```
+
+**Checkpoint.** The `describe` task's line, `run=manual__… ds=… product=42`,
+then `TaskFlow saw product=42` from the reader. Then open the Dag's **Graph**
+view in the UI: the `seed -> product` label on one edge, a two-way fan-out into
+`check_parity`/`check_range`, and those two fanning into both `publish` and
+`notify`. If the graph does not match, compare with
+[`solutions/02_operators_and_xcoms.py`](solutions/02_operators_and_xcoms.py).
 
 ### Hooks, Connections and Variables
 
 An operator is the *task*; a **hook** is the client underneath it. Hooks take a
 `conn_id`, resolve the Connection, build the authenticated client and expose
 methods — `S3Hook.load_file`, `PostgresHook.get_pandas_df`. Use one directly
-inside a `@task` when you want the connection handling but not a whole operator:
+inside a `@task` when you want the connection handling but not a whole
+operator. None of the tutorial's Dags needs one; the shape:
 
 ```python
 from airflow.sdk import BaseHook, Connection, Variable
@@ -823,88 +1134,12 @@ Templates reach them as `{{ conn.fs_default.host }}` and `{{ var.value.my_key }}
 > goes over the Task Execution API, which is what lets a remote worker resolve a
 > Connection it has no database access to.
 >
-> Prefer a **param** (§4) over a global Variable when the value is a policy
+> Prefer a **param** (§5) over a global Variable when the value is a policy
 > knob: params are recorded with the run that used them, Variables are not.
 
-### XComs
+## 7. Scheduling and logical dates
 
-**XComs** ("cross-communications") are how tasks pass small values to each
-other. They are stored in the metadata database — and, as with Connections, a
-task reads and writes them through the Task Execution API, never by touching
-the database itself. TaskFlow uses them implicitly for return values; with
-operators you push and pull explicitly:
-
-```python
-def _push_seed(ti) -> None:
-    ti.xcom_push(key="seed", value=7)
-
-def _multiply(ti, factor: int) -> None:
-    seed = ti.xcom_pull(task_ids="push_seed", key="seed")    # name the source!
-    ti.xcom_push(key="product", value=seed * factor)
-```
-
-**`xcom_pull` without `task_ids` reads the current task's own XComs** and
-quietly returns `None`. Almost every pull you write wants `task_ids=`.
-
-> **XComs are for metadata, not payloads.** They live in the metadata database.
-> Pass a path, a run id, a row count; put the dataframe in object storage and
-> the model in a registry. Values must be JSON-serialisable.
-
-TaskFlow tasks and operators mix freely in one Dag — a `@task` can read an
-operator's XCom and vice versa, which is what
-[`dags/02_operators_and_xcoms.py`](dags/02_operators_and_xcoms.py) demonstrates.
-
-### Relationships
-
-An edge between two tasks is declared one of four ways, all of them in that same
-Dag:
-
-```python
-from airflow.sdk import Label, chain, cross_downstream
-
-# 1. Implicitly, by passing one task's output to another. TaskFlow only.
-report(loud=shout(message))
-
-# 2. The shift operators, when no data flows — `a >> b` is "a then b".
-describe >> product          # `product << describe` is the same edge, backwards
-                             # so is describe.set_downstream(product), and
-                             # product.set_upstream(describe) — the methods the
-                             # operators call underneath. Use them when the
-                             # tasks are built in a loop and `>>` reads badly.
-
-# 3. Fan-out and fan-in: a list on either side broadcasts the edge.
-product >> [check_parity, check_range] >> checks_done   # four dependencies
-
-# 4. `chain()` — the readable form of a long `>>` line, and the only one that
-#    can carry a `Label`, which annotates the edge in the Graph view.
-chain(start, push_seed, Label("seed -> product"), multiply, describe)
-```
-
-Two shapes that look like they should work, and do not:
-
-```python
-[a, b] >> [c, d]              # TypeError: no operator between two lists
-chain([a, b], [c, d])         # legal, but PAIRS them: a->c and b->d only,
-                              # and raises if the lists differ in length
-cross_downstream([a, b], [c, d])   # what you actually wanted: all-to-all
-```
-
-`cross_downstream` is the Cartesian product — every task on the left upstream of
-every task on the right. `chain_linear` is its sibling for chaining several such
-groups in sequence.
-
-**Run it and look at the graph:**
-
-```bash
-docker compose exec airflow-scheduler airflow dags test operators_and_xcoms
-```
-
-**Checkpoint.** The Bash task prints `product=42`. Then open the Dag's **Graph**
-view in the UI: you should see the `seed -> product` label on one edge, a
-two-way fan-out into `check_parity`/`check_range`, and those two fanning into
-both `publish` and `notify`.
-
-## 7. Scheduling, logical dates and backfills
+Both Dags so far have `schedule=None`. The other values:
 
 ```python
 schedule=None                       # manual / API only
@@ -924,9 +1159,10 @@ and `data_interval_end`, and labelled by the run's `logical_date`. None of
 those is "when it ran"; `run_after` is that. How the slice is cut depends on
 the form of `schedule=`, and the two common forms differ:
 
-- **A cron string** — `"0 3 * * *"`, which is `dataops`'s schedule — fires at
-  the moment it names, and the slice *is* that moment: `logical_date`,
-  `data_interval_start` and `data_interval_end` are all 03:00.
+- **A cron string** — `"0 3 * * *"`, which is the schedule you will give
+  `dataops` in §9 — fires at the moment it names, and the slice *is* that
+  moment: `logical_date`, `data_interval_start` and `data_interval_end` are
+  all 03:00.
 - **A `timedelta`** — `timedelta(days=1)` — is a span. The run *for* 2026-09-10
   is created once that day is over, at 2026-09-11 00:00, and its `logical_date`
   is 2026-09-10 00:00: the start of the span, a day before the run happens.
@@ -940,10 +1176,15 @@ remember, not something Airflow reminds you of.
 Hold that picture and the rest of this section is consequences of it. Three
 things about scheduling that will save you an afternoon:
 
-**`catchup` defaults to `False`** (`[scheduler] catchup_by_default`).
-Un-pausing a Dag with a 2024 `start_date` does not create a run for every slice
-since then; you get the next one only. If you *want* the history, ask for it
-with `catchup=True` — or backfill just the range you need (below).
+**`catchup` defaults to `False`** (`[scheduler] catchup_by_default`), and what
+it does on un-pause is precise. Un-pausing a cron Dag with a 2025 `start_date`
+does not create a run for every slice since then. It creates **one**, for the
+most recent slice the cron has already passed — today's 03:00 if that is
+behind you, yesterday's if not — and it creates it immediately, because that
+slice is overdue. From there on, one per slice as they come due. You will
+watch this happen in §10: un-pausing `dataops` is enough to start it. If you
+*want* the history, ask for it with `catchup=True` — or backfill just the range
+you need (§9).
 
 **A cron string fires at the time it says.** `schedule="0 3 * * *"` runs at
 03:00 and the run's `logical_date` is 03:00. Timetables are free to define that
@@ -951,7 +1192,8 @@ differently, which is why the Dag's **Calendar** tab and the *"Next run"* column
 are worth checking after you write one.
 
 **`logical_date` is nullable.** It labels the slice a scheduled run is for —
-and manual and asset-triggered runs, which are for no slice, simply have none:
+and manual and asset-triggered runs, which are for no slice, simply have none.
+This is what `mlops`'s run list will look like in §10, one run of each kind:
 
 ```bash
 $ airflow dags list-runs mlops -o plain
@@ -967,11 +1209,12 @@ available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
 
 ### Manual runs
 
-A schedule is not the only way to start a Dag. Two commands cover most of it:
+A schedule is not the only way to start a Dag. Two commands cover most of it,
+and `hello_airflow3` is the Dag to try them on:
 
 ```bash
-airflow dags unpause hello_airflow3
-airflow dags trigger hello_airflow3 -c '{"greeting": "hola"}' -r manual-demo-1
+docker compose exec airflow-scheduler airflow dags unpause hello_airflow3
+docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"greeting": "hola"}' -r manual-demo-1
 ```
 
 - **`-c/--conf`** is a JSON object. It lands in `dag_run.conf`, and any key that
@@ -980,7 +1223,7 @@ airflow dags trigger hello_airflow3 -c '{"greeting": "hola"}' -r manual-demo-1
 - **`-l/--logical-date`** sets one. Without it the run has none — see the trap
   below.
 - In the UI the same thing is the **Trigger** button, with the form generated
-  from your `params` (§4).
+  from your `params` (§5) — you pressed it in §5.
 
 A new Dag arrives **paused** (`[core] dags_are_paused_at_creation`), so
 `unpause` is not optional — and it is the step everyone forgets:
@@ -1018,51 +1261,14 @@ The UI's trigger form has an *"Unpause … on trigger"* checkbox for exactly thi
 > "{{ dag_run.run_after }}"        # fine — every run has one
 > ```
 >
-> Both of those were live bugs in `dags/01` and `dags/02` until a manual trigger
-> found them. Asset-triggered runs have no logical date either, so `mlops` is
-> exposed to the same thing.
+> You wrote the safe form of both in lessons 1 and 2, which is why the runs
+> you just triggered succeeded. Both were live bugs in this tutorial's own
+> Dags until a manual trigger found them. Asset-triggered runs have no logical
+> date either, so `mlops` is exposed to the same thing.
 
 Two more ways in: `airflow dags test <dag_id>` runs the whole Dag in-process
 (§14), and the REST API does it over HTTP —
 `POST /api/v2/dags/{dag_id}/dagRuns`, which is what the UI button calls.
-
-### Backfills
-
-A backfill creates the runs for every slice in a date range, after the fact.
-Backfills are first-class objects, with their own API, UI form and reprocess
-policy. **Dry-run it first** — a backfill of a busy Dag is the easiest way to
-create thirty runs by accident:
-
-```bash
-docker compose exec airflow-scheduler airflow backfill create \
-    --dag-id dataops --from-date 2026-02-01 --to-date 2026-02-04 --dry-run
-```
-
-**Checkpoint.** A table headed `Runs to be attempted:` with three rows —
-2026-02-01, 02 and 03, each at 03:00 — and nothing created. `--to-date` is
-exclusive, and each row is one slice of `dataops`'s daily cron.
-
-Drop `--dry-run` and the same command creates those three runs, with run ids
-beginning `backfill__`. Know what follows before you do it:
-
-- The runs are created **queued**, and if the Dag is paused they stay that way
-  — the rule above — until you un-pause it, when they all start,
-  `--max-active-runs` at a time.
-- Every `dataops` backfill run that succeeds emits a `labeled_projects` asset
-  event exactly as a normal run does (§8), so an un-paused `mlops` trains after
-  them. Backfilling a producer backfills its consumers.
-- The CLI in 3.3.1 only *creates* backfills. To stop one, cancel it in the
-  Dag's **Backfills** tab, or through the API — `PUT
-  /api/v2/backfills/{id}/cancel`, no token needed on this all-admins stack —
-  which marks its still-queued runs `failed`. Pausing the Dag is the emergency
-  brake: a paused Dag starts nothing.
-
-`--reprocess-behavior` decides what to do with slices that already have a run —
-`none`, `failed` or `completed` — which is the difference between "fill the
-gaps" and "redo the month". In the UI: Dag → **Trigger** → **Backfill**, which
-dry-runs the range and tells you how many runs it will create before you
-commit. This is also why an asset-scheduled Dag cannot be backfilled (§4): it
-has no slices, only events.
 
 ## 8. Assets: scheduling on data, not on time
 
@@ -1071,7 +1277,9 @@ An **Asset** is a named piece of data. A task declares it produces one with
 the whole mechanism, and it replaces every "run 30 minutes after the other Dag,
 and hope" cron you have ever seen.
 
-[`src/tagifai/assets.py`](src/tagifai/assets.py):
+The assets this tutorial uses are already defined, in
+[`src/tagifai/assets.py`](src/tagifai/assets.py), so that both Dags import the
+same objects:
 
 ```python
 from airflow.sdk import Asset
@@ -1083,8 +1291,8 @@ LABELED_PROJECTS = Asset(
 )
 ```
 
-Producer — note that the outlet is on the **validation** task, not the transform
-task:
+The producer side is what you will write in §9 — note that the outlet goes on
+the **validation** task, not the transform task:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
@@ -1097,7 +1305,7 @@ def validate_transformed(fp: str, *, outlet_events) -> dict:
     return {...}
 ```
 
-Consumer:
+And the consumer side, §10:
 
 ```python
 @dag(schedule=[LABELED_PROJECTS], ...)
@@ -1124,17 +1332,13 @@ More asset machinery worth knowing:
 | `AssetWatcher` + `BaseEventTrigger` | **event-driven** runs (§11) |
 | `CronPartitionTimetable` | partitioned assets |
 
-```bash
-$ airflow assets list -o plain
-name              uri               group    extra
-labeled_projects  labeled_projects  dataset  {'layer': 'warehouse', ...}
-production_model  production_model  model    {'owner': 'ml-engineering'}
-raw_projects      raw_projects      dataset  {'layer': 'raw', ...}
-```
-
 Assets here are **name-only**, which keeps their identity the same in Docker and
 native runs. In production give them the real URI of the data (`s3://…`,
 `bq://…`) so the lineage in the UI points somewhere.
+
+An asset exists in Airflow's eyes only once a parsed Dag refers to it — as an
+outlet or a schedule. Right now `airflow assets list` prints `No data found`,
+and the Assets tab is empty; §9 changes that the moment you save a file.
 
 ### What an asset event actually is
 
@@ -1154,34 +1358,15 @@ three `dataops` runs finish while it is busy, the *next* `mlops` run takes all
 three events, and `triggering_asset_events` in `prepare_data` lists every one
 of them. A consumer catches up in one run, not three.
 
-Ask the database what it knows, without running anything:
-
-```bash
-docker compose exec airflow-scheduler airflow assets list -o plain
-docker compose exec airflow-scheduler airflow assets details --name labeled_projects -o plain
-```
-
-**Checkpoint.** The second command prints the wiring of the whole pipeline
-before you have run any of it:
-
-```
-name              labeled_projects
-group             dataset
-extra             {'layer': 'warehouse', 'owner': 'data-engineering'}
-scheduled_dags    [{'dag_id': 'mlops', ...}]
-producing_tasks   [{'dag_id': 'dataops', 'task_id': 'validate_transformed', ...}]
-```
-
-`producing_tasks` names the exact task that emits it; `scheduled_dags` names
-what will start when it does. Neither Dag mentions the other anywhere.
-
 > **A paused consumer does not queue, and does not catch up.** The word
 > *unpaused* above is load-bearing. If `mlops` is paused when `dataops` emits,
 > the asset event is still written — you will see it in the table and on the
 > Assets page — but no run is queued for `mlops`, and **un-pausing later does
 > not replay it**. Airflow filters paused Dags at the moment it decides what to
-> enqueue, so there is nothing left to find afterwards. (Checked both ways on
-> this stack — see §17.)
+> enqueue, so there is nothing left to find afterwards. The same goes for a
+> consumer that did not exist yet when the event was written: the `dataops`
+> run you make in §9 will emit an event that `mlops`, written in §10, never
+> sees. (Checked all three ways on this stack — see §17.)
 >
 > This is the opposite of the paused-Dag behaviour in §7, where a *manual*
 > trigger creates the run first and the pause only holds it. Asset scheduling
@@ -1189,8 +1374,9 @@ what will start when it does. Neither Dag mentions the other anywhere.
 
 ## 9. The DataOps Dag
 
-[`dags/03_dataops.py`](dags/03_dataops.py) — extract → validate → transform →
-validate. Each task is a slot you can swap for a real vendor:
+`dags/03_dataops.py` — extract → validate → transform → validate. The first
+Dag here that does real work, and each task is a slot you can swap for a real
+vendor:
 
 | Task here | Production option |
 |---|---|
@@ -1198,10 +1384,11 @@ validate. Each task is a slot you can swap for a real vendor:
 | `validate_raw`, `validate_transformed` | Great Expectations / Soda / dbt tests |
 | `transform` | dbt Cloud / astronomer-cosmos |
 
-It is also the one Dag here with a real cron — `schedule="0 3 * * *"`, the
-example from §7 — so once you un-pause it in §10 it will run by itself at 03:00
-UTC every day, and each of those runs triggers `mlops` in turn. (`monitoring`,
-§12, is the other scheduled one, at 06:00.) Leave the stack up overnight and the
+It is also the first Dag here with a real cron — `schedule="0 3 * * *"`, the
+example from §7 — so once you un-pause it in §10 it will run by itself: once
+immediately, for the slice its cron most recently missed, and then at 03:00 UTC
+every day, each run triggering `mlops` in turn. (`monitoring`, §12, is the
+other scheduled one, at 06:00.) Leave the stack up overnight and the
 `scheduled__` runs you find in the morning are that, not a bug.
 
 > **About the source data.** `projects.csv` arrives already labelled — one table
@@ -1217,30 +1404,242 @@ UTC every day, and each of those runs triggers `mlops` in turn. (`monitoring`,
 > That is the fan-in from §6, and it is the only structural difference. Nothing
 > else in this Dag changes with the number of sources.
 
-The validation gate is the part worth copying:
+### Build it
 
-```python
-@task
-def validate_raw(fp: str) -> dict:
-    result = validate.run_suite(data.load_raw(fp), "raw_projects")
-    if not result.passed:
-        # AirflowFailException stops retries: bad data will not fix itself
-        # by running the same task again.
-        raise AirflowFailException(f"Raw data failed validation: {result.failures}")
-    return {"suite": result.suite, "results": result.results}
+The workload this Dag calls, all in `src/tagifai/`: `data.extract()` downloads
+the CSV into the landing zone and returns its path; `data.load_raw(fp)` and
+`data.load_labeled(fp)` read a table; `data.transform(df)` produces the curated
+table and `data.save_labeled(df)` writes it, returning the path;
+`validate.run_suite(df, suite_name)` runs a named set of expectations and
+returns a result with `.passed`, `.failures`, `.results`, `.suite` and a
+`.summary()` line. `config.ensure_dirs()` creates the folders.
+
+Create `dags/03_dataops.py`:
+
+```python dags/03_dataops.py
+"""Lesson 3 - the DataOps Dag: extract -> validate -> transform -> validate."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pendulum
+from airflow.sdk import dag, task, task_group
+from airflow.sdk.exceptions import AirflowFailException
+
+from tagifai import config, data, validate
+from tagifai.assets import LABELED_PROJECTS, RAW_PROJECTS
+
+DEFAULT_ARGS = {
+    "owner": "data-engineering",
+    "retries": 2,
+    "retry_delay": pendulum.duration(minutes=1),
+}
+
+
+@dag(
+    dag_id="dataops",
+    schedule="0 3 * * *",
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS,
+    tags=["tutorial", "dataops"],
+    doc_md=__doc__,
+)
+def dataops():
 ```
 
-Two details that are easy to get wrong:
+Two imports are new. `AirflowFailException` comes from `airflow.sdk.exceptions`
+— task code imports exceptions from the Task SDK, because that is the namespace
+a remote worker has. And `tagifai` imports at all because the compose file puts
+`/opt/airflow/src` on `PYTHONPATH` for every service: the Dag processor needs
+it to parse the file, and the executor needs it to run the tasks.
+
+`max_active_runs=1` caps the Dag at one run at a time — a second one, from a
+trigger or a schedule, waits in `queued` until the first is done.
+
+The first task produces an asset. Add it inside `dataops()`:
+
+```python dags/03_dataops.py
+    @task(outlets=[RAW_PROJECTS])
+    def extract_projects(*, outlet_events) -> str:
+        config.ensure_dirs()
+        fp = data.extract()
+        df = data.load_raw(fp)
+        outlet_events[RAW_PROJECTS].extra = {"rows": len(df), "path": str(fp)}
+        return str(fp)
+```
+
+`outlets=` is the declaration from §8; `outlet_events` is injected by name,
+like `ti`, and lets the task attach metadata to the event it is about to emit.
+The task returns a **path**, not the dataframe: XComs carry pointers.
+
+Now the gate on the raw data, and the transform:
+
+```python dags/03_dataops.py
+    @task
+    def validate_raw(fp: str) -> dict[str, Any]:
+        result = validate.run_suite(data.load_raw(fp), "raw_projects")
+        print(result.summary())
+        if not result.passed:
+            raise AirflowFailException(f"Raw data failed validation: {result.failures}")
+        return {"suite": result.suite, "results": result.results}
+
+    @task
+    def transform(fp: str) -> str:
+        df = data.transform(data.load_raw(fp))
+        out = data.save_labeled(df)
+        print(f"Wrote {len(df)} rows to {out}")
+        return str(out)
+```
+
+The validation gate is the part worth copying, and two details in it are easy
+to get wrong:
 
 - **`AirflowFailException`, not `AirflowException`.** A data-quality failure is
-  not transient; retrying it three times just delays the alert. Import it from
-  `airflow.sdk.exceptions`, the namespace task code uses.
+  not transient; with `retries=2` in the defaults, a plain exception would run
+  the same check three times and delay the alert by two minutes.
+  `AirflowFailException` fails the task at once, retries or not.
 - **Expectations are non-critical when they mean "look at this", not "stop".**
   An unexpected tag appearing is a signal to inspect the label space, not a
-  reason to halt the pipeline. `validate.py` marks that one `critical=False`.
+  reason to halt the pipeline. `validate.py` marks that one `critical=False`,
+  so it lands in `result.failures` without flipping `result.passed`.
 
-The Dag also uses `@task_group`, which nests tasks under one collapsible node in
-the Graph view — worth reaching for once a Dag passes a dozen tasks.
+The final gate — the one that emits the asset `mlops` will be scheduled on:
+
+```python dags/03_dataops.py
+    @task(outlets=[LABELED_PROJECTS])
+    def validate_transformed(fp: str, *, outlet_events) -> dict[str, Any]:
+        df = data.load_labeled(fp)
+        result = validate.run_suite(df, "labeled_projects")
+        print(result.summary())
+        if not result.passed:
+            raise AirflowFailException(f"Labeled data failed validation: {result.failures}")
+        outlet_events[LABELED_PROJECTS].extra = {
+            "rows": len(df),
+            "tags": sorted(df["tag"].unique().tolist()),
+            "path": fp,
+            "warnings": [r["expectation"] for r in result.failures],
+        }
+        return {"suite": result.suite, "rows": len(df), "results": result.results}
+```
+
+Placing the outlet on the *validation* task, not the transform task, is the
+whole trick: the event is written only when this task succeeds, so downstream
+Dags are scheduled on "good data arrived", never on "a task finished".
+
+One more task, inside a **task group** — `@task_group` nests tasks under one
+collapsible node in the Graph view, worth reaching for once a Dag passes a
+dozen tasks — and then the wiring:
+
+```python dags/03_dataops.py
+    @task_group(group_id="quality_report")
+    def quality_report(raw_report: dict[str, Any], curated_report: dict[str, Any]):
+
+        @task
+        def summarize(raw: dict[str, Any], curated: dict[str, Any]) -> None:
+            for report in (raw, curated):
+                failed = [r["expectation"] for r in report["results"] if not r["passed"]]
+                print(f"{report['suite']}: {len(report['results'])} checks, failed={failed or 'none'}")
+
+        summarize(raw_report, curated_report)
+
+    raw_fp = extract_projects()
+    raw_report = validate_raw(raw_fp)
+
+    curated_fp = transform(raw_fp)
+    raw_report >> curated_fp
+
+    curated_report = validate_transformed(curated_fp)
+    quality_report(raw_report, curated_report)
+
+
+dataops()
+```
+
+Read the wiring twice. `transform` takes `raw_fp`, so data flow draws its edge
+from `extract_projects` — but nothing it consumes comes from `validate_raw`, so
+`raw_report >> curated_fp` adds the edge by hand: the transform must wait for
+the gate even though it does not use its output. That is the §6 rule in
+practice — implicit edges for data, `>>` for permission.
+
+### See the assets appear
+
+Save the file. Within a few seconds `airflow dags list` has a third row — and
+something else changed:
+
+```bash
+docker compose exec airflow-scheduler airflow assets list -o plain
+```
+
+**Checkpoint.** Two rows, `labeled_projects` and `raw_projects`, each with its
+group and extra. Nothing has run; the Dag processor parsed a file with
+`outlets=` in it, and that was enough. `production_model`, defined in the same
+`assets.py`, is not listed — no Dag refers to it yet. The Assets tab in the UI
+now shows both, with `dataops` as the producer and no consumer.
+
+### Run it
+
+```bash
+docker compose exec airflow-scheduler airflow dags test dataops
+```
+
+**Checkpoint.** Look for `suite=raw_projects passed=4/4`, `Wrote 764 rows to
+/opt/airflow/data/warehouse/labeled_projects.csv`, `suite=labeled_projects
+passed=6/6`, and from the task group, `raw_projects: 4 checks, failed=none`
+and `labeled_projects: 6 checks, failed=none`. The file
+`data/warehouse/labeled_projects.csv` now exists on your machine. (`extract`
+downloads the source CSV over HTTPS — it is the one task in the pipeline that
+needs an internet connection, and the row count follows that file.)
+
+If a task fails, compare with [`solutions/03_dataops.py`](solutions/03_dataops.py).
+
+> **`airflow dags test` is not a dry run.** It executed the real tasks and wrote
+> the real rows: the file on disk, and a genuine `labeled_projects` asset event
+> in the metadata database — open the Assets tab and it is there, with the
+> `extra` you attached. Nothing is scheduled on that asset yet, so nothing else
+> happens. And per §8, nothing will: when `mlops` appears in §10 this event is
+> already history, and Airflow does not replay history.
+
+### Backfills
+
+Now that you have a Dag with a schedule, backfills make sense. A backfill
+creates the runs for every slice in a date range, after the fact. They are
+first-class objects, with their own API, UI form and reprocess policy.
+**Dry-run it first** — a backfill of a busy Dag is the easiest way to create
+thirty runs by accident:
+
+```bash
+docker compose exec airflow-scheduler airflow backfill create \
+    --dag-id dataops --from-date 2026-02-01 --to-date 2026-02-04 --dry-run
+```
+
+**Checkpoint.** A table headed `Runs to be attempted:` with three rows —
+2026-02-01, 02 and 03, each at 03:00 — and nothing created. `--to-date` is
+exclusive, and each row is one slice of `dataops`'s daily cron.
+
+Drop `--dry-run` and the same command creates those three runs, with run ids
+beginning `backfill__`. Know what follows before you do it:
+
+- The runs are created **queued**, and if the Dag is paused they stay that way
+  — the §7 rule — until you un-pause it, when they all start,
+  `--max-active-runs` at a time.
+- Every `dataops` backfill run that succeeds emits a `labeled_projects` asset
+  event exactly as a normal run does (§8), so an un-paused `mlops` trains after
+  them. Backfilling a producer backfills its consumers.
+- The CLI in 3.3.1 only *creates* backfills. To stop one, cancel it in the
+  Dag's **Backfills** tab, or through the API — `PUT
+  /api/v2/backfills/{id}/cancel`, no token needed on this all-admins stack —
+  which marks its still-queued runs `failed`. Pausing the Dag is the emergency
+  brake: a paused Dag starts nothing.
+
+`--reprocess-behavior` decides what to do with slices that already have a run —
+`none`, `failed` or `completed` — which is the difference between "fill the
+gaps" and "redo the month". In the UI: Dag → **Trigger** → **Backfill**, which
+dry-runs the range and tells you how many runs it will create before you
+commit. This is also why an asset-scheduled Dag cannot be backfilled (§5): it
+has no slices, only events.
 
 ### Swapping in the real vendors
 
@@ -1302,31 +1701,9 @@ last validation task, and everything downstream still schedules on the asset.
 Those three providers are **not** installed here, which is why this tutorial
 needs no vendor account.
 
-**Run it:**
-
-```bash
-docker compose exec airflow-scheduler airflow dags test dataops
-```
-
-**Checkpoint.** Look for `suite=raw_projects passed=4/4`,
-`suite=labeled_projects passed=6/6`, and a `Wrote 764 rows` line. The file
-`data/warehouse/labeled_projects.csv` now exists on your machine. (`extract`
-downloads the source CSV over HTTPS — it is the one task in the pipeline that
-needs an internet connection, and the row count follows that file.)
-
-> **`airflow dags test` is not a dry run.** It executes the real tasks and
-> writes the real rows: the file on disk, and a genuine `labeled_projects`
-> asset event in the metadata database. So if you have already un-paused
-> `mlops`, *this* command starts a training run — the chain in §10 will have
-> fired here, one section early, and you will end up with one more `mlops` run
-> than §10's text implies. Nothing is broken; the asset worked. If you have
-> followed in order, `mlops` is still paused — every Dag starts that way (§7) —
-> so the event is recorded and no run is queued, exactly as §8 describes, and
-> the payoff waits for §10.
-
 ## 10. The MLOps Dag
 
-[`dags/04_mlops.py`](dags/04_mlops.py) — no schedule, triggered by the asset.
+`dags/04_mlops.py` — no schedule, triggered by the asset.
 
 ```
 prepare_data ─► validate_training_data ─► train_candidate×N ─► select_best
@@ -1342,23 +1719,97 @@ prepare_data ─► validate_training_data ─► train_candidate×N ─► sele
 | `select_best` + `evaluate_best` | your experiment tracker (MLflow, W&B) |
 | `promotion_gate` → `promote_model` | your registry's stage transition |
 
+### Build it
+
+New workload functions: `data.split(df)` returns a stratified `(train, test)`
+pair; `validate.check_split(train, test)` is a second suite, on the split;
+`train_module.SEARCH_SPACE` is a list of hyperparameter dicts and
+`train_module.train_from_files(hparams)` fits one model, returning
+`(model, metrics)`; `registry.save_run`, `load_metrics`, `promote` and
+`get_production` are the filesystem registry; `config.MIN_F1_TO_PROMOTE` is
+the promotion threshold, read from `TAGIFAI_MIN_F1` if set.
+
+Create `dags/04_mlops.py`:
+
+```python dags/04_mlops.py
+"""Lesson 4 - the MLOps Dag: asset-triggered training, tuning, and promotion."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pendulum
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import dag, task
+from airflow.sdk.exceptions import AirflowFailException
+
+from tagifai import config, data, registry, train as train_module, validate
+from tagifai.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+
+DEFAULT_ARGS = {
+    "owner": "ml-engineering",
+    "retries": 1,
+    "retry_delay": pendulum.duration(minutes=2),
+}
+
+
+@dag(
+    dag_id="mlops",
+    schedule=[LABELED_PROJECTS],
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS,
+    tags=["tutorial", "mlops"],
+    doc_md=__doc__,
+)
+def mlops():
+```
+
+`schedule=[LABELED_PROJECTS]` is the whole point: a list of assets, and the Dag
+runs when they update. Several assets in the list mean *all* of them;
+`AssetAny(a, b)` means either.
+
 **Validate before you train.** `dataops` validated `labeled_projects` on its way
 out of the warehouse, and this Dag validates it again on the way in. That is not
 redundant: it was a different Dag run, possibly hours ago, this run may have been
 triggered by hand, and what the model is fitted on is the snapshot on disk *now*.
+Add the first two tasks:
 
-The second half of the check is one a table-level suite cannot do at all — it
-looks at the **split**:
+```python dags/04_mlops.py
+    @task
+    def prepare_data(*, triggering_asset_events) -> dict[str, int]:
+        for asset, events in triggering_asset_events.items():
+            for event in events:
+                print(f"triggered by {asset} extra={event.extra}")
+        df = data.load_labeled()
+        train_df, test_df = data.split(df)
+        return {"num_train": len(train_df), "num_test": len(test_df)}
 
-```python
-@task
-def validate_training_data(split_sizes: dict) -> dict:
-    df = data.load_labeled()
-    table = validate.run_suite(df, "labeled_projects")     # the same suite as dataops
-    split = validate.check_split(*data.split(df))          # and this one on the split
-    if not (table.passed and split.passed):
-        raise AirflowFailException(...)
+    @task
+    def validate_training_data(split_sizes: dict[str, int]) -> dict[str, Any]:
+        df = data.load_labeled()
+        table = validate.run_suite(df, "labeled_projects")
+        split = validate.check_split(*data.split(df))
+        print(f"{table.summary()} {split.summary()}")
+        if not (table.passed and split.passed):
+            raise AirflowFailException(
+                f"Training snapshot failed validation: {table.failures + split.failures}"
+            )
+        return {
+            "rows": len(df),
+            "split_sizes": split_sizes,
+            "warnings": [r["expectation"] for r in table.failures + split.failures],
+            "results": table.results + split.results,
+        }
 ```
+
+`triggering_asset_events` is injected by name — the events that caused this
+run, keyed by asset, each carrying the `extra` the producer attached. On a run
+you start by hand it is empty. `validate_training_data` re-reads the table
+rather than receiving it from `prepare_data`: XComs carry metadata, never
+payloads. The second half of its check is one a table-level suite cannot do at
+all — it looks at the **split**:
 
 ```python
 # src/tagifai/validate.py — check_split()
@@ -1374,45 +1825,43 @@ held-out f1 means nothing — and that f1 is exactly what the promotion gate
 compares against production.
 
 **Dynamic task mapping** fans out one task instance per hyperparameter set at
-runtime, then reduces:
+runtime, then reduces. Three tasks:
 
-```python
-@task(max_active_tis_per_dag=2)
-def train_candidate(hparams: dict, **context) -> dict:
-    run_id = f"{context['run_id']}__{context['ti'].map_index}"
-    model, metrics = train_module.train_from_files(hparams)
-    registry.save_run(run_id, model, metrics)
-    return {"run_id": run_id, "f1": metrics["f1"], "hparams": hparams}   # small!
+```python dags/04_mlops.py
+    @task
+    def candidates() -> list[dict[str, Any]]:
+        return train_module.SEARCH_SPACE
 
-@task
-def select_best(results: list[dict]) -> dict:
-    return max(results, key=lambda r: r["f1"])
+    @task(max_active_tis_per_dag=2)
+    def train_candidate(hparams: dict[str, Any], **context) -> dict[str, Any]:
+        config.ensure_dirs()
+        run_id = f"{context['run_id']}__{context['ti'].map_index}".replace(":", "-").replace("+", "-")
+        model, metrics = train_module.train_from_files(hparams)
+        registry.save_run(run_id, model, metrics)
+        print(f"run={run_id} hparams={hparams} f1={metrics['f1']:.4f}")
+        return {"run_id": run_id, "f1": metrics["f1"], "hparams": hparams}
 
-results = train_candidate.expand(hparams=candidates())
-best = select_best(results)
+    @task
+    def select_best(results: list[dict[str, Any]]) -> dict[str, Any]:
+        best = max(results, key=lambda r: r["f1"])
+        print(f"best={best['run_id']} f1={best['f1']:.4f} of {len(results)} candidates")
+        return best
 ```
 
-`.expand()` creates one task instance per item at runtime — four here, one per
-hyperparameter set — and each is retried, logged and inspected on its own. The
-reduce step just takes a `list`. `snapshot >> results` wires the validation gate
-upstream of *every* mapped instance, carrying no data, only permission to run.
+`candidates` returns a list; in the wiring below, `train_candidate.expand(hparams=candidates())`
+creates one task instance per item at runtime — four here, one per
+hyperparameter set — and each is retried, logged and inspected on its own.
+`context['ti'].map_index` is which one this is. The reduce step, `select_best`,
+just takes a `list`. Note the return value of `train_candidate`: a run id, an
+f1 and the hparams — small and JSON-serialisable. The model itself stays in the
+registry.
 
 **How many of the four train at once is a choice, and it is written above.**
 Nothing about `.expand()` says "in parallel"; it says "these are four separate
 task instances". Whether they overlap is the executor's business, bounded by the
 narrowest of the limits from §3 — and `max_active_tis_per_dag=2` on that task is
 deliberately the narrowest one here. So the fan-out runs **two at a time, in two
-waves**.
-
-See it for yourself on the run the scheduler creates in the checkpoint below:
-open that `mlops` run in the UI, click `train_candidate`, and read its **Task
-Instances** tab — four rows, map index 0 to 3, each with its own start and end
-time. Two start together; the other two start only after the first pair has
-finished. **Show Gantt** draws the same thing as two pairs of bars. On the
-**Graph**, the four are one collapsed node until you raise the **Min. map
-index** filter (§4).
-
-Raise the cap and all four overlap; remove it and `[core]
+waves**. Raise the cap and all four overlap; remove it and `[core]
 max_active_tasks_per_dag` (16) is the next limit up. A cap on a training task
 is not a toy setting: four models fitting at once is four copies of the data in
 memory, and a `pool` is how you say the same thing about a database that will
@@ -1422,28 +1871,55 @@ not take four connections.
 > context keys by parameter name, and `params` is reserved — a task argument
 > called `params` gets the Dag's params, not your data.
 
-The **promotion gate** is a branch, not a failure:
+The **promotion gate** is a branch, not a failure. Add the evaluation, the
+gate, the promotion and the two `EmptyOperator`s the branch needs:
 
-```python
-@task.branch
-def promotion_gate(evaluation: dict) -> str:
-    f1 = evaluation["metrics"]["f1"]
-    current = registry.get_production()
-    if f1 < config.MIN_F1_TO_PROMOTE:              return "keep_current_model"
-    if current and f1 < current["metrics"]["f1"]:  return "keep_current_model"
-    return "promote_model"
+```python dags/04_mlops.py
+    @task
+    def evaluate_best(best: dict[str, Any]) -> dict[str, Any]:
+        metrics = registry.load_metrics(best["run_id"])
+        for name, slice_metrics in metrics.get("slices", {}).items():
+            print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
+        return {"run_id": best["run_id"], "metrics": metrics}
 
-done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
-gate >> promote_model(evaluation) >> done
-gate >> keep_current_model >> done
+    @task.branch
+    def promotion_gate(evaluation: dict[str, Any]) -> str:
+        f1 = evaluation["metrics"]["f1"]
+        threshold = config.MIN_F1_TO_PROMOTE
+        current = registry.get_production()
+        current_f1 = current["metrics"]["f1"] if current else 0.0
+
+        if f1 < threshold:
+            print(f"f1={f1:.4f} below threshold {threshold} - not promoting")
+            return "keep_current_model"
+        if f1 < current_f1:
+            print(f"f1={f1:.4f} below production {current_f1:.4f} - not promoting")
+            return "keep_current_model"
+        return "promote_model"
+
+    @task(outlets=[PRODUCTION_MODEL])
+    def promote_model(evaluation: dict[str, Any], *, outlet_events) -> dict[str, Any]:
+        pointer = registry.promote(evaluation["run_id"])
+        outlet_events[PRODUCTION_MODEL].extra = {
+            "run_id": pointer["run_id"],
+            "f1": pointer["metrics"]["f1"],
+            "previous_run_id": pointer["previous_run_id"],
+        }
+        print(f"promoted {pointer['run_id']} (was {pointer['previous_run_id']})")
+        return pointer
+
+    keep_current_model = EmptyOperator(task_id="keep_current_model")
+    done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 ```
 
 A `@task.branch` returns the `task_id` to run; the other branch is **skipped**,
 not failed. A candidate that misses the threshold is a normal outcome — the run
-succeeds and production is left alone.
+succeeds and production is left alone. `promote_model` emits the second asset,
+`production_model`, which nothing consumes yet; point a Dag's `schedule` at it
+and the edge appears in the Assets graph.
 
 **Trigger rules** are how a task states what it wants from its parents, and
-branching is where you first need one. The join above needs
+branching is where you first need one. The join, `done`, needs
 `none_failed_min_one_success`, because the default `all_success` would skip it as
 soon as either branch is skipped. The useful ones: `all_success` (default),
 `all_done` (run whatever happened upstream — cleanup tasks),
@@ -1451,45 +1927,112 @@ soon as either branch is skipped. The useful ones: `all_success` (default),
 but not failures), `one_success`, `one_failed` (alerting paths), `all_skipped`,
 and `always`.
 
-Promotion emits the second asset:
+Finish the file with the wiring:
 
-```python
-@task(outlets=[PRODUCTION_MODEL])
-def promote_model(evaluation: dict, *, outlet_events) -> dict:
-    pointer = registry.promote(evaluation["run_id"])
-    outlet_events[PRODUCTION_MODEL].extra = {"run_id": pointer["run_id"], ...}
-    return pointer
+```python dags/04_mlops.py
+    snapshot = validate_training_data(prepare_data())
+    results = train_candidate.expand(hparams=candidates())
+    snapshot >> results
+
+    evaluation = evaluate_best(select_best(results))
+    gate = promotion_gate(evaluation)
+
+    gate >> promote_model(evaluation) >> done
+    gate >> keep_current_model >> done
+
+
+mlops()
 ```
 
-**Watch the whole chain fire.** This is the payoff of §8 — you trigger *one* Dag
-and a second one starts on its own:
+`snapshot >> results` wires the validation gate upstream of *every* mapped
+instance, carrying no data, only permission to run. The gate's two `>>` lines
+give the branch its two arms and join them at `done`.
+
+### See the wiring
+
+Save it. You have now written both halves of the pipeline, and before running
+anything you can ask Airflow what it knows:
 
 ```bash
-docker compose exec airflow-scheduler bash -c '
-  airflow dags unpause dataops
-  airflow dags unpause mlops
-  airflow dags trigger dataops'
+docker compose exec airflow-scheduler airflow assets details --name labeled_projects -o plain
+```
 
-# within ~30s, mlops has a run nobody triggered:
+**Checkpoint.** Among the rows:
+
+```
+scheduled_dags    [{'dag_id': 'mlops', ...}]
+producing_tasks   [{'dag_id': 'dataops', 'task_id': 'validate_transformed', ...}]
+```
+
+`producing_tasks` names the exact task that emits it; `scheduled_dags` names
+what will start when it does. Neither Dag mentions the other anywhere. The
+Assets tab now draws the whole graph, `dataops → labeled_projects → mlops →
+production_model`.
+
+### Watch the whole chain fire
+
+This is the payoff of §8. Un-pause the consumer first, so it is listening, then
+the producer:
+
+```bash
+docker compose exec airflow-scheduler airflow dags unpause mlops
+docker compose exec airflow-scheduler airflow dags unpause dataops
+```
+
+Nothing happens on the first line: `mlops` has no schedule and no event has
+arrived. The second line is enough to start everything, and you did not
+trigger anything — that is the §7 rule: `dataops` has a cron and a 2025
+`start_date`, so the moment it is un-paused the scheduler creates the run for
+the most recent 03:00 UTC it missed, and starts it. Give it about half a
+minute, then:
+
+```bash
+docker compose exec airflow-scheduler airflow dags list-runs dataops -o plain
 docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 ```
 
-**Checkpoint.** A run id beginning `asset_triggered__` — `running` if you were
-quick, `success` once its four candidates have trained — with an empty
-`logical_date`: asset-triggered runs have no logical date, exactly like manual
-ones (§7). In the UI, open **Assets** and you will see the edge that caused it.
+**Checkpoint.** `dataops` has a run whose id begins `scheduled__` and ends in
+`T03:00:00+00:00` — today's date, or yesterday's if it is before 03:00 UTC —
+with that as its `logical_date` and a `start_date` of a moment ago. (The
+`manual__` run from `airflow dags test` in §9 is there too.) And `mlops` has a
+run nobody triggered: id beginning `asset_triggered__`, `running` if you were
+quick, `success` once its four candidates have trained, with an **empty**
+`logical_date` — asset-triggered runs have no logical date, exactly like
+manual ones (§7). In the UI, open **Assets** and you will see the edge that
+caused it.
 
-Give it a moment before running the second command, and know what the wait is.
-Almost all of it is `dataops` itself running its four tasks — `extract`
-downloads the source file, so that part depends on your connection. The Airflow
-part is small: one scheduler loop to start `dataops` after your trigger, and one
-more to queue `mlops` once the asset event lands (§3). If nothing has appeared
-after a minute, check that both Dags are un-paused and that the `dataops` run
-succeeded — a failed `validate_transformed` emits no event, by design.
+Know what the wait is. Almost all of it is `dataops` itself running its four
+tasks — `extract` downloads the source file, so that part depends on your
+connection. The Airflow part is small: one scheduler loop to create the
+`dataops` run after the un-pause, and one more to queue `mlops` once the asset
+event lands (§3). If nothing has appeared after a minute, check that both Dags
+are un-paused and that the `dataops` run succeeded — a failed
+`validate_transformed` emits no event, by design.
 
-> **Try it.** Set the bar impossibly high and watch the gate take the other
-> branch. The threshold is read from an environment variable inside the task's
-> own process, so set it in the same shell that runs the command:
+Now the two waves. Open that `mlops` run in the UI, click `train_candidate`,
+and read its **Task Instances** tab — four rows, map index 0 to 3, each with
+its own start and end time. Two start together; the other two start only after
+the first pair has finished. **Show Gantt** draws the same thing as two pairs
+of bars. On the **Graph**, the four are one collapsed node until you raise the
+**Min. map index** filter (§5). Or read it off the CLI:
+
+```bash
+docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain
+```
+
+Four `train_candidate` rows with `map_index` 0–3; the start times of 2 and 3
+are after the end times of 0 and 1. And `keep_current_model` is `skipped`
+while `promote_model` is `success`: the gate took the promoting arm, because
+there was no production model to beat.
+
+> **Try it, once more by hand.** `airflow dags trigger dataops` — a
+> `manual__` run this time. When it succeeds, one more event, one more
+> `asset_triggered__` run of `mlops`. Every success of the producer is one
+> run of the consumer, whichever way the producer was started.
+
+> **Try it, the other branch.** Set the bar impossibly high and watch the gate
+> take the other arm. The threshold is read from an environment variable inside
+> the task's own process, so set it in the same shell that runs the command:
 >
 > ```bash
 > docker compose exec airflow-scheduler bash -c 'export TAGIFAI_MIN_F1=0.99; airflow dags test mlops'
@@ -1498,11 +2041,12 @@ succeeded — a failed `validate_transformed` emits no event, by design.
 > `promotion_gate` logs `below threshold 0.99 - not promoting`, `promote_model`
 > is skipped, `keep_current_model` runs, and the Dag run still succeeds.
 
+Stuck anywhere? [`solutions/04_mlops.py`](solutions/04_mlops.py).
+
 ## 11. Waiting: sensors, deferrable tasks, events
 
-[`dags/05_sensors_and_events.py`](dags/05_sensors_and_events.py). Three ways to
-wait for the outside world, cheapest last — and, after them, the one way not to
-wait at all:
+`dags/05_sensors_and_events.py`. Three ways to wait for the outside world,
+cheapest last — and, after them, the one way not to wait at all:
 
 ```python
 # 1. Poking sensor — holds a worker slot the entire time. Seconds, not hours.
@@ -1522,18 +2066,86 @@ thing (a moment in time, a file, a message) and fire an event when it happens.
 "Deferrable" means the task hands the triggerer such a trigger, exits, and is
 resumed when the event arrives. `TriggerDagRunOperator` (§12) is the verb again.
 
-A sensor written as a function:
+### Build it
 
-```python
-@task.sensor(poke_interval=10, timeout=120, mode="reschedule")
-def enough_rows() -> PokeReturnValue:
-    rows = ...
-    return PokeReturnValue(is_done=rows >= 500, xcom_value=rows)
+Create `dags/05_sensors_and_events.py` with the header and the two operator
+sensors:
+
+```python dags/05_sensors_and_events.py
+"""Lesson 5 - waiting for things: sensors, deferrable operators, and events."""
+
+from __future__ import annotations
+
+from datetime import timedelta
+
+import pendulum
+from airflow.providers.standard.sensors.filesystem import FileSensor
+from airflow.providers.standard.sensors.time_delta import TimeDeltaSensorAsync
+from airflow.sdk import PokeReturnValue, dag, task
+
+from tagifai import config, data
+
+DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
+
+
+@dag(
+    dag_id="sensors_and_events",
+    schedule=None,
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    tags=["tutorial", "sensors"],
+    doc_md=__doc__,
+)
+def sensors_and_events():
+    settle = TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
+
+    wait_for_curated_data = FileSensor(
+        task_id="wait_for_curated_data",
+        filepath=str(config.LABELED_PROJECTS_FP),
+        poke_interval=10,
+        timeout=60 * 5,
+        mode="reschedule",
+    )
 ```
 
-And the option that removes the wait altogether — **event-driven scheduling**.
-Attach a watcher to an asset and an external event starts the run; nothing polls,
-nothing occupies a slot:
+`settle` is deferrable: it releases its worker slot while it waits, which
+needs `airflow triggerer` running. `wait_for_curated_data` watches for the
+file `dataops` writes, through the `fs_default` connection the compose file
+provides. `mode="reschedule"` is the non-deferrable way to free a slot: the
+task instance exits and is re-queued every `poke_interval` seconds, and gives
+up after `timeout`.
+
+A sensor can also be written as a function. Add it, with the task that uses
+its value, and the wiring:
+
+```python dags/05_sensors_and_events.py
+    @task.sensor(poke_interval=10, timeout=120, mode="reschedule")
+    def enough_rows() -> PokeReturnValue:
+        if not config.LABELED_PROJECTS_FP.exists():
+            return PokeReturnValue(is_done=False)
+        rows = len(data.load_labeled())
+        print(f"curated table has {rows} rows")
+        return PokeReturnValue(is_done=rows >= 500, xcom_value=rows)
+
+    @task
+    def proceed(rows: int) -> None:
+        print(f"Data is ready ({rows} rows). Downstream work can start.")
+
+    settle >> wait_for_curated_data >> proceed(enough_rows())
+
+
+sensors_and_events()
+```
+
+`PokeReturnValue(is_done=..., xcom_value=...)` both stops the poking and hands
+a value downstream — `proceed` receives the row count. The table is read with
+pandas rather than counted by lines, because descriptions contain newlines.
+
+Not in the file, because it needs a queue you do not have: the option that
+removes the wait altogether — **event-driven scheduling**. Attach a watcher to
+an asset and an external event starts the run; nothing polls, nothing occupies
+a slot:
 
 ```python
 from airflow.providers.common.messaging.triggers.msg_queue import MessageQueueTrigger
@@ -1553,20 +2165,23 @@ testing a permanent condition ("file exists") would re-fire forever.
 > Deferrable sensors and watchers both need `airflow triggerer` running. Without
 > it they sit in `deferred` indefinitely.
 
-**Run it.** This Dag waits for the file `dataops` produced, so run §9 first or
-the sensors will poll until they time out:
+### Run it
+
+This Dag waits for the file `dataops` produced, so §9 must have run or the
+sensors will poll until they time out:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test sensors_and_events
 ```
 
 **Checkpoint.** It finishes in a few seconds, because everything it waits for
-has already happened. In the log, in order:
+has already happened. In the log:
 
 ```
+curated table has 764 rows
 Poking for file /opt/airflow/data/warehouse/labeled_projects.csv
 Success criteria met. Exiting.
-Data is ready (… rows). Downstream work can start.
+Data is ready (764 rows). Downstream work can start.
 ```
 
 `wait_for_curated_data` pokes once, finds the file and exits; `enough_rows`
@@ -1591,6 +2206,8 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_a
 has exited and the triggerer is holding the timer — then `success`, with an
 `end_date` five-odd seconds after its `start_date`. That `deferred` is the
 state from §3, and it is what "frees the worker slot" looks like from outside.
+Be quick with the second command; a `docker compose exec` takes a second or
+two of its own.
 
 **Now see the interesting case** — a sensor that actually has to wait. Move the
 file away and run the Dag again:
@@ -1635,6 +2252,8 @@ two modes exist.
 deferrable, or you are paying a worker slot to sleep. An external system that can
 push → an `AssetWatcher`, and no task waits at all.
 
+Reference: [`solutions/05_sensors_and_events.py`](solutions/05_sensors_and_events.py).
+
 ## 12. Continual learning: monitor, decide, act
 
 **Continual**, not continuous: the system repeats *with breaks*, and the breaks
@@ -1655,8 +2274,7 @@ Concept drift is the one no input-side statistic can see, which is why
 trusting a distribution comparison alone.
 
 A monitoring event has four sensible responses, and
-[`dags/06_monitoring_and_retraining.py`](dags/06_monitoring_and_retraining.py)
-makes them branches:
+`dags/06_monitoring_and_retraining.py` makes them branches:
 
 | Response | When | What happens |
 |---|---|---|
@@ -1665,19 +2283,166 @@ makes them branches:
 | **inspect** | an unseen label appeared | stop and page someone — the label space changed |
 | **rollback** | performance collapsed | re-point production at the previous model |
 
-The thresholds are Dag **params**, so the policy is visible in the UI,
-overridable per run, and recorded with the run that used it:
+### Build it
 
-```python
+The workload: `monitoring.monitor()` returns a report with a `drift` dict
+(`label_tvd`, `new_labels`, `current_distribution`, …) and a `performance`
+dict (`f1_at_promotion`, `f1_now`) — or `performance=None` when nothing is
+promoted; `registry.rollback()` re-promotes the previous model.
+
+Create `dags/06_monitoring_and_retraining.py`. The thresholds are Dag
+**params**, so the policy is visible in the UI, overridable per run, and
+recorded with the run that used it:
+
+```python dags/06_monitoring_and_retraining.py
+"""Lesson 6 - continual learning: monitor, decide, and act."""
+
+from __future__ import annotations
+
+from datetime import timedelta
+from typing import Any
+
+import pendulum
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.hitl import ApprovalOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.sdk import Param, dag, task
+
+from tagifai import monitoring, registry
+
+DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
+
 POLICY_PARAMS = {
-    "max_label_tvd": Param(0.15, type="number"),
-    "max_f1_drop": Param(0.10, type="number"),
-    "critical_f1_drop": Param(0.25, type="number"),
+    "max_label_tvd": Param(0.15, type="number", description="Label-drift budget."),
+    "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
+    "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
 }
+
+
+@dag(
+    dag_id="monitoring",
+    schedule="0 6 * * *",
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS,
+    tags=["tutorial", "mlops", "monitoring"],
+    doc_md=__doc__,
+    params=POLICY_PARAMS,
+)
+def monitoring_dag():
 ```
 
-**Run it.** Forcing the label-drift budget to zero guarantees `decide()` takes
-the retraining branch, so you see the interesting path rather than whichever one
+(The function is `monitoring_dag` because `monitoring` is already the name of
+the imported module. The `dag_id` is what Airflow sees.)
+
+Measure, then decide:
+
+```python dags/06_monitoring_and_retraining.py
+    @task
+    def measure() -> dict[str, Any]:
+        report = monitoring.monitor()
+        drift = report["drift"]
+        print(f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']}")
+        if report["performance"]:
+            perf = report["performance"]
+            print(f"f1 at promotion={perf['f1_at_promotion']:.4f} now={perf['f1_now']:.4f}")
+        return report
+
+    @task.branch
+    def decide(report: dict[str, Any], **context) -> str:
+        drift, performance = report["drift"], report["performance"]
+        policy = context["params"]
+
+        if performance is None:
+            print("No production model yet - train one.")
+            return "request_retraining"
+
+        f1_drop = performance["f1_at_promotion"] - performance["f1_now"]
+        print(f"f1_drop={f1_drop:.4f} label_tvd={drift['label_tvd']:.4f} policy={dict(policy)}")
+
+        if f1_drop >= policy["critical_f1_drop"]:
+            return "rollback"
+        if drift["new_labels"]:
+            return "inspect"
+        if f1_drop >= policy["max_f1_drop"] or drift["label_tvd"] >= policy["max_label_tvd"]:
+            return "request_retraining"
+        return "continue_serving"
+```
+
+`context["params"]` is the policy — the defaults above, or whatever this run
+was given. Note the ordering: **a new label routes to `inspect`, not to
+`improve`.** Retraining on data whose label space you have not understood yet is
+how you ship a worse model with full confidence.
+
+Now the four arms. Three are simple; the fourth is a **human-in-the-loop**
+gate, `ApprovalOperator`, followed by the task that starts another Dag:
+
+```python dags/06_monitoring_and_retraining.py
+    continue_serving = EmptyOperator(task_id="continue_serving")
+
+    @task
+    def inspect(report: dict[str, Any]) -> None:
+        print("MANUAL INSPECTION NEEDED")
+        print(f"  new labels: {report['drift']['new_labels']}")
+        print(f"  current distribution: {report['drift']['current_distribution']}")
+
+    @task
+    def rollback() -> dict[str, Any] | None:
+        pointer = registry.rollback()
+        print(f"rolled back to {pointer['run_id']}" if pointer else "nothing to roll back")
+        return pointer
+
+    request_retraining = ApprovalOperator(
+        task_id="request_retraining",
+        subject="Retrain the tag classifier?",
+        body=(
+            "Monitoring detected drift or a performance drop.\n\n"
+            "Approve to trigger the `mlops` Dag on the current data."
+        ),
+        defaults="Approve",
+        response_timeout=timedelta(seconds=60),
+    )
+
+    trigger_retraining = TriggerDagRunOperator(
+        task_id="trigger_retraining",
+        trigger_dag_id="mlops",
+        conf={"reason": "monitoring_drift"},
+        wait_for_completion=False,
+        reset_dag_run=True,
+    )
+```
+
+`ApprovalOperator` parks the task in `awaiting_input` and shows a prompt in the
+UI, under the Dag's **Required Actions** tab. On **Reject**, everything
+downstream is skipped. `defaults` is what an unanswered run resolves to after
+`response_timeout` — sixty seconds here so the lesson finishes; give it hours
+in production. `TriggerDagRunOperator` is the cross-Dag verb: it creates a
+`manual__` run of `mlops` with the `conf` given, and with
+`wait_for_completion=False` it does not stay around to watch it.
+
+Finish with the wiring:
+
+```python dags/06_monitoring_and_retraining.py
+    report = measure()
+    branch = decide(report)
+
+    branch >> continue_serving
+    branch >> inspect(report)
+    branch >> rollback()
+    branch >> request_retraining >> trigger_retraining
+
+
+monitoring_dag()
+```
+
+Four arms out of one branch; `decide` returns the `task_id` of the one to run.
+There is no join at the end, because nothing needs to run after all of them.
+
+### Run it
+
+Forcing the label-drift budget to zero guarantees `decide()` takes the
+retraining branch, so you see the interesting path rather than whichever one
 your current data happens to deserve:
 
 ```bash
@@ -1686,10 +2451,10 @@ docker compose exec airflow-scheduler \
 ```
 
 > **This command takes about 70 seconds and looks frozen for 60 of them.** That
-> is not a hang. `request_retraining` is the human-in-the-loop gate below: it
-> enters `awaiting_input` and waits out its full 60-second `response_timeout`
-> before defaulting to Approve, because nobody is going to click the button.
-> Let it sit.
+> is not a hang. `request_retraining` is the human-in-the-loop gate: it enters
+> `awaiting_input` and waits out its full 60-second `response_timeout` before
+> defaulting to Approve, because nobody is going to click the button. Let it
+> sit.
 
 **Checkpoint.** In order, roughly a minute apart:
 
@@ -1705,7 +2470,7 @@ plain` now has a fresh `manual__…` run that this Dag created. One Dag decided
 another Dag should run, and a person was given the chance to say no.
 
 While it is in `awaiting_input`, open the Dag in the UI: the prompt is waiting
-for you under the **Required Actions** tab (§4), and answering it there resolves
+for you under the **Required Actions** tab (§5), and answering it there resolves
 the task without waiting for the timeout. Airflow records the answer either way
 — the choice that was made, when, and *by whom*. A run that timed out into its
 `defaults` stores the choice with the "who" left empty, which is how you tell "a
@@ -1719,27 +2484,7 @@ person approved this" from "nobody was looking".
 > branch anyway, timeout included. Both are correct. Run it to see a branch
 > *not* taken.
 
-Note the ordering in `decide()`: **a new label routes to `inspect`, not to
-`improve`.** Retraining on data whose label space you have not understood yet is
-how you ship a worse model with full confidence.
-
-Retraining goes through a **human-in-the-loop** gate, `ApprovalOperator`:
-
-```python
-request_retraining = ApprovalOperator(
-    task_id="request_retraining",
-    subject="Retrain the tag classifier?",
-    body="Monitoring detected drift or a performance drop.\n\nApprove to trigger `mlops`.",
-    defaults="Approve",                       # what an unanswered run resolves to
-    response_timeout=timedelta(seconds=60),   # give this hours in production
-)
-request_retraining >> TriggerDagRunOperator(task_id="trigger_retraining",
-                                            trigger_dag_id="mlops")
-```
-
-The task enters `awaiting_input` and shows a prompt in the UI, under the Dag's
-**Required Actions** tab. On **Reject**, everything downstream is skipped. With
-`defaults` set, an unattended run still resolves instead of hanging forever.
+Reference: [`solutions/06_monitoring_and_retraining.py`](solutions/06_monitoring_and_retraining.py).
 
 ### What "retrain" leaves out
 
@@ -1772,31 +2517,69 @@ to the Dag, applies to the whole run, and is evaluated *while the run is still
 going* — so you hear about a stuck pipeline during the incident, not in the
 morning report.
 
-[`dags/07_deadline_alerts.py`](dags/07_deadline_alerts.py):
+### Build it
 
-```python
-from airflow.sdk import DeadlineAlert, DeadlineReference, SyncCallback
+`dags/07_deadline_alerts.py` is the shortest file of the seven, and all of it
+is the decorator:
+
+```python dags/07_deadline_alerts.py
+"""Lesson 7 - deadline alerts: "tell me if this run is taking too long"."""
+
+from __future__ import annotations
+
+import time
+from datetime import timedelta
+
+import pendulum
+from airflow.sdk import DeadlineAlert, DeadlineReference, SyncCallback, dag, task
+
 
 @dag(
     dag_id="deadline_alerts",
+    schedule=None,
+    start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
+    catchup=False,
+    default_args={"owner": "ml-engineering"},
+    tags=["tutorial", "monitoring"],
+    doc_md=__doc__,
     deadline=DeadlineAlert(
         reference=DeadlineReference.DAGRUN_QUEUED_AT,
         interval=timedelta(seconds=30),
-        callback=SyncCallback("tagifai.callbacks.deadline_missed",
-                              kwargs={"budget": "30s"}),
+        callback=SyncCallback(
+            "tagifai.callbacks.deadline_missed",
+            kwargs={"dag_id": "deadline_alerts", "budget": "30s"},
+        ),
     ),
 )
+def deadline_alerts():
 ```
 
-Three pieces: a **reference** (where the clock starts), an **interval** (how long
-after it), and a **callback**.
+Three pieces: a **reference** (where the clock starts), an **interval** (how
+long after it), and a **callback** — named as a dotted path, because it runs
+somewhere other than the task, with `kwargs` passed through. Pass a list to
+`deadline=` for several budgets.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)` — that last one is "slower than this Dag's own
 recent average", which is usually what you actually mean. Callbacks:
 `SyncCallback` (runs on the executor) or `AsyncCallback` (runs on the triggerer —
 use it for Notifiers, e.g. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
-Pass a list to `deadline=` for several budgets.
+
+The Dag deliberately misses its own deadline:
+
+```python dags/07_deadline_alerts.py
+    @task
+    def slow_step() -> str:
+        time.sleep(75)
+        return "finished, but late"
+
+    slow_step()
+
+
+deadline_alerts()
+```
+
+### Run it
 
 ```bash
 # unpause first: the 30-second clock starts when the run is queued, i.e. at the trigger
@@ -1820,9 +2603,12 @@ Browse → **Deadlines**.
 > carries no deadline, since it would break the `airflow dags test mlops`
 > instruction above. [Details.](docs/troubleshooting.md)
 
+Reference: [`solutions/07_deadline_alerts.py`](solutions/07_deadline_alerts.py).
+
 ## 14. Testing Dags
 
-Four levels, cheapest first.
+Four levels, cheapest first — and the first of them is the grader for the seven
+files you wrote.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](tests/test_dag_integrity.py).
 These catch the failures that otherwise surface as a red banner in the UI hours
@@ -1839,11 +2625,16 @@ def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag):
     assert "labeled_projects" in asset_names
 ```
 
-It also greps the Dag sources for constructs that do not exist in this version of
-Airflow — `schedule_interval=`, `days_ago(`, `airflow.operators.`,
-`execution_date`, `SubDagOperator`, `sla=`. Most Airflow code on the internet
-predates Airflow 3, so a copy-pasted snippet can bring one of these in, and
-several of them still *import* and fail only once the task runs.
+They load **your `dags/` folder**, and they encode what this tutorial meant:
+seven specific `dag_id`s; every Dag with tags, a `doc_md` and an owner that is
+not `airflow`; `retries` of at least one on every Dag that does real work;
+`dataops` producing both assets; `mlops` scheduled on `labeled_projects` and
+validating before it trains; no cycles. It also greps the sources for
+constructs that do not exist in this version of Airflow — `schedule_interval=`,
+`days_ago(`, `airflow.operators.`, `execution_date`, `SubDagOperator`, `sla=`.
+Most Airflow code on the internet predates Airflow 3, so a copy-pasted snippet
+can bring one of these in, and several of them still *import* and fail only
+once the task runs.
 
 **Unit tests on the workload** — [`tests/test_tagifai.py`](tests/test_tagifai.py).
 Nothing in `src/tagifai/` imports Airflow, so the ML code is testable without a
@@ -1854,40 +2645,55 @@ code, it does not contain it.
 in-process, and `airflow tasks test <dag_id> <task_id>` runs one task without
 writing state.
 
-**A test on the documentation** — [`tests/test_readme_listings.py`](tests/test_readme_listings.py).
-The appendix in §16 shows every Dag in full, and those listings are injected from
-the files by [`scripts/sync_readme.py`](scripts/sync_readme.py) rather than
-copied by hand. The test re-runs the injection in memory and fails if the result
-differs, so a Dag edited without re-syncing breaks the build instead of leaving a
-tutorial that quotes code nobody runs.
+**Tests on the documentation** — two of them, because a tutorial that quotes
+code is only useful while the quotes are true.
+[`tests/test_readme_listings.py`](tests/test_readme_listings.py): the appendix
+in §16 shows every solution in full, injected from `solutions/` by
+[`scripts/sync_readme.py`](scripts/sync_readme.py) rather than copied by hand;
+the test re-runs the injection in memory and fails if the result differs.
+[`tests/test_readme_build_steps.py`](tests/test_readme_build_steps.py): every
+"Build it" block above is tagged with the file it belongs to; the test
+concatenates them in order, loads the result with `DagBag`, and fails if what
+you were told to type does not add up to a Dag that imports.
+
+Run all of it:
 
 ```bash
 docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
-
-python scripts/sync_readme.py --check     # exit 1 when a listing is stale
-python scripts/sync_readme.py             # fix it
 ```
 
 `airflow-cli` is not one of the five services `docker compose ps` lists: it is
 a one-off container the compose file defines under a profile, which `run`
 creates for that command and `--rm` removes afterwards.
 
-**Checkpoint.** A row of dots and `30 passed`, in well under a minute:
+**Checkpoint.** A row of dots and `36 passed`, in well under a minute:
 
 ```
-..............................                                           [100%]
-30 passed in 6.60s
+....................................                                     [100%]
+36 passed in 7.11s
 ```
 
 No scheduler was involved and no Dag ran. That is the point: every one of those
-30 is fast enough to run on every commit, which is what makes them worth having.
-If `test_readme_listings` is the one that fails, you edited a Dag and did not
-re-run `python scripts/sync_readme.py` — that is the test doing its job, not a
-broken build.
+36 is fast enough to run on every commit, which is what makes them worth having.
 
-> On **Git Bash**, prefix that first command with `MSYS_NO_PATHCONV=1` or the
+When one fails, the message says which file and what is missing — `mlops has no
+retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`,
+`dataops` missing an outlet — and the fix is in the lesson that built that
+file, or in `solutions/`. To see the suite pass against the finished versions,
+point it there:
+
+```bash
+docker compose run --rm -e DAGS_DIR=solutions --entrypoint pytest airflow-cli /opt/airflow/tests -q
+```
+
+> On **Git Bash**, prefix both commands with `MSYS_NO_PATHCONV=1` or the
 > `/opt/airflow/tests` argument is rewritten into a Windows path and pytest
 > collects nothing.
+
+```bash
+python scripts/sync_readme.py --check     # exit 1 when an appendix listing is stale
+python scripts/sync_readme.py             # fix it
+```
 
 None of those levels would have caught the two bugs in §7's "trap" box:
 `airflow dags test` always supplies a logical date, so a Dag that breaks on a
@@ -1922,6 +2728,11 @@ dag_bundle_config_list = [
   ]
 ```
 
+**Parsing intervals.** This stack scans for files every 5 seconds so that
+what you save appears at once. Put the defaults back (`refresh_interval` 300,
+`min_file_process_interval` 30) on anything with hundreds of Dag files — the
+processor's job is to parse, not to poll.
+
 **Secrets.** Never in Dag code, never in bundle `kwargs`, never in an asset's
 `uri` or `extra` — asset extras are stored in cleartext. Use Connections,
 Variables, or a secrets backend.
@@ -1948,20 +2759,19 @@ grows forever otherwise), deadline alerts on the Dags that matter (§13), and
 Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — wired to
 `on_failure_callback` or an `AsyncCallback`.
 
-## 16. Appendix: every Dag in full
+## 16. Appendix: the finished Dags in full
 
-The sections above quote the parts of each Dag that teach something, which means
-they never show a whole file. Here is each one end to end, in reading order —
-including the comments, which explain the details at the point they matter.
+The lessons above give you each file in pieces. Here is each one end to end,
+in reading order, as it sits in [`solutions/`](solutions/) — the same code you
+typed, plus the comments, which explain the details at the point they matter.
 
 > These listings are **injected from the files** by
 > [`scripts/sync_readme.py`](scripts/sync_readme.py) and verified by
-> [`tests/test_readme_listings.py`](tests/test_readme_listings.py): edit a Dag
-> without re-running the script and the test suite fails. They cannot drift out
-> of sync with the code that actually runs.
+> [`tests/test_readme_listings.py`](tests/test_readme_listings.py): edit a
+> solution without re-running the script and the test suite fails. They cannot
+> drift out of sync with the code that actually runs.
 
 The shared Asset definitions come first, because every Dag below imports them.
-
 <details>
 <summary><b>src/tagifai/assets.py</b> — the Assets the Dags produce and consume (§8)</summary>
 
@@ -2013,9 +2823,9 @@ PRODUCTION_MODEL = Asset(
 </details>
 
 <details>
-<summary><b>dags/01_hello_airflow3.py</b> — a Dag, tasks, dependencies, params (§5)</summary>
+<summary><b>solutions/01_hello_airflow3.py</b> — a Dag, tasks, dependencies, params (§4)</summary>
 
-<!-- BEGIN FILE: dags/01_hello_airflow3.py -->
+<!-- BEGIN FILE: solutions/01_hello_airflow3.py -->
 ```python
 """Lesson 1 - a Dag, tasks, and dependencies.
 
@@ -2101,14 +2911,14 @@ def hello_airflow3():
 # The decorator only defines the Dag; calling it registers it.
 hello_airflow3()
 ```
-<!-- END FILE: dags/01_hello_airflow3.py -->
+<!-- END FILE: solutions/01_hello_airflow3.py -->
 
 </details>
 
 <details>
-<summary><b>dags/02_operators_and_xcoms.py</b> — operators, XComs, relationships (§6)</summary>
+<summary><b>solutions/02_operators_and_xcoms.py</b> — operators, XComs, relationships (§6)</summary>
 
-<!-- BEGIN FILE: dags/02_operators_and_xcoms.py -->
+<!-- BEGIN FILE: solutions/02_operators_and_xcoms.py -->
 ```python
 """Lesson 2 - operators, XComs, and relationships.
 
@@ -2242,14 +3052,14 @@ def operators_and_xcoms():
 
 operators_and_xcoms()
 ```
-<!-- END FILE: dags/02_operators_and_xcoms.py -->
+<!-- END FILE: solutions/02_operators_and_xcoms.py -->
 
 </details>
 
 <details>
-<summary><b>dags/03_dataops.py</b> — extract → validate → transform → validate, and the outlet (§9)</summary>
+<summary><b>solutions/03_dataops.py</b> — extract → validate → transform → validate, and the outlet (§9)</summary>
 
-<!-- BEGIN FILE: dags/03_dataops.py -->
+<!-- BEGIN FILE: solutions/03_dataops.py -->
 ```python
 """Lesson 3 - the DataOps Dag: extract -> validate -> transform -> validate.
 
@@ -2384,14 +3194,14 @@ def dataops():
 
 dataops()
 ```
-<!-- END FILE: dags/03_dataops.py -->
+<!-- END FILE: solutions/03_dataops.py -->
 
 </details>
 
 <details>
-<summary><b>dags/04_mlops.py</b> — asset-triggered training, mapping, promotion gate (§10)</summary>
+<summary><b>solutions/04_mlops.py</b> — asset-triggered training, mapping, promotion gate (§10)</summary>
 
-<!-- BEGIN FILE: dags/04_mlops.py -->
+<!-- BEGIN FILE: solutions/04_mlops.py -->
 ```python
 """Lesson 4 - the MLOps Dag: asset-triggered training, tuning, and promotion.
 
@@ -2576,14 +3386,14 @@ def mlops():
 
 mlops()
 ```
-<!-- END FILE: dags/04_mlops.py -->
+<!-- END FILE: solutions/04_mlops.py -->
 
 </details>
 
 <details>
-<summary><b>dags/05_sensors_and_events.py</b> — sensors, deferrable tasks, watchers (§11)</summary>
+<summary><b>solutions/05_sensors_and_events.py</b> — sensors, deferrable tasks, watchers (§11)</summary>
 
-<!-- BEGIN FILE: dags/05_sensors_and_events.py -->
+<!-- BEGIN FILE: solutions/05_sensors_and_events.py -->
 ```python
 """Lesson 5 - waiting for things: sensors, deferrable operators, and events.
 
@@ -2694,14 +3504,14 @@ sensors_and_events()
 # a trigger that tests a permanent condition ("file exists") would re-fire
 # forever.
 ```
-<!-- END FILE: dags/05_sensors_and_events.py -->
+<!-- END FILE: solutions/05_sensors_and_events.py -->
 
 </details>
 
 <details>
-<summary><b>dags/06_monitoring_and_retraining.py</b> — drift, branching, human-in-the-loop (§12)</summary>
+<summary><b>solutions/06_monitoring_and_retraining.py</b> — drift, branching, human-in-the-loop (§12)</summary>
 
-<!-- BEGIN FILE: dags/06_monitoring_and_retraining.py -->
+<!-- BEGIN FILE: solutions/06_monitoring_and_retraining.py -->
 ```python
 """Lesson 6 - continual learning: monitor, decide, and act.
 
@@ -2844,14 +3654,14 @@ def monitoring_dag():
 
 monitoring_dag()
 ```
-<!-- END FILE: dags/06_monitoring_and_retraining.py -->
+<!-- END FILE: solutions/06_monitoring_and_retraining.py -->
 
 </details>
 
 <details>
-<summary><b>dags/07_deadline_alerts.py</b> — deadline alerts, and a Dag that misses one (§13)</summary>
+<summary><b>solutions/07_deadline_alerts.py</b> — deadline alerts, and a Dag that misses one (§13)</summary>
 
-<!-- BEGIN FILE: dags/07_deadline_alerts.py -->
+<!-- BEGIN FILE: solutions/07_deadline_alerts.py -->
 ```python
 """Lesson 7 - Deadline Alerts: "tell me if this run is taking too long".
 
@@ -2925,7 +3735,7 @@ def deadline_alerts():
 
 deadline_alerts()
 ```
-<!-- END FILE: dags/07_deadline_alerts.py -->
+<!-- END FILE: solutions/07_deadline_alerts.py -->
 
 </details>
 
@@ -2960,7 +3770,7 @@ api-server + scheduler + dag-processor + triggerer), on 2026-09-09:
 - Manual triggers were exercised: a trigger against a **paused** Dag produced a
   run stuck in `queued` until `airflow dags unpause`, and
   `-c '{"greeting": "hola"}'` reached the task as a `params` override.
-- The §4 UI walkthrough was checked against this stack's api-server: nav, tabs,
+- The §5 UI walkthrough was checked against this stack's api-server: nav, tabs,
   trigger/backfill form fields and the version selector come from the shipped UI
   strings, and the endpoints behind them (`/api/v2/assets`, `/backfills`,
   `/dags/{id}/dagVersions`, `/hitlDetails`) from its OpenAPI spec.
@@ -2969,7 +3779,7 @@ api-server + scheduler + dag-processor + triggerer), on 2026-09-09:
 Re-verified on 2026-09-11, against the same stack, for the numbers and claims
 the body prints back to you:
 
-- §5's checkpoint: the first Dag logs `(7 words)` — the greeting carries the
+- §4's checkpoint: the first Dag logs `(7 words)` — the greeting carries the
   run id *and* the date.
 - §8's asset rules, tested both ways. With `mlops` **unpaused**, `airflow dags
   test dataops` triggered a real `asset_triggered__` run of `mlops` — `dags
@@ -3015,9 +3825,9 @@ the body prints back to you:
   gives `run_after == data_interval_start == data_interval_end`;
   `timedelta(days=1)` is a `DeltaDataIntervalTimetable` and gives `run_after`
   2026-09-11 00:00 with `logical_date == data_interval_start` 2026-09-10 00:00.
-- §5/§7's `start_date`: a Dag file with none parses with **no import error**
+- §4/§7's `start_date`: a Dag file with none parses with **no import error**
   under `DagBag`, for `schedule=None` and `@daily` alike.
-- §5's `dags test` box: `hello_airflow3` ran `make_greeting → shout →
+- §4's `dags test` box: `hello_airflow3` ran `make_greeting → shout →
   count_words → report`, each finishing before the next started.
 - §13, unpause then trigger: `DEADLINE MISSED` at +31s, `slow_step` still
   running.
@@ -3034,16 +3844,16 @@ in §2–§14 in order:
 
 - 28s from `up.sh` to seven Dags listed, all paused; the health endpoint
   `healthy` four times.
-- §5 `(7 words)`, and `HOLA` with `--conf`. Tasks ran one at a time —
+- §4 `(7 words)`, and `HOLA` with `--conf`. Tasks ran one at a time —
   `count_words` before `shout` this time; the order between siblings varies.
 - §6 `product=42`. §7 `manual-demo-1` success; `demo` queued while paused,
   success after un-pause with `start_date` 14s after `run_after`.
-- §7's backfill, both ways. Without `--dry-run`, `2026-01-01`→`01-31` created
+- §9's backfill (then in §7), both ways. Without `--dry-run`, `2026-01-01`→`01-31` created
   30 queued `backfill__` runs against the paused `dataops`; at §10 they ran
   three at a time and re-triggered `mlops` behind them. The CLI has only
   `backfill create`; `PUT /api/v2/backfills/1/cancel` returned 200 and turned
   the six still-queued runs `failed`. With `--dry-run`, `02-01`→`02-04` listed
-  three rows and created nothing — which is why §7 leads with it.
+  three rows and created nothing — which is why §9 leads with it.
 - §8's coalescing: 22 asset events became 6 `mlops` runs, consuming 2–6 each
   (`dagrun_asset_event`).
 - §9 `passed=4/4`, `6/6`, `Wrote 764 rows`; with `mlops` paused, one event and
@@ -3055,7 +3865,7 @@ in §2–§14 in order:
 - §13 `DEADLINE MISSED` at +33s with `slow_step` still `running`. §14 30
   passed, listings in sync.
 
-Added on 2026-09-14, same stack: §5's `list-import-errors`. With the seven
+Added on 2026-09-14, same stack: §4's `list-import-errors`. With the seven
 lesson files, `No data found`. With an eighth file whose second line imports a
 module that does not exist, one row carrying the traceback — and `airflow dags
 list` still showed seven, because a file that fails to import is no Dag, not a
@@ -3072,6 +3882,67 @@ init routed through the image entrypoint, the same `.env` and the same empty
 database: `Database migration done!`, health endpoint `healthy` 33 s after
 `up`, seven Dags listed.
 
+Restructured on 2026-09-15 into a write-it-yourself tutorial — `dags/`
+empty, the finished files moved to `solutions/`, every lesson rebuilt as typed
+pieces — and cold-run again in the new order: `reset.sh`, `up.sh`, the seven
+files typed from the "Build it" blocks, every command in §2–§14 as written.
+
+- §2 with an empty `dags/`: `airflow dags list`, `list-import-errors` and
+  `assets list` all print `No data found`; the health endpoint `healthy` four
+  times.
+- §3's parsing intervals are this stack's live config: `refresh_interval=5`,
+  `min_file_process_interval=5`, `scheduler_idle_sleep_time=1`. A file saved
+  into `dags/` was listed by `airflow dags list` **2 seconds** later.
+- §4's broken file: with the comment `# An airflow dag file that does not
+  import`, the row was in `list-import-errors` 6 s after saving and gone 6 s
+  after deleting the file, no restart. **Without** the words `airflow` and
+  `dag` in the file, nothing appeared in 90 s and the Dag processor's log never
+  mentioned the file. `[core] dag_discovery_safe_mode` is `True` here, and
+  `might_contain_dag_via_default_heuristic` (`airflow/utils/file.py`) requires
+  the lowercased contents to contain `airflow` and one of `dag` / `asset`. The
+  2026-09-14 check above passed because its comment happened to contain both.
+- §4 `(7 words)`, `HOLA` with `--conf`. §6 `product=42`, then `TaskFlow saw
+  product=42`.
+- §7's catch-up rule, read off `CronTriggerTimetable.next_dagrun_info`
+  (`airflow/timetables/trigger.py`): with `catchup=False` and no previous run,
+  the start is `max(align_to_prev(utcnow()), align_to_next(start_date))` — the
+  most recent tick before now. On this stack, un-pausing `dataops` at 12:22
+  UTC created `scheduled__2026-09-15T03:00:00+00:00` with a `start_date` of
+  12:22:28, five seconds after the un-pause. The earlier text's "you get the
+  next one only" was wrong and is gone.
+- §9 with `dataops` saved and nothing run: `assets list` shows
+  `labeled_projects` and `raw_projects` only; `assets details` has
+  `producing_tasks [dataops.validate_transformed]` and `scheduled_dags []`.
+  `dags test dataops`: `passed=4/4`, `Wrote 764 rows`, `passed=6/6`, both
+  `checks, failed=none` lines, 5.3 s. Backfill dry-run `02-01`→`02-04`: three
+  rows, nothing created.
+- §8's third case, a consumer that did not exist yet. The asset event from
+  that `dags test dataops` (id 2 in `asset_event`) was never consumed: after
+  `mlops` was written and un-paused, `dagrun_asset_event` links its runs to
+  events 4 and 6 — the `scheduled__` and a later `manual__` `dataops` run —
+  and never to 2.
+- §10 with `mlops` saved: `scheduled_dags [mlops]`. Un-pausing `mlops`, then
+  `dataops`, no trigger: one `scheduled__…T03:00:00` `dataops` run; one
+  `asset_triggered__` `mlops` run queued 1.5 s after its event, with an empty
+  `logical_date`; `train_candidate` map indexes 2 and 3 started after 0 and 1
+  ended; `promote_model` success, `keep_current_model` skipped. The Try-it
+  with `TAGIFAI_MIN_F1=0.99`: `below threshold 0.99 - not promoting`, `Branch
+  into keep_current_model`.
+- §11 `dags test`: `curated table has 764 rows`, `Success criteria met`,
+  `Data is ready (764 rows)`, 5.6 s. Through the scheduler, polled every half
+  second: `settle` `deferred` at +2 s, `success` at +8 s.
+- §12 with `--conf`: 74 s; `Branch into request_retraining`, `Waiting for
+  response`, `Approved` 65 s later, `trigger_dag_id=mlops`, and one new
+  `manual__` run of `mlops`.
+- §13: `DEADLINE MISSED` at +31 s, `slow_step` still running.
+- §14: the seven typed files pass the integrity suite (27 with the workload
+  tests); the same suite with `DAGS_DIR=solutions` passes; the "Build it"
+  blocks in both READMEs assemble into files that import; **36 passed**
+  in total.
+- §5's two "Do it now" steps and the UI tour rest on the shipped UI strings
+  and the API endpoints behind them, as before — nobody clicked through them
+  for this run.
+
 Six real defects were found while building this, all documented in
 [troubleshooting](docs/troubleshooting.md):
 
@@ -3087,7 +3958,8 @@ Six real defects were found while building this, all documented in
 ## Repository layout
 
 ```
-dags/                       the seven lesson Dags, numbered in reading order
+dags/                       your workspace - empty until you write the seven Dags
+solutions/                  the finished version of each, numbered in reading order
 src/tagifai/                the ML project Airflow orchestrates (imports no Airflow)
   config.py                 paths and thresholds
   data.py                   extract / clean / transform / split
@@ -3098,7 +3970,7 @@ src/tagifai/                the ML project Airflow orchestrates (imports no Airf
   predict.py                inference against the promoted model
   assets.py                 the Airflow Assets the Dags share
   callbacks.py              deadline-alert callbacks
-tests/                      Dag integrity, unit tests, README listing checks
+tests/                      Dag integrity (your dags/), unit tests, README checks
 docs/                       CLI cheatsheet, troubleshooting
 scripts/                    up / reset / native setup / README sync
 docker-compose.yaml         LocalExecutor + Postgres + Simple auth
