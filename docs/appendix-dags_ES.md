@@ -4,13 +4,13 @@
 > tutorial siga siendo legible. `§N` se refiere a una sección numerada de ese
 > README.
 
-Las lecciones del tutorial te dan cada fichero por trozos. Aquí está cada uno de
+Las lecciones del tutorial te dan cada archivo por trozos. Aquí está cada uno de
 principio a fin, en orden de lectura, tal y como está en
 [`solutions/`](../solutions/) — el mismo código que tecleaste, más los
 comentarios, que explican los detalles en el punto en que importan. El código y sus
-comentarios se dejan en inglés: son los ficheros que de verdad se ejecutan.
+comentarios se dejan en inglés: son los archivos que de verdad se ejecutan.
 
-> Estos listados se **inyectan desde los ficheros** con
+> Estos listados se **inyectan desde los archivos** con
 > [`scripts/sync_readme.py`](../scripts/sync_readme.py) y se verifican con
 > [`tests/test_readme_listings.py`](../tests/test_readme_listings.py): edita una
 > solución sin volver a ejecutar el script y la suite de tests falla. No pueden

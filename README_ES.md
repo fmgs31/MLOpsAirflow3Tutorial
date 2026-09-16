@@ -1,7 +1,7 @@
 # Aprende Apache Airflow 3 construyendo un pipeline de ML
 
 Un tutorial práctico para **Airflow 3.3.1**. Vas a escribir siete Dags, un
-fichero cada vez, que crecen hasta formar un sistema que funciona: se extraen
+archivo cada vez, que crecen hasta formar un sistema que funciona: se extraen
 datos, se validan y se transforman, eso publica un **Asset**, el Asset dispara
 el entrenamiento del modelo, el mejor modelo se promociona a producción, y un
 Dag de monitorización decide si hay que reentrenar.
@@ -58,7 +58,7 @@ nunca se vuelve a ejecutar por algo que hay aguas abajo. Cada nodo es una
 
 Merece la pena separar esas dos últimas palabras ya, porque cada línea de log y
 cada mensaje de error dan por hecho que lo has hecho. Una **task** es lo que
-escribiste una vez, en el fichero. Una **task instance** es esa task dentro de un
+escribiste una vez, en el archivo. Una **task instance** es esa task dentro de un
 Dag run concreto — lo que de verdad tiene un estado, una duración, un log y un
 número de intentos. Tú escribes tasks; tú depuras task instances. La §3 sigue una
 a lo largo de toda su vida.
@@ -96,15 +96,15 @@ código se da; el trabajo es teclearlo, verlo parsear y verlo correr.
 
 Dos redes de seguridad:
 
-- **[`solutions/`](solutions/)** tiene una copia terminada de cada fichero, con
+- **[`solutions/`](solutions/)** tiene una copia terminada de cada archivo, con
   los comentarios didácticos dentro. Compara cuando algo no parsee, o sáltate
-  una lección copiando su fichero: `cp solutions/03_dataops.py dags/`. El
+  una lección copiando su archivo: `cp solutions/03_dataops.py dags/`. El
   [apéndice](docs/appendix-dags_ES.md) imprime cada solución completa.
 - **Los tests de la §14** leen *tu* carpeta `dags/`. Cuando los siete estén
   escritos, te dicen si construiste lo que el tutorial quería decir.
 
 Las lecciones se apoyan unas en otras a partir de la §9 — `mlops` se programa con
-un asset que produce `dataops`, `sensors_and_events` espera un fichero que
+un asset que produce `dataops`, `sensors_and_events` espera un archivo que
 escribe `dataops` — así que hazlas en orden, o copia antes las soluciones
 anteriores.
 
@@ -135,7 +135,7 @@ llaman:
 | `data.py` | extract, clean, transform, split train/test |
 | `validate.py` | expectations de calidad de datos, lo que ejecutan los gates |
 | `train.py`, `evaluate.py` | clasificador TF-IDF + SGD, métricas y slices |
-| `registry.py` | sustituto en sistema de ficheros de un model registry |
+| `registry.py` | sustituto en sistema de archivos de un model registry |
 | `monitoring.py` | comprobaciones de drift y de rendimiento en vivo |
 | `predict.py` | etiqueta texto nuevo con lo que esté promocionado ahora mismo |
 | `assets.py` | los Assets de Airflow que comparten los Dags |
@@ -163,7 +163,7 @@ Luego levanta el stack. En Linux, macOS, WSL2 o Git Bash en Windows:
 ```
 
 En Windows PowerShell, donde una instalación por defecto se niega a ejecutar
-ficheros `.ps1`, de ahí el flag:
+archivos `.ps1`, de ahí el flag:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
@@ -216,7 +216,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
 Pregunta antes de borrar, y `up.sh` / `up.ps1` vuelve a levantar el stack. No
-toca `dags/` — los ficheros que escribas sobreviven a un reset. Ningún paso de
+toca `dags/` — los archivos que escribas sobreviven a un reset. Ningún paso de
 este tutorial lo necesita; está aquí para el día en que algo se atasque y
 [troubleshooting](docs/troubleshooting.md) no haya ayudado.
 
@@ -232,9 +232,9 @@ este tutorial lo necesita; está aquí para el día en que algo se atasque y
 > decorativo: sin él, Git reescribe la ruta a una de Windows antes de que Docker
 > la vea.
 
-> **Tu editor.** A partir de la §4 vas a crear ficheros en `dags/`. Vale cualquier
+> **Tu editor.** A partir de la §4 vas a crear archivos en `dags/`. Vale cualquier
 > editor; el contenedor ve la carpeta a través de un bind mount, así que un
-> fichero guardado en tu máquina es un fichero dentro de Airflow un momento
+> archivo guardado en tu máquina es un archivo dentro de Airflow un momento
 > después. No hay que copiar nada.
 
 ### Nativo (Linux / macOS / WSL2)
@@ -263,7 +263,7 @@ airflow db migrate                              # create the metadata database
 airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}'
 ```
 
-Airflow 3.3.1 necesita Python ≥ 3.10 (y no 3.15). Instálalo **con el fichero de
+Airflow 3.3.1 necesita Python ≥ 3.10 (y no 3.15). Instálalo **con el archivo de
 constraints** — Airflow tiene un árbol de dependencias enorme y una instalación
 sin constraints resolverá a algo que no funciona.
 
@@ -283,11 +283,28 @@ logs/           task logs, one directory per dag_id / run_id / task_id
 > recomendado.
 
 Cualquier ajuste de `airflow.cfg` también se puede dar como variable de entorno
-`AIRFLOW__SECCIÓN__CLAVE`, que es lo que hace el fichero de compose de este repo
-en vez de traer un fichero de configuración.
+`AIRFLOW__SECTION__KEY`. `SECTION` es la `[cabecera]` bajo la que está el ajuste
+y `KEY` es el nombre del propio ajuste, ambos en mayúsculas y unidos por **doble**
+guion bajo — un guion bajo *dentro* de cualquiera de los dos nombres sigue siendo
+simple. El nombre de la variable va siempre en ASCII y en inglés: no se traduce,
+ni lleva tildes.
+
+```
+airflow.cfg                          variable de entorno
+─────────────────────────────────    ────────────────────────────────────────
+[core]
+executor = LocalExecutor             AIRFLOW__CORE__EXECUTOR=LocalExecutor
+
+[dag_processor]
+refresh_interval = 5                 AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5
+```
+
+Es lo que hace el archivo de compose de este repo en vez de traer un archivo de
+configuración: las dos de arriba son líneas reales de
+[`docker-compose.yaml`](docker-compose.yaml).
 
 > **Las connections por defecto no se crean solas.** `fs_default` se añade a mano
-> arriba porque `FileSensor` (§11) la necesita. En Docker el fichero de compose
+> arriba porque `FileSensor` (§11) la necesita. En Docker el archivo de compose
 > la aporta como `AIRFLOW_CONN_FS_DEFAULT`.
 
 Y después, o bien el proceso todo-en-uno:
@@ -327,7 +344,7 @@ ahora mismo:
 |---|---|
 | **API server** | Sirve la REST API, la UI de React y la **Task Execution API** que llaman los workers |
 | **Scheduler** | Decide qué ejecutar y entrega el trabajo al executor |
-| **Dag processor** | Parsea tus ficheros de Dag a la base de datos — su propio proceso |
+| **Dag processor** | Parsea tus archivos de Dag a la base de datos — su propio proceso |
 | **Triggerer** | Ejecuta triggers async para tasks deferred (§11) y callbacks async |
 | **Executor** | Donde corren de verdad las tasks. `LocalExecutor` aquí; Celery o Kubernetes en producción |
 | **Metadata DB** | El estado de todo: runs, task instances, XComs, connections |
@@ -352,11 +369,11 @@ mucho un segundo, y no lo vas a notar. Lo que *sí* vas a notar es lo que tarden
 las propias tasks de aguas arriba, y eso no tiene nada que ver con el scheduler.
 
 El parseo es otro reloj distinto, y es del que vas a depender enseguida. El Dag
-processor vuelve a leer un fichero cambiado como mucho cada `[dag_processor]
-min_file_process_interval` segundos y re-escanea la carpeta buscando ficheros
+processor vuelve a leer un archivo cambiado como mucho cada `[dag_processor]
+min_file_process_interval` segundos y re-escanea la carpeta buscando archivos
 nuevos cada `refresh_interval`. Este stack pone ambos a **5**, así que un
-fichero que guardas aparece en la UI en unos segundos. Los valores por defecto
-son 30 y 300: en un stack que los conserve, un fichero recién creado puede
+archivo que guardas aparece en la UI en unos segundos. Los valores por defecto
+son 30 y 300: en un stack que los conserve, un archivo recién creado puede
 tardar cinco minutos en aparecer, lo que se ve exactamente igual que un Dag roto
 si no sabes que ese número existe.
 
@@ -505,7 +522,7 @@ Dags posteriores.
 
 ### Constrúyelo
 
-Crea el fichero `dags/01_hello_airflow3.py` y empiézalo con un docstring, los
+Crea el archivo `dags/01_hello_airflow3.py` y empiézalo con un docstring, los
 imports y un diccionario de valores por defecto:
 
 ```python dags/01_hello_airflow3.py
@@ -629,7 +646,7 @@ falta del contexto por completo — indexarla lanza `KeyError` en tiempo de
 ejecución, mientras `airflow dags test` (que siempre aporta una) sigue en verde.
 La §7 explica el porqué. `run_id` siempre está; prefiérelo para nombrar cosas.
 
-Termina el fichero cableando las tasks entre sí y registrando el Dag:
+Termina el archivo cableando las tasks entre sí y registrando el Dag:
 
 ```python dags/01_hello_airflow3.py
     message = make_greeting()
@@ -641,7 +658,7 @@ hello_airflow3()
 
 **Pasar la salida de una task a otra dibuja la arista.** `shout(message)` es lo
 que hace que `shout` corra después de `make_greeting`. El grafo se construye
-cuando se parsea el fichero; el código corre después, posiblemente en otra
+cuando se parsea el archivo; el código corre después, posiblemente en otra
 máquina. Nada hace que `shout` y `count_words` se esperen entre sí, así que un
 run dirigido por el scheduler es libre de ejecutarlas a la vez (la §3 dice qué lo
 decide):
@@ -652,18 +669,18 @@ make_greeting ─┬─► shout ──────┬─► report
 ```
 
 Y la última línea: **el decorador solo define el Dag; llamar a la función lo
-registra.** Un fichero de Dag que define un Dag y nunca lo llama no produce nada
+registra.** Un archivo de Dag que define un Dag y nunca lo llama no produce nada
 — importa limpiamente y no aparece en ningún sitio. Es el error de principiante
 más común y el más difícil de ver, porque no hay ningún error que leer.
 
-Guarda el fichero. Compáralo con
+Guarda el archivo. Compáralo con
 [`solutions/01_hello_airflow3.py`](solutions/01_hello_airflow3.py) si quieres —
 es el mismo código con los comentarios dentro.
 
 ### Míralo parsear
 
 El Dag processor (§3) escanea `dags/` cada cinco segundos en este stack,
-importa cada fichero `.py` que encuentra, y escribe lo que parseó en la metadata
+importa cada archivo `.py` que encuentra, y escribe lo que parseó en la metadata
 database. A los pocos segundos de guardar:
 
 ```bash
@@ -675,7 +692,7 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 lista, en pausa. (Todos los Dags empiezan en pausa — §7.)
 
 Si la fila no está, pueden estar pasando dos cosas, y desde aquí parecen
-idénticas. La primera es un fichero que lanza una excepción al importarse — una
+idénticas. La primera es un archivo que lanza una excepción al importarse — una
 errata, un paquete que falta, una función `@dag` que revienta. Eso no es un Dag
 roto en la lista, es **ningún Dag**: ausente de la UI, ausente de `airflow dags
 list`. Aparece en la página Home (§5) y con este comando:
@@ -684,7 +701,7 @@ list`. Aparece en la página Home (§5) y con este comando:
 docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
 ```
 
-**Comprobación.** `No data found` — tu fichero importa. Mira cómo se ve el otro
+**Comprobación.** `No data found` — tu archivo importa. Mira cómo se ve el otro
 caso provocándolo: guarda esto como `dags/zz_broken_on_purpose.py`,
 
 ```python
@@ -703,23 +720,23 @@ dags-folder    zz_broken_on_purpose.py  Traceback (most recent call last):
                                         ModuleNotFoundError: No module named 'a_module_that_does_not_exist'
 ```
 
-El fichero, la línea y el traceback completo. Borra el fichero y la fila
+El archivo, la línea y el traceback completo. Borra el archivo y la fila
 desaparece sola en el siguiente escaneo.
 
 Esa primera línea de comentario no es relleno. El Dag processor no importa
 todos los `.py` que encuentra: con `[core] dag_discovery_safe_mode` activado —
-el valor por defecto — primero lee el fichero como texto y se lo salta salvo que
+el valor por defecto — primero lee el archivo como texto y se lo salta salvo que
 el contenido en minúsculas contenga `airflow` *y* además `dag` o `asset`. Quita
-el comentario de ese fichero roto y no se parsea nunca, no se lista nunca y no
-se reporta nunca — silencio, no un error. Todo fichero de Dag real pasa esta
+el comentario de ese archivo roto y no se parsea nunca, no se lista nunca y no
+se reporta nunca — silencio, no un error. Todo archivo de Dag real pasa esta
 prueba por importar de `airflow.sdk`, así que solo muerde a módulos auxiliares y
-experimentos; pero es lo segundo que comprobar cuando un fichero simplemente no
+experimentos; pero es lo segundo que comprobar cuando un archivo simplemente no
 está.
 
-La otra clase de nada es el error 1 de arriba — un fichero que define un Dag y
+La otra clase de nada es el error 1 de arriba — un archivo que define un Dag y
 nunca lo llama. Importa limpiamente, así que `list-import-errors` también está
 vacío, y el único síntoma es un Dag que no está. Mira primero esta lista, y
-después el final del fichero.
+después el final del archivo.
 
 ### Ejecútalo
 
@@ -750,7 +767,7 @@ después de cada Dag que escribas.
 >   otra; cuál va primero varía de un run a otro.
 > - **Siempre aporta una logical date.** Un trigger manual de verdad no (§7), que
 >   es la forma en la que un Dag puede pasar aquí y fallar en producción.
-> - **No es un dry run**: las tasks escriben ficheros reales y asset events
+> - **No es un dry run**: las tasks escriben archivos reales y asset events
 >   reales (§9).
 > - Una task que se defiere ejecuta su trigger dentro del mismo proceso (§11), y
 >   en 3.3.1 el comando revienta con cualquier Dag que tenga un `deadline=`
@@ -759,14 +776,14 @@ después de cada Dag que escribas.
 > Es la forma más rápida de ver funcionar un Dag; la §14 dice cuándo dejar de
 > fiarse de él.
 
-> **Pruébalo.** Cambia el saludo sin tocar el fichero:
+> **Pruébalo.** Cambia el saludo sin tocar el archivo:
 > `airflow dags test hello_airflow3 --conf '{"greeting": "hola"}'`. La línea de
 > `report` empieza ahora por `HOLA`. Ese `--conf` llegó a la task a través de
 > `context["params"]` — el `Param` que declaraste, sobrescrito para un run.
 
 **La otra forma de declarar un Dag** es el context manager, que está plenamente
 soportado y se lee mejor cuando las tasks son operators (§6) en vez de funciones.
-No para este fichero — solo para que lo reconozcas:
+No para este archivo — solo para que lo reconozcas:
 
 ```python
 from airflow.sdk import DAG
@@ -781,7 +798,7 @@ with DAG(
 ```
 
 Cualquier cosa creada dentro del bloque `with` se engancha a ese Dag
-automáticamente. Ambas formas producen el mismo objeto, y un fichero puede tener
+automáticamente. Ambas formas producen el mismo objeto, y un archivo puede tener
 varios Dags.
 
 ## 5. La UI
@@ -837,7 +854,7 @@ bundle, la versión del bundle y la hora de parseo en la pestaña **Code**. Un
 *bundle* es un sitio del que el Dag processor carga Dags; este stack tiene uno,
 la carpeta `dags/`, y se llama `dags-folder` — la columna `bundle_name` que
 viste en `airflow dags list` (la §15 tiene los otros tipos). Cada vez que
-guardas un cambio en un fichero de Dag su cuenta de versiones sube, y el run de
+guardas un cambio en un archivo de Dag su cuenta de versiones sube, y el run de
 la semana pasada sigue mostrando el grafo de la semana pasada.
 
 **El formulario de Trigger se genera a partir de tus `params`.** Por eso merece
@@ -859,7 +876,7 @@ disparar un Dag en pausa deja el run **queued** para siempre (§7).
 campo, `greeting`, relleno con `hello` — escribe otra cosa, marca *Unpause
 hello_airflow3 on trigger* y envía. Aparece un segundo run en el Grid; el log de
 su `report` lleva tu palabra en mayúsculas. Es el mismo `Param` llegando a la
-misma task por una tercera vía: un valor por defecto en el fichero, `--conf` en
+misma task por una tercera vía: un valor por defecto en el archivo, `--conf` en
 la línea de comandos, un formulario en el navegador.
 
 El mismo diálogo tiene un segundo modo, **Backfill**: un rango de fechas, un
@@ -886,7 +903,7 @@ XComs.
 
 **Admin** — Connections, Variables, Pools, Providers, Plugins, Jobs y la
 **Config** renderizada de Airflow. Connections y Variables son las dos que vas a
-usar: nunca metas una credencial en un fichero de Dag.
+usar: nunca metas una credencial en un archivo de Dag.
 
 > **Security y Plugins** están casi vacías aquí. Este stack corre el Simple auth
 > manager con todo el mundo como admin, así que no hay usuarios ni roles que
@@ -1074,7 +1091,7 @@ desde cualquiera de los dos lados.
 ### Relaciones
 
 Nada de lo de arriba está conectado todavía. Una arista entre dos tasks se
-declara de una de estas cuatro formas, y este Dag usa todas. Termina el fichero
+declara de una de estas cuatro formas, y este Dag usa todas. Termina el archivo
 con el cableado:
 
 ```python dags/02_operators_and_xcoms.py
@@ -1161,7 +1178,7 @@ Las **Connections** guardan credenciales (`conn_type`, host, login, password,
 extra); las **Variables** guardan configuración. Ambas son editables bajo Admin,
 se pueden fijar desde la CLI y se pueden sobrescribir con una variable de
 entorno `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` — que es como se define `fs_default`
-en el fichero de compose de este repo. Las plantillas las alcanzan como
+en el archivo de compose de este repo. Las plantillas las alcanzan como
 `{{ conn.fs_default.host }}` y `{{ var.value.my_key }}`.
 
 > Una task que consulta cualquiera de las dos no toca la metadata database: la
@@ -1206,7 +1223,7 @@ forma de `schedule=`, y las dos formas comunes difieren:
   de ayer", porque el intervalo le dice exactamente qué día es ese.
 
 `start_date` es donde empiezan los trozos: nunca se programa un run antes de él.
-Un fichero de Dag sin él parsea igual sin error, así que esto es algo que
+Un archivo de Dag sin él parsea igual sin error, así que esto es algo que
 recuerdas tú, no algo de lo que Airflow te avise.
 
 Retén esa imagen y el resto de esta sección son consecuencias de ella. Tres cosas
@@ -1380,7 +1397,7 @@ y en runs nativos. En producción dales la URI real de los datos (`s3://…`,
 Un asset existe a ojos de Airflow solo cuando un Dag parseado se refiere a él —
 como outlet o como schedule. Ahora mismo `airflow assets list` imprime `No data
 found`, y la pestaña Assets está vacía; la §9 cambia eso en cuanto guardes un
-fichero.
+archivo.
 
 ### Qué es en realidad un asset event
 
@@ -1499,8 +1516,8 @@ def dataops():
 Dos imports son nuevos. `AirflowFailException` viene de
 `airflow.sdk.exceptions` — el código de task importa las excepciones del Task
 SDK, porque ese es el namespace que tiene un worker remoto. Y `tagifai` importa
-siquiera porque el fichero de compose pone `/opt/airflow/src` en `PYTHONPATH`
-para todos los servicios: el Dag processor lo necesita para parsear el fichero,
+siquiera porque el archivo de compose pone `/opt/airflow/src` en `PYTHONPATH`
+para todos los servicios: el Dag processor lo necesita para parsear el archivo,
 y el executor para ejecutar las tasks.
 
 `max_active_runs=1` limita el Dag a un run a la vez — un segundo, venga de un
@@ -1616,7 +1633,7 @@ de la §6 en la práctica — aristas implícitas para los datos, `>>` para el p
 
 ### Mira aparecer los assets
 
-Guarda el fichero. A los pocos segundos `airflow dags list` tiene una tercera
+Guarda el archivo. A los pocos segundos `airflow dags list` tiene una tercera
 fila — y algo más ha cambiado:
 
 ```bash
@@ -1624,7 +1641,7 @@ docker compose exec airflow-scheduler airflow assets list -o plain
 ```
 
 **Comprobación.** Dos filas, `labeled_projects` y `raw_projects`, cada una con
-su grupo y su extra. No ha corrido nada; el Dag processor parseó un fichero con
+su grupo y su extra. No ha corrido nada; el Dag processor parseó un archivo con
 `outlets=` dentro, y con eso bastó. `production_model`, definido en el mismo
 `assets.py`, no aparece — ningún Dag se refiere a él todavía. La pestaña Assets
 de la UI muestra ahora los dos, con `dataops` como productor y sin consumidor.
@@ -1638,15 +1655,15 @@ docker compose exec airflow-scheduler airflow dags test dataops
 **Comprobación.** Busca `suite=raw_projects passed=4/4`, `Wrote 764 rows to
 /opt/airflow/data/warehouse/labeled_projects.csv`, `suite=labeled_projects
 passed=6/6`, y del task group, `raw_projects: 4 checks, failed=none` y
-`labeled_projects: 6 checks, failed=none`. El fichero
+`labeled_projects: 6 checks, failed=none`. El archivo
 `data/warehouse/labeled_projects.csv` ya existe en tu máquina. (`extract`
 descarga el CSV de origen por HTTPS — es la única task del pipeline que
-necesita conexión a internet, y el recuento de filas sale de ese fichero.)
+necesita conexión a internet, y el recuento de filas sale de ese archivo.)
 
 Si una task falla, compara con [`solutions/03_dataops.py`](solutions/03_dataops.py).
 
 > **`airflow dags test` no es un dry run.** Ejecutó las tasks reales y escribió
-> las filas reales: el fichero en disco, y un asset event `labeled_projects`
+> las filas reales: el archivo en disco, y un asset event `labeled_projects`
 > genuino en la metadata database — abre la pestaña Assets y ahí está, con el
 > `extra` que le adjuntaste. Todavía no hay nada programado con ese asset, así
 > que no pasa nada más. Y según la §8, no pasará: cuando `mlops` aparezca en el
@@ -1695,7 +1712,7 @@ tiene trozos, solo eventos.
 ### Cambiar a los vendors reales
 
 Cada cambio es un operator más una **Connection** — la credencial nunca aparece
-en el fichero del Dag. Añádela bajo Admin → Connections, desde la CLI, o como
+en el archivo del Dag. Añádela bajo Admin → Connections, desde la CLI, o como
 variable de entorno `AIRFLOW_CONN_*`; el Dag solo la nombra:
 
 ```bash
@@ -1777,7 +1794,7 @@ estratificado `(train, test)`; `validate.check_split(train, test)` es una
 segunda suite, sobre el split; `train_module.SEARCH_SPACE` es una lista de dicts
 de hiperparámetros y `train_module.train_from_files(hparams)` ajusta un modelo,
 devolviendo `(model, metrics)`; `registry.save_run`, `load_metrics`, `promote` y
-`get_production` son el registry en sistema de ficheros;
+`get_production` son el registry en sistema de archivos;
 `config.MIN_F1_TO_PROMOTE` es el umbral de promoción, leído de `TAGIFAI_MIN_F1`
 si está definida.
 
@@ -1980,7 +1997,7 @@ limpieza), `none_failed_min_one_success` (joins después de un branch),
 `none_failed` (permite skips pero no fallos), `one_success`, `one_failed`
 (caminos de alerta), `all_skipped` y `always`.
 
-Termina el fichero con el cableado:
+Termina el archivo con el cableado:
 
 ```python dags/04_mlops.py
     snapshot = validate_training_data(prepare_data())
@@ -2055,7 +2072,7 @@ date, exactamente igual que los manuales (§7). En la UI, abre **Assets** y ver�
 la arista que lo causó.
 
 Ten claro de qué es la espera. Casi toda es `dataops` corriendo sus cuatro tasks
-— `extract` descarga el fichero de origen, así que esa parte depende de tu
+— `extract` descarga el archivo de origen, así que esa parte depende de tu
 conexión. La parte de Airflow es pequeña: un bucle del scheduler para crear el
 run de `dataops` tras quitar la pausa, y uno más para encolar `mlops` cuando
 aterriza el asset event (§3). Si tras un minuto no ha aparecido nada, comprueba
@@ -2120,7 +2137,7 @@ TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
 La palabra **trigger** está sobrecargada, así que fíjala antes de que la tercera
 opción pueda tener sentido. Tú *disparas* (trigger) un Dag (§7): un verbo. El
 proceso triggerer de la §3 ejecuta **triggers**: sustantivos — pequeños trozos de
-código asíncrono que esperan a una cosa (un momento en el tiempo, un fichero, un
+código asíncrono que esperan a una cosa (un momento en el tiempo, un archivo, un
 mensaje) y lanzan un evento cuando ocurre. "Deferrable" significa que la task le
 entrega al triggerer uno de esos triggers, sale, y se reanuda cuando llega el
 evento. `TriggerDagRunOperator` (§12) vuelve a ser el verbo.
@@ -2169,8 +2186,8 @@ def sensors_and_events():
 ```
 
 `settle` es deferrable: libera su worker slot mientras espera, lo que necesita
-`airflow triggerer` corriendo. `wait_for_curated_data` vigila el fichero que
-escribe `dataops`, a través de la connection `fs_default` que aporta el fichero
+`airflow triggerer` corriendo. `wait_for_curated_data` vigila el archivo que
+escribe `dataops`, a través de la connection `fs_default` que aporta el archivo
 de compose. `mode="reschedule"` es la forma no-deferrable de liberar un slot: la
 task instance sale y se vuelve a encolar cada `poke_interval` segundos, y se
 rinde pasado `timeout`.
@@ -2202,7 +2219,7 @@ un valor aguas abajo — `proceed` recibe el recuento de filas. La tabla se lee 
 pandas en vez de contar líneas, porque las descripciones contienen saltos de
 línea.
 
-No en el fichero, porque necesita una cola que no tienes: la opción que elimina
+No en el archivo, porque necesita una cola que no tienes: la opción que elimina
 la espera del todo — **event-driven scheduling**. Engancha un watcher a un asset
 y un evento externo arranca el run; nada hace polling, nada ocupa un slot:
 
@@ -2219,7 +2236,7 @@ def ingest_on_message(): ...
 ```
 
 Solo los triggers que derivan de `BaseEventTrigger` pueden ser watchers — un
-trigger que comprueba una condición permanente ("el fichero existe") se
+trigger que comprueba una condición permanente ("el archivo existe") se
 dispararía una y otra vez para siempre.
 
 > Tanto los sensors deferrable como los watchers necesitan `airflow triggerer`
@@ -2227,7 +2244,7 @@ dispararía una y otra vez para siempre.
 
 ### Ejecútalo
 
-Este Dag espera el fichero que produjo `dataops`, así que la §9 tiene que haber
+Este Dag espera el archivo que produjo `dataops`, así que la §9 tiene que haber
 corrido o los sensors harán polling hasta agotar su timeout:
 
 ```bash
@@ -2244,7 +2261,7 @@ Success criteria met. Exiting.
 Data is ready (764 rows). Downstream work can start.
 ```
 
-`wait_for_curated_data` hace un poke, encuentra el fichero y sale; `enough_rows`
+`wait_for_curated_data` hace un poke, encuentra el archivo y sale; `enough_rows`
 cuenta las filas y supera su umbral en el primer poke. Y `settle`, el deferrable,
 vuelve de inmediato sin diferirse en absoluto: su objetivo de cinco segundos se
 mide desde la logical date del run, que `airflow dags test` fijó antes de que la
@@ -2271,7 +2288,7 @@ visto desde fuera. Sé rápido con el segundo comando; un `docker compose exec`
 se lleva uno o dos segundos por su cuenta.
 
 **Ahora mira el caso interesante** — un sensor que sí tiene que esperar. Aparta
-el fichero y ejecuta el Dag otra vez:
+el archivo y ejecuta el Dag otra vez:
 
 ```bash
 # Git Bash needs the MSYS_NO_PATHCONV prefix on any /opt/... path (§2)
@@ -2291,7 +2308,7 @@ No tasks to run. unrunnable tasks: {<TaskInstance: sensors_and_events.enough_row
                                     <TaskInstance: sensors_and_events.wait_for_curated_data ... [up_for_reschedule]>}
 ```
 
-En una **segunda terminal**, devuelve el fichero a su sitio:
+En una **segunda terminal**, devuelve el archivo a su sitio:
 
 ```bash
 MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
@@ -2585,7 +2602,7 @@ el informe de la mañana.
 
 ### Constrúyelo
 
-`dags/07_deadline_alerts.py` es el fichero más corto de los siete, y todo él es
+`dags/07_deadline_alerts.py` es el archivo más corto de los siete, y todo él es
 el decorador:
 
 ```python dags/07_deadline_alerts.py
@@ -2675,7 +2692,7 @@ Referencia: [`solutions/07_deadline_alerts.py`](solutions/07_deadline_alerts.py)
 ## 14. Testear Dags
 
 Cuatro niveles, el más barato primero — y el primero de ellos es el corrector de
-los siete ficheros que escribiste.
+los siete archivos que escribiste.
 
 **Tests de integridad de Dags** — [`tests/test_dag_integrity.py`](tests/test_dag_integrity.py).
 Estos pillan los fallos que si no aparecen como un banner rojo en la UI horas más
@@ -2720,7 +2737,7 @@ desde `solutions/` con [`scripts/sync_readme.py`](scripts/sync_readme.py) en vez
 de copiada a mano; el test vuelve a ejecutar la inyección en memoria y falla si
 el resultado difiere.
 [`tests/test_readme_build_steps.py`](tests/test_readme_build_steps.py): cada
-bloque de "Constrúyelo" de arriba lleva la etiqueta del fichero al que
+bloque de "Constrúyelo" de arriba lleva la etiqueta del archivo al que
 pertenece; el test los concatena en orden, carga el resultado con `DagBag`, y
 falla si lo que se te dijo que teclearas no suma un Dag que importe.
 
@@ -2731,7 +2748,7 @@ docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 ```
 
 `airflow-cli` no es uno de los cinco servicios que lista `docker compose ps`: es
-un contenedor de usar y tirar que el fichero de compose define bajo un profile,
+un contenedor de usar y tirar que el archivo de compose define bajo un profile,
 que `run` crea para ese comando y que `--rm` elimina después.
 
 **Comprobación.** Una fila de puntos y `36 passed`, en bastante menos de
@@ -2746,10 +2763,10 @@ No intervino ningún scheduler y no corrió ningún Dag. Ese es el objetivo: cad
 uno de esos 36 es lo bastante rápido para correr en cada commit, que es
 lo que hace que merezca la pena tenerlos.
 
-Cuando uno falla, el mensaje dice qué fichero y qué falta — `mlops has no
+Cuando uno falla, el mensaje dice qué archivo y qué falta — `mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`, a
 `dataops` le falta un outlet — y el arreglo está en la lección que construyó ese
-fichero, o en `solutions/`. Para ver la suite pasar contra las versiones
+archivo, o en `solutions/`. Para ver la suite pasar contra las versiones
 terminadas, apúntala ahí:
 
 ```bash
@@ -2799,10 +2816,10 @@ dag_bundle_config_list = [
   ]
 ```
 
-**Intervalos de parseo.** Este stack escanea ficheros cada 5 segundos para que
+**Intervalos de parseo.** Este stack escanea archivos cada 5 segundos para que
 lo que guardas aparezca al momento. Devuelve los valores por defecto
 (`refresh_interval` 300, `min_file_process_interval` 30) en cualquier cosa con
-cientos de ficheros de Dag — el trabajo del processor es parsear, no hacer
+cientos de archivos de Dag — el trabajo del processor es parsear, no hacer
 polling.
 
 **Secretos.** Nunca en el código del Dag, nunca en los `kwargs` de un bundle,
@@ -2835,7 +2852,7 @@ Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — cableados a
 ## 16. Apéndice y procedencia
 
 Las lecciones de arriba construyen cada Dag por partes. Dos documentos más
-largos viven fuera de este fichero, para que el tutorial siga siendo legible y
+largos viven fuera de este archivo, para que el tutorial siga siendo legible y
 el material de referencia siga siendo localizable:
 
 - **[Los Dags terminados, completos](docs/appendix-dags_ES.md)** — cada solución
@@ -2864,7 +2881,7 @@ src/tagifai/                the ML project Airflow orchestrates (imports no Airf
   assets.py                 the Airflow Assets the Dags share
   callbacks.py              deadline-alert callbacks
 tests/                      Dag integrity (your dags/), unit tests, README checks
-docs/                       cheatsheet, troubleshooting, el apéndice de Dags (§16)
+docs/                       cheatsheet, troubleshooting, the Dag appendix (§16)
 scripts/                    up / reset / native setup / README sync
 docker-compose.yaml         LocalExecutor + Postgres + Simple auth
 ```
