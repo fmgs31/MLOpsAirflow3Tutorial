@@ -277,8 +277,22 @@ logs/           task logs, one directory per dag_id / run_id / task_id
 > the recommended one.
 
 Any setting in `airflow.cfg` can also be given as an `AIRFLOW__SECTION__KEY`
-environment variable, which is what this repo's compose file does instead of
-shipping a config file.
+environment variable. `SECTION` is the `[header]` the setting sits under and
+`KEY` is the setting's own name, both uppercased and joined by **double**
+underscores — an underscore *inside* either name stays single:
+
+```
+airflow.cfg                          environment variable
+─────────────────────────────────    ────────────────────────────────────────
+[core]
+executor = LocalExecutor             AIRFLOW__CORE__EXECUTOR=LocalExecutor
+
+[dag_processor]
+refresh_interval = 5                 AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5
+```
+
+That is what this repo's compose file does instead of shipping a config file:
+both of those are real lines in [`docker-compose.yaml`](docker-compose.yaml).
 
 > **Default connections are not created for you.** `fs_default` is added by hand
 > above because `FileSensor` (§11) needs it. In Docker the compose file provides

@@ -69,8 +69,8 @@ afirmaciones que el cuerpo te devuelve impresos:
 - El fan-out de la §10 es **de dos en dos, en dos oleadas**
   (`max_active_tis_per_dag=2`), leído de las horas de inicio y fin de las cuatro
   task instances mapeadas — no cuatro a la vez.
-- El modo reschedule de la §11: con el fichero curado apartado, ambos sensors se
-  quedaron en `up_for_reschedule`; restaurar el fichero hizo que el siguiente
+- El modo reschedule de la §11: con el archivo curado apartado, ambos sensors se
+  quedaron en `up_for_reschedule`; restaurar el archivo hizo que el siguiente
   poke tuviera éxito y el run terminó.
 - Los tiempos de la §12: **69 segundos**, de los cuales **60** fueron
   `request_retraining` en `awaiting_input` antes de que se resolviera el default
@@ -87,7 +87,7 @@ afirmaciones que el cuerpo te devuelve impresos:
   data_interval_end`; `timedelta(days=1)` es un `DeltaDataIntervalTimetable` y da
   `run_after` 2026-09-11 00:00 con `logical_date == data_interval_start`
   2026-09-10 00:00.
-- El `start_date` de la §4/§7: un fichero de Dag sin él parsea **sin error de
+- El `start_date` de la §4/§7: un archivo de Dag sin él parsea **sin error de
   import** bajo `DagBag`, tanto con `schedule=None` como con `@daily`.
 - El recuadro de `dags test` de la §4: `hello_airflow3` ejecutó `make_greeting →
   shout → count_words → report`, cada una terminando antes de que empezara la
@@ -124,21 +124,21 @@ todos los comandos de la §2 al §14 en orden:
 - §9 `passed=4/4`, `6/6`, `Wrote 764 rows`; con `mlops` en pausa, un evento y
   cero runs.
 - §11 `deferred → scheduled → success` a través del scheduler; ambos sensors
-  `up_for_reschedule` con el fichero apartado; `764 rows` una vez restaurado.
+  `up_for_reschedule` con el archivo apartado; `764 rows` una vez restaurado.
 - §12 76s con `--conf` — `awaiting_input`, `Approved`, `trigger_dag_id=mlops`,
   un run `manual__` nuevo; 9s y `continue_serving` sin él.
 - §13 `DEADLINE MISSED` a +33s con `slow_step` todavía `running`. §14 30 passed,
   listados en sync.
 
 Añadido el 2026-09-14, mismo stack: el `list-import-errors` de la §4. Con los
-siete ficheros de la lección, `No data found`. Con un octavo fichero cuya
+siete archivos de la lección, `No data found`. Con un octavo archivo cuya
 segunda línea importa un módulo que no existe, una fila con el traceback — y
-`airflow dags list` seguía mostrando siete, porque un fichero que falla al
-importarse no es ningún Dag, no un Dag roto. Borrar el fichero y reiniciar el
+`airflow dags list` seguía mostrando siete, porque un archivo que falla al
+importarse no es ningún Dag, no un Dag roto. Borrar el archivo y reiniciar el
 dag-processor quitó la fila.
 
 También el 2026-09-14: el arranque de la §2, en frío, con `AIRFLOW_UID=1000` en
-`.env` (lo que `up.sh` escribe en WSL2). Con el fichero de compose anterior,
+`.env` (lo que `up.sh` escribe en WSL2). Con el archivo de compose anterior,
 `airflow-init` fallaba en 0,2 s — `ModuleNotFoundError: No module named
 'airflow'` — y aun así salía con 0; los cuatro servicios reiniciaban sin fin
 con `Database migration required`, y `up.ps1` esperaba para siempre. Repetido
@@ -149,9 +149,9 @@ mismo `.env` y la misma base de datos vacía: `Database migration done!`,
 endpoint de salud `healthy` 33 s después de `up`, siete Dags listados.
 
 Reestructurado el 2026-09-15 como un tutorial de escribirlo-tú-mismo —
-`dags/` vacía, los ficheros terminados movidos a `solutions/`, cada lección
+`dags/` vacía, los archivos terminados movidos a `solutions/`, cada lección
 reconstruida como trozos que se teclean — y vuelto a ejecutar en frío en el
-nuevo orden: `reset.sh`, `up.sh`, los siete ficheros tecleados a partir de los
+nuevo orden: `reset.sh`, `up.sh`, los siete archivos tecleados a partir de los
 bloques de "Constrúyelo", todos los comandos de la §2 al §14 tal cual están
 escritos.
 
@@ -160,13 +160,13 @@ escritos.
   cuatro veces.
 - Los intervalos de parseo de la §3 son la configuración viva de este stack:
   `refresh_interval=5`, `min_file_process_interval=5`,
-  `scheduler_idle_sleep_time=1`. Un fichero guardado en `dags/` apareció en
+  `scheduler_idle_sleep_time=1`. Un archivo guardado en `dags/` apareció en
   `airflow dags list` **2 segundos** después.
-- El fichero roto de la §4: con el comentario `# An airflow dag file that does
+- El archivo roto de la §4: con el comentario `# An airflow dag file that does
   not import`, la fila estaba en `list-import-errors` 6 s después de guardar y
-  desapareció 6 s después de borrar el fichero, sin reiniciar nada. **Sin** las
-  palabras `airflow` y `dag` en el fichero, no apareció nada en 90 s y el log
-  del Dag processor nunca mencionó el fichero. `[core] dag_discovery_safe_mode`
+  desapareció 6 s después de borrar el archivo, sin reiniciar nada. **Sin** las
+  palabras `airflow` y `dag` en el archivo, no apareció nada en 90 s y el log
+  del Dag processor nunca mencionó el archivo. `[core] dag_discovery_safe_mode`
   es `True` aquí, y `might_contain_dag_via_default_heuristic`
   (`airflow/utils/file.py`) exige que el contenido en minúsculas contenga
   `airflow` y uno de `dag` / `asset`. La comprobación del 2026-09-14 de arriba
@@ -205,9 +205,9 @@ escritos.
   response`, `Approved` 65 s después, `trigger_dag_id=mlops`, y un run
   `manual__` nuevo de `mlops`.
 - §13: `DEADLINE MISSED` a +31 s, `slow_step` todavía corriendo.
-- §14: los siete ficheros tecleados pasan la suite de integridad (27 con los
+- §14: los siete archivos tecleados pasan la suite de integridad (27 con los
   tests de la carga de trabajo); la misma suite con `DAGS_DIR=solutions` pasa;
-  los bloques de "Constrúyelo" de ambos READMEs se ensamblan en ficheros que
+  los bloques de "Constrúyelo" de ambos READMEs se ensamblan en archivos que
   importan; **36 passed** en total.
 - Los dos pasos "Hazlo ahora" de la §5 y el recorrido por la UI se apoyan en las
   cadenas de la UI publicada y en los endpoints que hay detrás, como antes —
