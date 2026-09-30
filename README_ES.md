@@ -313,7 +313,7 @@ Y después, o bien el proceso todo-en-uno:
 airflow standalone
 ```
 
-…o los componentes por separado, que es a lo que se parece un despliegue real:
+…o los componentes por separado, que es a lo que se parece un deployment real:
 
 ```bash
 airflow api-server --port 8080
@@ -2581,7 +2581,7 @@ este Dag:
 | **QA** | audita las etiquetas antes de entrenar con ellas: falsos positivos, desacuerdo entre etiquetadores, slices débiles |
 | **augmentation** | amplía los datos nuevos para que una ventana pequeña no quede ahogada por el histórico |
 | **sampling** | sube/baja muestreo para arreglar el desbalanceo que introdujo el drift |
-| **evaluation** | construye el conjunto held-out para que refleje las condiciones de *despliegue* |
+| **evaluation** | construye el conjunto held-out para que refleje las condiciones de *deployment* |
 
 La otra restricción es el **catastrophic forgetting**: ajustar solo sobre la ventana
 nueva cambia el modo de fallo de ayer por el de mañana. El Dag de aquí lo esquiva
