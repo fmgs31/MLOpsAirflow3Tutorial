@@ -58,12 +58,10 @@ x-airflow-common: &airflow-common
     - ./tests:/opt/airflow/tests
     - ./pytest.ini:/opt/airflow/pytest.ini
     # Read-only, and only so `pytest` can check that the tutorial's code
-    # listings still match the files they quote. The READMEs carry the typed
-    # lesson blocks (tests/test_readme_build_steps.py) and `docs/` carries the
-    # appendices' injected listings (tests/test_readme_listings.py) - both are
-    # needed, or those tests skip themselves and prove nothing.
-    - ./README.md:/opt/airflow/README.md:ro
-    - ./README_ES.md:/opt/airflow/README_ES.md:ro
+    # listings still match the files they quote. `docs/split*/` carries the
+    # typed lesson blocks (tests/test_readme_build_steps.py) and `docs/` the
+    # appendices' injected listings (tests/test_readme_listings.py) - without
+    # it those tests skip themselves and prove nothing.
     - ./docs:/opt/airflow/docs:ro
     - ./scripts:/opt/airflow/scripts:ro
   user: "${AIRFLOW_UID:-50000}:0"

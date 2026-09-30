@@ -1,6 +1,6 @@
 """The Dag appendices' full-file listings must match the files they claim to show.
 
-`docs/appendix-dags.md` and `docs/appendix-dags_ES.md` — what §16 of each README
+`docs/appendix-dags.md` and `docs/appendix-dags_ES.md` — what §16 of each language
 links to — do not contain hand-copied code; they contain markers that
 `scripts/sync_readme.py` fills in from the files in `solutions/`. This test runs
 that script's `--check` logic on both files, so a solution edited without
@@ -62,7 +62,7 @@ def test_a_changed_file_is_detected(sync) -> None:
     """The check has to actually fail on drift - otherwise it proves nothing.
 
     The tamper has to happen *inside* a marker block: the same code appears in
-    the README's teaching sections, and edits there are not what this guards.
+    the tutorial's teaching sections, and edits there are not what this guards.
     """
     text = APPENDIX.read_text(encoding="utf-8")
     block = next(
