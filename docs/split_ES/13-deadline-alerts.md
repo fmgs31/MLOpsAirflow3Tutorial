@@ -45,7 +45,7 @@ def deadline_alerts():
 Tres piezas: una **reference** (dónde arranca el reloj), un **interval** (cuánto
 después) y un **callback** — nombrado como ruta con puntos, porque corre en
 algún sitio que no es la task, con `kwargs` que se le pasan. Pasa una lista a
-`deadline=` para varios presupuestos.
+`deadline=` para varios plazos.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)` — esta última es "más lento que la propia media
@@ -53,7 +53,7 @@ reciente de este Dag", que suele ser lo que de verdad quieres decir. Callbacks:
 `SyncCallback` (corre en el executor) o `AsyncCallback` (corre en el triggerer —
 úsalo para Notifiers, p. ej. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
 
-El Dag se pasa su propio deadline a propósito:
+El Dag incumple su propio deadline a propósito:
 
 ```python dags/07_deadline_alerts.py
     @task

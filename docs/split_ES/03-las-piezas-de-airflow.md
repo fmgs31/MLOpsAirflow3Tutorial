@@ -45,7 +45,7 @@ que hacer; en este stack es **1 segundo**.
 Por eso nada en Airflow es instantáneo, y por eso tampoco nada es muy lento.
 Cuando `dataops` publica su asset en la §10, el run de `mlops` no aparece *porque*
 la task terminó — aparece porque el siguiente bucle del scheduler vio el evento
-que la task registró. Con un segundo de sueño entre bucles, ese hueco es como
+que la task registró. Con un segundo de sueño entre bucles, ese retraso es como
 mucho un segundo, y no lo vas a notar. Lo que *sí* vas a notar es lo que tarden
 las propias tasks de aguas arriba, y eso no tiene nada que ver con el scheduler.
 
@@ -121,9 +121,9 @@ su estado y su número de intentos, XComs, Connections, Variables, pools, asset
 events, el audit log. La UI es una vista de eso. El bucle del scheduler es una
 consulta contra eso. Reinicia los contenedores y no se pierde nada, porque el
 estado está en el volumen de la base de datos, no en los contenedores —
-`scripts/reset.sh` borra ese volumen, y por eso es la opción nuclear.
+`scripts/reset.sh` borra ese volumen, y por eso es el último recurso.
 
-De ahí salen dos consecuencias. Es lo que require un backup, y crece para siempre
+De ahí salen dos consecuencias. Es lo que hay que respaldar, y crece para siempre
 salvo que ejecutes `airflow db clean` (§15) — un año de runs, task instances y
 XComs no se borra solo.
 
@@ -150,7 +150,7 @@ sin estado ──► scheduled ──► queued ──► running ──┼─�
   nunca arrancó: skipped (un branch eligió otra cosa) · upstream_failed
 ```
 
-La distinción que pilla a todo el mundo primero es **`queued` vs `running`**:
+La primera distinción en la que tropieza todo el mundo es **`queued` vs `running`**:
 
 - **sin estado** — al crear un Dag run, el scheduler crea de una vez una task
   instance por cada task del Dag, todas sin estado: en la base de datos su

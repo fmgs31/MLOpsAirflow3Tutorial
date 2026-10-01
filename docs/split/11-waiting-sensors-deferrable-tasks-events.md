@@ -25,7 +25,7 @@ sits in `up_for_reschedule` (§3), and the scheduler re-queues it for the next
 poke. A deferrable sensor does not wait on the worker at all: it hands the
 wait to the triggerer.
 
-The word **trigger** is overloaded, so pin it down before the third option can
+The word **trigger** has more than one meaning, so pin it down before the third option can
 make sense. You *trigger* a Dag (§7): a verb. The triggerer process from §3
 runs **triggers**: nouns — small pieces of asynchronous code that wait for one
 thing (a moment in time, a file, a message) and fire an event when it happens.
@@ -108,10 +108,10 @@ sensors_and_events()
 a value downstream — `proceed` receives the row count. The table is read with
 pandas rather than counted by lines, because descriptions contain newlines.
 
-Not in the file, because it needs a queue you do not have: the option that
-removes the wait altogether — **event-driven scheduling**. Attach a watcher to
-an asset and an external event starts the run; nothing polls, nothing occupies
-a slot:
+One more option removes the wait altogether: **event-driven scheduling**. It
+does not go in the file, because it needs a queue you do not have. Attach a
+watcher to an asset and an external event starts the run; nothing polls,
+nothing occupies a slot:
 
 ```python
 from airflow.providers.common.messaging.triggers.msg_queue import MessageQueueTrigger

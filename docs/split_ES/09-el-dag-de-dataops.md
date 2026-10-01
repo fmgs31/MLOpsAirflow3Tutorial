@@ -1,8 +1,8 @@
 ## 9. El Dag de DataOps
 
 `dags/03_dataops.py` — extract → validate → transform → validate. El primer Dag
-de aquí que hace trabajo de verdad, y cada task es un hueco que puedes cambiar
-por un vendor real:
+de aquí que hace trabajo de verdad, y cada task es una pieza que puedes
+sustituir por la herramienta de un vendor real:
 
 | Task aquí | Opción en producción |
 |---|---|
@@ -12,7 +12,7 @@ por un vendor real:
 
 Es también el primer Dag de aquí con un cron de verdad — `schedule="0 3 * * *"`,
 el ejemplo de la §7 — así que en cuanto le quites la pausa en la §10 correrá solo:
-una vez inmediatamente, para el trozo que su cron dejó atrás más recientemente,
+una vez inmediatamente, para el último trozo que su cron ya ha dejado atrás,
 y luego a las 03:00 UTC cada día, disparando cada run a su vez `mlops`.
 (`monitoring`, §12, es el otro programado, a las 06:00.) Deja el stack levantado
 toda la noche y los runs `scheduled__` que encuentres por la mañana son eso, no
@@ -22,7 +22,7 @@ un bug.
 > de `id, created_on, title, description, tag` — así que `transform` limpia el
 > texto y agrupa los tags raros, y ya está. Un warehouse real suele guardar las
 > etiquetas en una tabla aparte, lo que convierte `transform` en un join y le da
-> al Dag un segundo brazo de extract-y-validate alimentándolo:
+> al Dag una segunda rama de extract y validate que lo alimenta:
 >
 > ```python
 > [validate_projects, validate_tags] >> transform >> validate_transformed
@@ -79,8 +79,8 @@ def dataops():
 
 Dos imports son nuevos. `AirflowFailException` viene de
 `airflow.sdk.exceptions` — el código de task importa las excepciones del Task
-SDK, porque ese es el namespace que tiene un worker remoto. Y `tagifai` importa
-siquiera porque el archivo de compose pone `/opt/airflow/src` en `PYTHONPATH`
+SDK, porque ese es el namespace que tiene un worker remoto. Y `from tagifai import …`
+funciona solo porque el archivo de compose pone `/opt/airflow/src` en `PYTHONPATH`
 para todos los servicios: el Dag processor lo necesita para parsear el archivo,
 y el executor para ejecutar las tasks.
 
@@ -122,8 +122,8 @@ Ahora el gate sobre los datos crudos, y el transform:
         return str(out)
 ```
 
-El gate de validación es la parte que merece la pena copiar, y dos detalles
-suyos son fáciles de equivocar:
+El gate de validación es la parte que merece la pena copiar, y hay dos
+detalles en los que es fácil equivocarse:
 
 - **`AirflowFailException`, no `AirflowException`.** Un fallo de calidad de datos
   no es transitorio; con `retries=2` en los defaults, una excepción normal
@@ -133,7 +133,7 @@ suyos son fáciles de equivocar:
 - **Las expectations son no-críticas cuando significan "mira esto", no "para".**
   Que aparezca un tag inesperado es una señal para inspeccionar el espacio de
   etiquetas, no un motivo para detener el pipeline. `validate.py` marca esa con
-  `critical=False`, así que aterriza en `result.failures` sin cambiar
+  `critical=False`, así que acaba en `result.failures` sin cambiar
   `result.passed`.
 
 El gate final — el que emite el asset con el que se programará `mlops`:
@@ -193,7 +193,7 @@ Lee el cableado dos veces. `transform` recibe `raw_fp`, así que el flujo de
 datos le dibuja su arista desde `extract_projects` — pero nada de lo que consume
 viene de `validate_raw`, así que `raw_report >> curated_fp` añade la arista a
 mano: el transform debe esperar al gate aunque no use su salida. Eso es la regla
-de la §6 en la práctica — aristas implícitas para los datos, `>>` para el permiso.
+de la §6 en la práctica — aristas implícitas cuando fluyen datos, `>>` cuando solo importa el orden.
 
 ### Mira aparecer los assets
 
@@ -230,7 +230,7 @@ Si una task falla, compara con [`solutions/03_dataops.py`](../../solutions/03_da
 > las filas reales: el archivo en disco, y un asset event `labeled_projects`
 > genuino en la metadata database — abre la pestaña Assets y ahí está, con el
 > `extra` que le adjuntaste. Todavía no hay nada programado con ese asset, así
-> que no pasa nada más. Y según la §8, no pasará: cuando `mlops` aparezca en el
+> que no pasa nada más. Y según la §8, no pasará: cuando `mlops` aparezca en la
 > §10 este evento ya será historia, y Airflow no reproduce la historia.
 
 ### Backfills
@@ -238,8 +238,8 @@ Si una task falla, compara con [`solutions/03_dataops.py`](../../solutions/03_da
 Ahora que tienes un Dag con schedule, los backfills tienen sentido. Un backfill
 crea los runs de cada trozo de un rango de fechas, a posteriori. Son objetos de
 primera clase, con su propia API, su formulario en la UI y su política de
-reprocesado. **Haz un dry-run primero** — un backfill de un Dag concurrido es la
-forma más fácil de crear treinta runs por accidente:
+reprocesado. **Haz un dry-run primero** — un backfill con el rango de fechas equivocado es
+la forma más fácil de crear treinta runs por accidente:
 
 ```bash
 docker compose exec airflow-scheduler airflow backfill create \
@@ -262,7 +262,7 @@ por `backfill__`. Ten claro qué viene después antes de hacerlo:
   también de sus consumidores.
 - La CLI en 3.3.1 solo *crea* backfills. Para parar uno, cancélalo en la pestaña
   **Backfills** del Dag, o por la API — `PUT /api/v2/backfills/{id}/cancel`, sin
-  token en este stack de todos-admin — lo que marca sus runs aún en cola como
+  token en este stack, donde todos son admin — lo que marca sus runs aún en cola como
   `failed`. Pausar el Dag es el freno de emergencia: un Dag en pausa no arranca
   nada.
 
@@ -328,7 +328,7 @@ Expectations, y se corresponden una a una con las comprobaciones de
 `expect_column_values_to_not_be_null`, `expect_column_values_to_be_of_type`,
 `expect_compound_columns_to_be_unique`, `expect_table_row_count_to_be_between`.
 
-La forma del Dag no cambia: `outlets=[LABELED_PROJECTS]` sigue yendo en la última
+La estructura del Dag no cambia: `outlets=[LABELED_PROJECTS]` sigue yendo en la última
 task de validación, y todo lo de aguas abajo sigue programándose con el asset.
 Esos tres providers **no** están instalados aquí, y por eso este tutorial no
 necesita ninguna cuenta de vendor.

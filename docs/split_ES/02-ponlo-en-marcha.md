@@ -16,8 +16,8 @@ Luego levanta el stack. En Linux, macOS, WSL2 o Git Bash en Windows:
 ./scripts/up.sh
 ```
 
-En Windows PowerShell, donde una instalación por defecto se niega a ejecutar
-archivos `.ps1`, de ahí el flag:
+En Windows PowerShell. Una instalación por defecto se niega a ejecutar archivos
+`.ps1`, y por eso el comando necesita `-ExecutionPolicy Bypass`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
@@ -35,7 +35,7 @@ docker compose exec airflow-scheduler airflow dags list
 ```
 
 El segundo imprime `No data found` — la misma lista vacía. Esas dos líneas son
-la forma de todos los comandos de aquí en adelante. `docker compose …` corre en
+el patrón de todos los comandos de aquí en adelante. `docker compose …` corre en
 tu máquina; `airflow …` corre dentro del contenedor del scheduler, que es lo que
 hace el prefijo `docker compose exec airflow-scheduler`. Donde este tutorial
 muestre un comando `airflow …` a secas — en una transcripción, o como una línea
@@ -119,7 +119,7 @@ airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}'
 
 Airflow 3.3.1 necesita Python ≥ 3.10 (y no 3.15). Instálalo **con el archivo de
 constraints** — Airflow tiene un árbol de dependencias enorme y una instalación
-sin constraints resolverá a algo que no funciona.
+sin constraints acabará con versiones de paquetes que no funcionan juntas.
 
 `airflow db migrate` rellena `$AIRFLOW_HOME`:
 

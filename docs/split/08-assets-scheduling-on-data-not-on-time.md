@@ -87,7 +87,7 @@ three events, and `triggering_asset_events` in `prepare_data` lists every one
 of them. A consumer catches up in one run, not three.
 
 > **A paused consumer does not queue, and does not catch up.** The word
-> *unpaused* above is load-bearing. If `mlops` is paused when `dataops` emits,
+> *unpaused* above matters. If `mlops` is paused when `dataops` emits,
 > the asset event is still written — you will see it in the table and on the
 > Assets page — but no run is queued for `mlops`, and **un-pausing later does
 > not replay it**. Airflow filters paused Dags at the moment it decides what to
@@ -98,8 +98,9 @@ of them. A consumer catches up in one run, not three.
 > verified](../verified.md).)
 >
 > This is the opposite of the paused-Dag behaviour in §7, where a *manual*
-> trigger creates the run first and the pause only holds it. Asset scheduling
-> has no run to hold yet.
+> trigger creates the run first and the pause only holds it. An asset event
+> creates no run for a paused Dag, so there is nothing to hold and nothing to
+> start when you unpause.
 
 ---
 

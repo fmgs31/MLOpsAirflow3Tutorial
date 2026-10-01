@@ -11,15 +11,15 @@ schedule=CronTriggerTimetable(...)  # a Timetable, named directly
 ```
 
 Cada una de las cuatro primeras es un atajo para un **Timetable**, el objeto que
-posee las dos decisiones que toma un schedule; la última línea nombra uno
+se encarga de las dos decisiones que toma un schedule; la última línea nombra uno
 directamente, y escribir tu propia clase Timetable es como consigues una
 cadencia que cron no sabe expresar.
 
 Las dos decisiones: *cuándo* crear un run, y para qué trozo de tiempo es ese run
 — su **data interval**, expuesto a todas las tasks como `data_interval_start` y
 `data_interval_end`, y etiquetado por la `logical_date` del run. Ninguno de esos
-es "cuándo corrió"; eso es `run_after`. Cómo se corta el trozo depende de la
-forma de `schedule=`, y las dos formas comunes difieren:
+es "cuándo corrió"; eso es `run_after`. Cómo se corta el trozo depende del
+tipo de valor que pases a `schedule=`, y los dos tipos comunes difieren:
 
 - **Una cadena cron** — `"0 3 * * *"`, que es el schedule que le darás a
   `dataops` en la §9 — dispara en el momento que nombra, y el trozo *es* ese
@@ -28,14 +28,14 @@ forma de `schedule=`, y las dos formas comunes difieren:
 - **Un `timedelta`** — `timedelta(days=1)` — es un lapso. El run *para*
   2026-09-10 se crea una vez que ese día ha terminado, a las 2026-09-11 00:00, y
   su `logical_date` es 2026-09-10 00:00: el principio del lapso, un día antes de
-  que ocurra el run. Usa esta forma cuando una task tenga que procesar "los datos
+  que ocurra el run. Usa este tipo cuando una task tenga que procesar "los datos
   de ayer", porque el intervalo le dice exactamente qué día es ese.
 
 `start_date` es donde empiezan los trozos: nunca se programa un run antes de él.
 Un archivo de Dag sin él parsea igual sin error, así que esto es algo que
 recuerdas tú, no algo de lo que Airflow te avise.
 
-Retén esa imagen y el resto de esta sección son consecuencias de ella. Tres cosas
+Ten presente esa imagen: el resto de esta sección se deduce de ella. Tres cosas
 sobre scheduling que te ahorrarán una tarde:
 
 **`catchup` es `False` por defecto** (`[scheduler] catchup_by_default`), y lo
@@ -45,8 +45,8 @@ para el trozo más reciente que el cron ya ha dejado atrás — las 03:00 de hoy
 ya han pasado, las de ayer si no — y lo crea inmediatamente, porque ese trozo
 está vencido. A partir de ahí, uno por trozo según van tocando. Lo verás
 ocurrir en la §10: quitar la pausa a `dataops` basta para arrancarlo. Si
-*quieres* el histórico, pídelo con `catchup=True` — o backfillea solo el rango
-que necesitas (§9).
+*quieres* el histórico, pídelo con `catchup=True` — o haz un backfill solo del
+rango que necesitas (§9).
 
 **Una cadena cron dispara a la hora que dice.** `schedule="0 3 * * *"` corre a
 las 03:00 y la `logical_date` del run es las 03:00. Los timetables son libres de
@@ -80,7 +80,7 @@ docker compose exec airflow-scheduler airflow dags unpause hello_airflow3
 docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"greeting": "hola"}' -r manual-demo-1
 ```
 
-- **`-c/--conf`** es un objeto JSON. Aterriza en `dag_run.conf`, y cualquier
+- **`-c/--conf`** es un objeto JSON. Acaba en `dag_run.conf`, y cualquier
   clave que coincida con un `Param` declarado lo sobrescribe para ese run.
 - **`-r/--run-id`** nombra el run. Sin él obtienes `manual__<timestamp>`.
 - **`-l/--logical-date`** fija una. Sin ella el run no tiene ninguna — ver la

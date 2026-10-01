@@ -49,7 +49,7 @@ dice a quién preguntar cuando el Dag se rompe. Los tests de integridad de este
 repo (§14) rechazan el valor por defecto, `airflow`, porque un owner que no es
 nadie significa que no se avisa a nadie.
 
-Los otros dos son lo primero que vas a desear haber puesto:
+Las otras dos son las primeras que echarás de menos si no las pones:
 
 - **`retries=2`** — si la task lanza una excepción, Airflow la ejecutará hasta
   dos veces más. La task instance pasa a `up_for_retry`, espera y se vuelve a
@@ -58,10 +58,10 @@ Los otros dos son lo primero que vas a desear haber puesto:
   corren las tasks de aguas abajo.
 - **`retry_delay`** — cuánto espera antes del siguiente intento. Treinta segundos
   es generoso para una demo y corto para trabajo real; una API inestable suele
-  querer minutos, y `retry_exponential_backoff=True` los separa progresivamente.
+  necesitar minutos, y `retry_exponential_backoff=True` los separa progresivamente.
 
 **El valor por defecto es `retries=0`** (`[core] default_task_retries`), lo que
-significa que una task con un mal momento de red simplemente falla y se lleva el
+significa que una task que sufre un corte de red puntual simplemente falla y se lleva el
 run por delante. Reintentar es opt-in, y por eso los tests de integridad de este
 repo (§14) insisten en que todo Dag que no sea una demo lo fije.
 
@@ -99,8 +99,8 @@ Línea a línea:
   flag que decide si quitar la pausa a un Dag te inunda de runs históricos (§7).
 - **`tags`** — etiquetas libres; la lista de Dags filtra por ellas.
 - **`doc_md=__doc__`** — el docstring del módulo que acabas de escribir,
-  renderizado como markdown en la página del Dag en la UI. `description=` es el
-  primo corto, una línea que se muestra junto al Dag en la lista.
+  renderizado como markdown en la página del Dag en la UI. `description=` es la
+  versión corta, una línea que se muestra junto al Dag en la lista.
 - **`params`** — entradas declaradas, con tipos. La UI las convierte en un
   formulario cuando disparas el Dag (§5), y un run registra los valores que usó.
 
@@ -130,7 +130,7 @@ Dentro de la función, las tasks. Indéntalas — son el cuerpo de
 **`@task` convierte una función en una task.** Llamarla *no* la ejecuta:
 devuelve un `XComArg`, una referencia perezosa a la futura salida de esa task. Lo
 que devuelva la función se convierte en el XCom de la task (§6), y lo que
-imprima aterriza en el log de la task, visible en la UI.
+imprima acaba en el log de la task, visible en la UI.
 
 `**context` es cómo una task ve el run al que pertenece: `run_id`, `params`, `ti`
 (la task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`, `conn`,
@@ -223,12 +223,12 @@ el valor por defecto — primero lee el archivo como texto y se lo salta salvo q
 el contenido en minúsculas contenga `airflow` *y* además `dag` o `asset`. Quita
 el comentario de ese archivo roto y no se parsea nunca, no se lista nunca y no
 se reporta nunca — silencio, no un error. Todo archivo de Dag real pasa esta
-prueba por importar de `airflow.sdk`, así que solo muerde a módulos auxiliares y
+prueba por importar de `airflow.sdk`, así que solo afecta a módulos auxiliares y
 experimentos; pero es lo segundo que comprobar cuando un archivo simplemente no
 está.
 
-La otra clase de nada es el error 1 de arriba — un archivo que define un Dag y
-nunca lo llama. Importa limpiamente, así que `list-import-errors` también está
+La otra forma de no obtener nada es el error de principiante de "Constrúyelo" —
+un archivo que define un Dag y nunca lo llama. Importa limpiamente, así que `list-import-errors` también está
 vacío, y el único síntoma es un Dag que no está. Mira primero esta lista, y
 después el final del archivo.
 

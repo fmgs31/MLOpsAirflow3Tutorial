@@ -78,7 +78,7 @@ def dataops():
 
 Two imports are new. `AirflowFailException` comes from `airflow.sdk.exceptions`
 — task code imports exceptions from the Task SDK, because that is the namespace
-a remote worker has. And `tagifai` imports at all because the compose file puts
+a remote worker has. And `from tagifai import …` works only because the compose file puts
 `/opt/airflow/src` on `PYTHONPATH` for every service: the Dag processor needs
 it to parse the file, and the executor needs it to run the tasks.
 
@@ -188,7 +188,7 @@ Read the wiring twice. `transform` takes `raw_fp`, so data flow draws its edge
 from `extract_projects` — but nothing it consumes comes from `validate_raw`, so
 `raw_report >> curated_fp` adds the edge by hand: the transform must wait for
 the gate even though it does not use its output. That is the §6 rule in
-practice — implicit edges for data, `>>` for permission.
+practice — implicit edges when data flows, `>>` when only the order matters.
 
 ### See the assets appear
 
@@ -233,8 +233,8 @@ If a task fails, compare with [`solutions/03_dataops.py`](../../solutions/03_dat
 Now that you have a Dag with a schedule, backfills make sense. A backfill
 creates the runs for every slice in a date range, after the fact. They are
 first-class objects, with their own API, UI form and reprocess policy.
-**Dry-run it first** — a backfill of a busy Dag is the easiest way to create
-thirty runs by accident:
+**Dry-run it first** — a backfill over the wrong date range is the easiest way
+to create thirty runs by accident:
 
 ```bash
 docker compose exec airflow-scheduler airflow backfill create \

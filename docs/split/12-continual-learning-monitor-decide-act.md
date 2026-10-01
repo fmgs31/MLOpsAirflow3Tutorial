@@ -2,8 +2,8 @@
 
 **Continual**, not continuous: the system repeats *with breaks*, and the breaks
 are deliberate. A monitor fires, something is decided — by a person where it
-matters — and then the pipeline runs. The approval gate below is that comma made
-executable.
+matters — and then the pipeline runs. The approval gate below is that decision,
+built into the Dag as a task.
 
 What you are watching for is **drift**, in three flavours:
 
@@ -216,8 +216,8 @@ another Dag should run, and a person was given the chance to say no.
 While it is in `awaiting_input`, open the Dag in the UI: the prompt is waiting
 for you under the **Required Actions** tab (§5), and answering it there resolves
 the task without waiting for the timeout. Airflow records the answer either way
-— the choice that was made, when, and *by whom*. A run that timed out into its
-`defaults` stores the choice with the "who" left empty, which is how you tell "a
+— the choice that was made, when, and *by whom*. A run that timed out and fell back
+to its `defaults` stores the choice with the "who" left empty, which is how you tell "a
 person approved this" from "nobody was looking".
 
 > **Without the `--conf` override** the outcome depends on state, which is the
@@ -234,7 +234,7 @@ Reference: [`solutions/06_monitoring_and_retraining.py`](../../solutions/06_moni
 
 `trigger_retraining` fires `mlops`, which fits on whatever is in the warehouse.
 That is the orchestration; it is not the whole retraining problem. Each of these
-is a task slot in a real version of this Dag:
+would be one more task in a real version of this Dag:
 
 | Step | Why it is not automatic |
 |---|---|
@@ -246,7 +246,8 @@ is a task slot in a real version of this Dag:
 | **evaluation** | build the held-out set to reflect *deployment* conditions |
 
 The other constraint is **catastrophic forgetting**: fitting only on the new
-window trades yesterday's failure mode for tomorrow's. The Dag here sidesteps it
+window makes the model forget patterns it used to get right, so it fixes
+today's errors and brings back old ones. The Dag here sidesteps it
 by always training on the full labelled table — fine at this size, and the first
 thing to revisit when the table stops fitting in a task.
 

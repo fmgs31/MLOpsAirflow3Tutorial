@@ -1,8 +1,8 @@
 ## 5. La UI
 
 La UI es una aplicación React encima de la REST API, servida por el api-server en
-<http://localhost:8080>. La mitad de lo que enseña este tutorial se ve más fácil
-de lo que se lee, así que haz el recorrido ahora que hay un Dag que mirar.
+<http://localhost:8080>. La mitad de lo que enseña este tutorial se entiende mejor
+viéndolo que leyéndolo, así que haz el recorrido ahora que hay un Dag que mirar.
 
 La navegación es **Home · Dags · Assets · Browse · Admin · Plugins · Security ·
 Docs**.
@@ -34,8 +34,8 @@ filtros que conviene conocer:
 
 Las pestañas son Overview, Runs, Tasks, Backfills, Asset Events, Audit Log,
 Calendar, Code, Details y — cuando una task espera a una persona — **Required
-Actions**. Haz clic en un run, luego en una task, y la misma tira pasa a ser la
-de esa task instance: **Logs**, **XCom**, **Rendered Templates**, y **Task
+Actions**. Haz clic en un run, luego en una task, y la misma barra de pestañas pasa a
+ser la de esa task instance: **Logs**, **XCom**, **Rendered Templates**, y **Task
 Instances** para un fan-out mapeado.
 
 **Hazlo ahora.** Abre `hello_airflow3`, mira el Graph — el fan-out y el fan-in
@@ -79,20 +79,20 @@ la línea de comandos, un formulario en el navegador.
 El mismo diálogo tiene un segundo modo, **Backfill**: un rango de fechas, un
 **Reprocess Behavior** (missing runs / missing and errored runs / all runs), max
 active runs, "run backwards", y un dry run que te dice *"N runs will be
-triggered"* antes de confirmar. Necesita un Dag con schedule, así que espera al
+triggered"* antes de confirmar. Necesita un Dag con schedule, así que espera a la
 §9. Los Dags programados con assets dicen *"This Dag's schedule does not support
 backfills"* — a `mlops` (§10) no se le puede hacer backfill, porque no hay rango
 de fechas que reproducir, solo asset events.
 
-**Assets** — la pestaña para la que se construyó este tutorial, y vacía hasta el
+**Assets** — la pestaña para la que se construyó este tutorial, y vacía hasta la
 §9. En cuanto existan los Dags que los usan, lista cada asset con sus tasks
 productoras, los Dags consumidores y el histórico de eventos, y dibuja el grafo
 entre Dags: `dataops` → `labeled_projects` → `mlops` → `production_model`. Ese
 grafo es la única imagen del pipeline completo; la lista de Dags no puede
 enseñarlo, porque la conexión no es una dependencia entre Dags, es un asset entre
 ellos. **Create Event** sobre un asset o bien lo materializa (ejecuta el Dag
-aguas arriba) o registra un evento manual — que es como disparas un Dag aguas
-abajo sin fingir que has producido los datos.
+aguas arriba, que produce los datos de verdad) o registra un evento manual, que
+dispara los Dags aguas abajo sin ejecutar el productor.
 
 **Browse** — Audit Log (quién disparó, pausó o limpió qué — tu trigger desde la
 UI ya está ahí), **Deadlines** (deadline alerts pendientes y perdidas, §13) y
