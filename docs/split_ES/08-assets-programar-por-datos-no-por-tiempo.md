@@ -74,7 +74,7 @@ archivo.
 Es una fila. Cuando una task con `outlets=[…]` **tiene éxito**, Airflow registra
 un asset event — qué asset, qué Dag run lo produjo, cuándo, y lo que hayas puesto
 en `outlet_events[…].extra`. Eso es todo lo que es un "trigger". Una task que
-falla no escribe evento, y esa es toda la propiedad de seguridad: a `mlops` no lo
+falla no escribe evento, y en eso consiste toda la garantía de seguridad: a `mlops` no lo
 puede arrancar un dato que no pasó la validación, porque la task que lo habría
 anunciado nunca terminó.
 
@@ -89,8 +89,8 @@ ocupado, el *siguiente* run de `mlops` se lleva los tres eventos, y
 `triggering_asset_events` en `prepare_data` los lista todos. Un consumidor se
 pone al día en un run, no en tres.
 
-> **Un consumidor en pausa no encola, y no se pone al día.** La palabra *sin
-> pausa* de arriba sostiene todo el peso. Si `mlops` está en pausa cuando
+> **Un consumidor en pausa no encola, y no se pone al día.** Las palabras *sin
+> pausa* de arriba importan. Si `mlops` está en pausa cuando
 > `dataops` emite, el asset event se escribe igualmente — lo verás en la tabla y
 > en la página de Assets — pero no se encola ningún run para `mlops`, y **quitar
 > la pausa después no lo reproduce**. Airflow filtra los Dags en pausa en el
@@ -101,8 +101,9 @@ pone al día en un run, no en tres.
 > este stack — ver [qué se verificó de verdad](../verified_ES.md).)
 >
 > Esto es lo contrario del comportamiento con Dags en pausa de la §7, donde un
-> trigger *manual* crea el run primero y la pausa solo lo retiene. El scheduling
-> por asset todavía no tiene ningún run que retener.
+> trigger *manual* crea el run primero y la pausa solo lo retiene. Un asset event
+> no crea ningún run para un Dag en pausa, así que no hay nada que retener ni
+> nada que arranque cuando quitas la pausa.
 
 ---
 

@@ -47,7 +47,7 @@ afirmaciones que el cuerpo te devuelve impresos:
   cuando decide qué encolar.
 - La espera de la §10, descompuesta a partir de timestamps de la base de datos en
   tres triggers: el propio run de `dataops` tardó 5.2–5.9s desde queued hasta
-  terminado; el hueco desde que se escribió su asset event hasta que se encoló el
+  terminado; el intervalo desde que se escribió su asset event hasta que se encoló el
   run de `mlops` fue de 0.12–0.65s — un bucle del scheduler. El texto no cita
   ninguna cifra de extremo a extremo porque la parte de `dataops` depende de la
   red.
@@ -103,7 +103,7 @@ afirmaciones que el cuerpo te devuelve impresos:
   el número que escribió `dataops`.
 
 Por último, una ejecución en frío el 2026-09-11 — `reset.sh`, `up.sh`, y luego
-todos los comandos de la §2 al §14 en orden:
+todos los comandos de la §2 a la §14 en orden:
 
 - 28s desde `up.sh` hasta siete Dags listados, todos en pausa; el endpoint de
   salud `healthy` cuatro veces.
@@ -152,7 +152,7 @@ Reestructurado el 2026-09-15 como un tutorial de escribirlo-tú-mismo —
 `dags/` vacía, los archivos terminados movidos a `solutions/`, cada lección
 reconstruida como trozos que se teclean — y vuelto a ejecutar en frío en el
 nuevo orden: `reset.sh`, `up.sh`, los siete archivos tecleados a partir de los
-bloques de "Constrúyelo", todos los comandos de la §2 al §14 tal cual están
+bloques de "Constrúyelo", todos los comandos de la §2 a la §14 tal cual están
 escritos.
 
 - §2 con `dags/` vacía: `airflow dags list`, `list-import-errors` y `assets

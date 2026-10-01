@@ -16,7 +16,7 @@ Más allá de los estándar hay un provider para casi cualquier sistema con el q
 quieras hablar — S3, Snowflake, BigQuery, Postgres, Kubernetes, Databricks,
 Slack, HTTP, Docker, dbt Cloud, Airbyte — y cada uno trae operators, hooks y
 sensors, se instala como `apache-airflow-providers-<nombre>` y aparece en la UI
-bajo Admin → Providers. Tira de uno antes de escribir llamadas HTTP a mano: el
+bajo Admin → Providers. Usa uno antes de escribir llamadas HTTP a mano: el
 operator de un provider ya gestiona connections, reintentos y búsqueda de
 secretos.
 
@@ -37,7 +37,7 @@ class TagifaiTrainOperator(BaseOperator):
         return train_module.train_from_files()[1]["f1"]
 ```
 
-Ese es el movimiento correcto cuando un paso se reutiliza en varios Dags y
+Es la opción correcta cuando un paso se reutiliza en varios Dags y
 necesita sus propios parámetros, reintentos o template fields. Para todo lo
 demás, `@task` es menos código y es lo que usa este repo de principio a fin.
 
@@ -89,7 +89,7 @@ inyección por nombre que hizo `**context` en la lección 1. Dos cosas en las qu
 fijarse:
 
 **`xcom_pull` sin `task_ids` lee los XComs de la propia task actual** y devuelve
-`None` en silencio. Casi todos los pull que escribas quieren `task_ids=`; el
+`None` en silencio. Casi todos los pull que escribas necesitan `task_ids=`; el
 `_multiply` de arriba nombra su origen.
 
 > **Los XComs son para metadatos, no para payloads.** Viven en la metadata
@@ -147,7 +147,7 @@ sobre un run id, una fecha o un valor de aguas arriba distinto. Añádelo debajo
 ```
 
 Tres consecuencias. El renderizado ocurre por task instance, en el proceso de la
-propia task, así que una plantilla puede alcanzar cualquier cosa del task context
+propia task, así que una plantilla puede acceder a cualquier cosa del task context
 — `run_id`, `ds`, `ti`, `params`, `var`, `conn`, `dag_run` — y el resultado se
 guarda: es la pestaña **Rendered Templates** de la task instance (§5), el sitio
 donde mirar cuando un comando no dijo lo que querías. Una cadena que *no* está en
@@ -210,14 +210,14 @@ operators_and_xcoms()
    `describe.set_downstream(product)` y `product.set_upstream(describe)`, los
    métodos que los operators llaman por debajo; úsalos cuando las tasks se
    construyan en un bucle y `>>` se lea mal.
-3. **Fan-out y fan-in**: una lista a cualquier lado de `>>` difunde la arista,
+3. **Fan-out y fan-in**: una lista a cualquier lado de `>>` crea una arista por cada elemento,
    así que `product >> [check_parity, check_range] >> checks_done` son cuatro
    dependencias, no dos.
 4. **`chain()`** — la forma legible de una línea larga de `>>`, y la única que
    puede llevar un `Label`, que anota la arista en la vista Graph.
 
-Y la quinta cosa, `cross_downstream`, para la forma que parece que debería
-funcionar con una lista y no:
+Y una quinta, `cross_downstream`, para conectar cada task de una lista con cada
+task de otra — algo que parece que debería funcionar con `>>` y no funciona:
 
 ```python
 [a, b] >> [c, d]              # TypeError: no operator between two lists
@@ -267,16 +267,16 @@ Las **Connections** guardan credenciales (`conn_type`, host, login, password,
 extra); las **Variables** guardan configuración. Ambas son editables bajo Admin,
 se pueden fijar desde la CLI y se pueden sobrescribir con una variable de
 entorno `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` — que es como se define `fs_default`
-en el archivo de compose de este repo. Las plantillas las alcanzan como
+en el archivo de compose de este repo. Las plantillas acceden a ellas con
 `{{ conn.fs_default.host }}` y `{{ var.value.my_key }}`.
 
 > Una task que consulta cualquiera de las dos no toca la metadata database: la
 > petición va por la Task Execution API, que es lo que permite a un worker remoto
 > resolver una Connection sin tener acceso a la base de datos.
 >
-> Prefiere un **param** (§5) a una Variable global cuando el valor sea una
-> palanca de política: los params quedan registrados con el run que los usó, las
-> Variables no.
+> Prefiere un **param** (§5) a una Variable global cuando el valor sea un ajuste
+> que cambia lo que decide el Dag, como un umbral: los params quedan registrados
+> con el run que los usó, las Variables no.
 
 ---
 

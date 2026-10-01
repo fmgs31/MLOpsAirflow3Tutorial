@@ -1,10 +1,10 @@
 ## 15. Llevarlo a producción
 
-**Executors.** `LocalExecutor` es el de por defecto y vale hasta una máquina. Más
+**Executors.** `LocalExecutor` es el de por defecto y sirve mientras baste una máquina. Más
 allá: `CeleryExecutor` (pool de workers), `KubernetesExecutor` (un pod por task),
 o **varios executors** configurados a la vez. También existe el **Edge
-executor**, para workers fuera de tu clúster — lo que hizo posible la Task
-Execution API (§3).
+executor**, para workers fuera de tu clúster, algo que es posible gracias a la
+Task Execution API (§3).
 
 **Aislamiento.** No instales tus dependencias de ML junto a las de Airflow. Usa
 `KubernetesPodOperator`, o `@task.virtualenv` / `@task.external_python` para un

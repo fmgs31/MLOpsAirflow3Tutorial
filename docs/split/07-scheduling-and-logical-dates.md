@@ -34,7 +34,7 @@ the form of `schedule=`, and the two common forms differ:
 Dag file without one still parses without error, so this is something you
 remember, not something Airflow reminds you of.
 
-Hold that picture and the rest of this section is consequences of it. Three
+Keep that picture in mind: the rest of this section follows from it. Three
 things about scheduling that will save you an afternoon:
 
 **`catchup` defaults to `False`** (`[scheduler] catchup_by_default`), and what

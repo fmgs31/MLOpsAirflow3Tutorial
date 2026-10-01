@@ -9,8 +9,8 @@ have a direction. *Acyclic*: no loops, so a finished task never re-runs because
 of something downstream. Each node is a **task**, and one execution of the whole
 graph is a **Dag run**.
 
-Those last two words are worth separating now, because every log line and error
-message assumes you have. A **task** is the thing you wrote once, in the file. A
+Two words are worth separating now, *task* and *task instance*, because every
+log line and error message assumes you already do. A **task** is the thing you wrote once, in the file. A
 **task instance** is that task inside one particular Dag run — the thing that
 actually has a state, a duration, a log and a number of attempts. You write
 tasks; you debug task instances. §3 follows one through its whole life.

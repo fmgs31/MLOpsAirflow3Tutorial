@@ -86,9 +86,9 @@ consuming Dags and event history, and draws the cross-Dag graph: `dataops` →
 `labeled_projects` → `mlops` → `production_model`. That graph is the one picture
 of the whole pipeline; the Dags list cannot show it, because the connection is
 not a dependency between Dags, it is an asset between them. **Create Event** on
-an asset either materializes it (run the Dag upstream) or records a manual
-event — which is how you trigger a downstream Dag without pretending to produce
-the data.
+an asset either materializes it (runs the Dag upstream, which produces the data
+for real) or records a manual event, which triggers the downstream Dags without
+running the producer at all.
 
 **Browse** — Audit Log (who triggered, paused, cleared what — your UI trigger
 is in it now), **Deadlines** (pending and missed deadline alerts, §13), and

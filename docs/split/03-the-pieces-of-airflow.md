@@ -120,7 +120,7 @@ Connections, Variables, pools, asset events, the audit log. The UI is a view of
 it. The scheduler's loop is a query against it. Restart the containers and
 nothing is lost, because the state is in the database volume, not in the
 containers — `scripts/reset.sh` deletes that volume, which is why it is the
-nuclear option.
+last resort.
 
 Two consequences follow. It is the thing to back up, and it grows forever
 unless you run `airflow db clean` (§15) — a year of runs, task instances and

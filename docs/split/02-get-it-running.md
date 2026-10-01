@@ -16,8 +16,8 @@ Then start the stack. On Linux, macOS, WSL2 or Git Bash on Windows:
 ./scripts/up.sh
 ```
 
-In Windows PowerShell, where a default install refuses to run `.ps1` files,
-hence the flag:
+In Windows PowerShell. A default install refuses to run `.ps1` files, which is
+why the command needs `-ExecutionPolicy Bypass`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1

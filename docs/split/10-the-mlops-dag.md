@@ -117,9 +117,10 @@ all — it looks at the **split**:
 ("test_fraction_between_0.1_and_0.4", ..., non-critical)
 ```
 
-Every one of those passes a column-level suite and still produces a model whose
-held-out f1 means nothing — and that f1 is exactly what the promotion gate
-compares against production.
+Each problem in those comments — a class only in train, three rows of a class,
+the same project in both splits — passes a column-level suite without a
+warning, and still produces a model whose held-out f1 means nothing. That f1 is
+exactly what the promotion gate compares against production.
 
 **Dynamic task mapping** fans out one task instance per hyperparameter set at
 runtime, then reduces. Three tasks:
@@ -242,8 +243,8 @@ mlops()
 ```
 
 `snapshot >> results` wires the validation gate upstream of *every* mapped
-instance, carrying no data, only permission to run. The gate's two `>>` lines
-give the branch its two arms and join them at `done`.
+instance, carrying no data, only the order. The gate's two `>>` lines give the
+branch its two paths and join them at `done`.
 
 ### See the wiring
 
@@ -298,7 +299,7 @@ quick, `success` once its four candidates have trained, with an **empty**
 manual ones (§7). In the UI, open **Assets** and you will see the edge that
 caused it.
 
-Know what the wait is. Almost all of it is `dataops` itself running its four
+Know where the wait comes from. Almost all of it is `dataops` itself running its four
 tasks — `extract` downloads the source file, so that part depends on your
 connection. The Airflow part is small: one scheduler loop to create the
 `dataops` run after the un-pause, and one more to queue `mlops` once the asset

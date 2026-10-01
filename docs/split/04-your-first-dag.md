@@ -220,11 +220,11 @@ first reads the file as text and skips it unless the lowercased contents
 contain `airflow` *and* either `dag` or `asset`. Leave the comment out of that
 broken file and it is never parsed, never listed, and never reported — silence,
 not an error. Every real Dag file passes this test by importing from
-`airflow.sdk`, so it only bites helper modules and experiments; but it is the
+`airflow.sdk`, so it only affects helper modules and experiments; but it is the
 second thing to check when a file is simply not there.
 
-The other kind of nothing is Mistake 1 above — a file that defines a Dag and
-never calls it. It imports cleanly, so `list-import-errors` is empty too, and
+The other way to get nothing is the beginner mistake from "Build it" — a file
+that defines a Dag and never calls it. It imports cleanly, so `list-import-errors` is empty too, and
 the only symptom is a Dag that is not there. Check this list first, then the
 bottom of the file.
 

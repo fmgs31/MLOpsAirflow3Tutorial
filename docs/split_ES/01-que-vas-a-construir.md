@@ -9,8 +9,8 @@ las aristas tienen dirección. *Acíclico*: sin bucles, así que una task termin
 nunca se vuelve a ejecutar por algo que hay aguas abajo. Cada nodo es una
 **task**, y una ejecución del grafo entero es un **Dag run**.
 
-Merece la pena separar esas dos últimas palabras ya, porque cada línea de log y
-cada mensaje de error dan por hecho que lo has hecho. Una **task** es lo que
+Merece la pena distinguir ya dos palabras, *task* y *task instance*, porque cada
+línea de log y cada mensaje de error dan por hecho que las distingues. Una **task** es lo que
 escribiste una vez, en el archivo. Una **task instance** es esa task dentro de un
 Dag run concreto — lo que de verdad tiene un estado, una duración, un log y un
 número de intentos. Tú escribes tasks; tú depuras task instances. La §3 sigue una
@@ -45,7 +45,7 @@ Los siete Dags los escribes tú. La carpeta que lee Airflow, `dags/`, está
 **vacía** cuando clonas este repo. Cada sección explica una pieza de Airflow y
 después te hace construir el Dag que la usa — unas pocas líneas cada vez, con el
 porqué de cada trozo al lado — y luego ejecutarlo y comprobar qué ha pasado. El
-código se da; el trabajo es teclearlo, verlo parsear y verlo correr.
+código te lo damos; tu trabajo es teclearlo, ver que parsea y verlo correr.
 
 Dos redes de seguridad:
 
@@ -54,7 +54,7 @@ Dos redes de seguridad:
   una lección copiando su archivo: `cp solutions/03_dataops.py dags/`. El
   [apéndice](../appendix-dags_ES.md) imprime cada solución completa.
 - **Los tests de la §14** leen *tu* carpeta `dags/`. Cuando los siete estén
-  escritos, te dicen si construiste lo que el tutorial quería decir.
+  escritos, te dicen si construiste lo que el tutorial pretendía.
 
 Las lecciones se apoyan unas en otras a partir de la §9 — `mlops` se programa con
 un asset que produce `dataops`, `sensors_and_events` espera un archivo que
@@ -94,8 +94,8 @@ llaman:
 | `assets.py` | los Assets de Airflow que comparten los Dags |
 | `callbacks.py` | callbacks de deadline alerts |
 
-Cada uno es un hueco que puedes cambiar por una herramienta real — las tablas del
-§9 y de la §10 dicen cuál.
+Cada uno es una pieza que puedes sustituir por una herramienta real — las tablas
+de la §9 y de la §10 dicen cuál.
 
 ---
 

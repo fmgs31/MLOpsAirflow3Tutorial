@@ -10,7 +10,7 @@ prepare_data ─► validate_training_data ─► train_candidate×N ─► sele
 
 | Task | Opción en producción |
 |---|---|
-| el trigger por asset + `prepare_data` | el cliente de tu warehouse — o, como aquí, deja que el asset event lleve el puntero |
+| el trigger por asset + `prepare_data` | el cliente de tu warehouse — o, como aquí, deja que el asset event lleve la ruta de los datos |
 | `validate_training_data` | Great Expectations / Pandera / Soda, más comprobaciones del split |
 | `candidates` + `train_candidate.expand()` | Optuna / Ray Tune / un servicio de sweeps |
 | `select_best` + `evaluate_best` | tu experiment tracker (MLflow, W&B) |
@@ -64,7 +64,7 @@ DEFAULT_ARGS = {
 def mlops():
 ```
 
-`schedule=[LABELED_PROJECTS]` es todo el sentido: una lista de assets, y el Dag
+`schedule=[LABELED_PROJECTS]` es lo esencial: una lista de assets, y el Dag
 corre cuando se actualizan. Varios assets en la lista significan *todos*;
 `AssetAny(a, b)` significa cualquiera.
 
@@ -118,9 +118,10 @@ tabla no puede hacer en absoluto — mira el **split**:
 ("test_fraction_between_0.1_and_0.4", ..., non-critical)
 ```
 
-Cada una de esas pasa una suite a nivel de columna y aun así produce un modelo
-cuyo f1 en held-out no significa nada — y ese f1 es exactamente lo que el
-promotion gate compara contra producción.
+Cada problema de esos comentarios — una clase solo en train, tres filas de una
+clase, el mismo proyecto en los dos splits — pasa una suite a nivel de columna
+sin ningún aviso, y aun así produce un modelo cuyo f1 en held-out no significa
+nada. Ese f1 es exactamente lo que el promotion gate compara contra producción.
 
 **El dynamic task mapping** despliega una task instance por conjunto de
 hiperparámetros en runtime, y luego reduce. Tres tasks:
@@ -244,8 +245,8 @@ mlops()
 ```
 
 `snapshot >> results` cablea el gate de validación aguas arriba de *todas* las
-instancias mapeadas, sin llevar datos, solo permiso para ejecutarse. Las dos
-líneas `>>` del gate le dan al branch sus dos brazos y los unen en `done`.
+instancias mapeadas, sin llevar datos: solo fija el orden. Las dos líneas `>>`
+del gate le dan al branch sus dos ramas y las unen en `done`.
 
 ### Mira el cableado
 
@@ -300,11 +301,11 @@ una `logical_date` **vacía** — los runs disparados por asset no tienen logica
 date, exactamente igual que los manuales (§7). En la UI, abre **Assets** y verás
 la arista que lo causó.
 
-Ten claro de qué es la espera. Casi toda es `dataops` corriendo sus cuatro tasks
+Ten claro de dónde viene la espera. Casi toda es `dataops` corriendo sus cuatro tasks
 — `extract` descarga el archivo de origen, así que esa parte depende de tu
 conexión. La parte de Airflow es pequeña: un bucle del scheduler para crear el
 run de `dataops` tras quitar la pausa, y uno más para encolar `mlops` cuando
-aterriza el asset event (§3). Si tras un minuto no ha aparecido nada, comprueba
+se registra el asset event (§3). Si tras un minuto no ha aparecido nada, comprueba
 que ambos Dags están sin pausa y que el run de `dataops` tuvo éxito — un
 `validate_transformed` fallido no emite evento, por diseño.
 
@@ -323,7 +324,7 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 Cuatro filas de `train_candidate` con `map_index` de 0 a 3; las horas de inicio
 de la 2 y la 3 son posteriores a las de fin de la 0 y la 1. Y
 `keep_current_model` está `skipped` mientras `promote_model` está `success`: el
-gate cogió el brazo de promocionar, porque no había modelo en producción al que
+gate eligió la rama de promoción, porque no había modelo en producción al que
 batir.
 
 > **Pruébalo, una vez más a mano.** `airflow dags trigger dataops` — esta vez
@@ -332,7 +333,7 @@ batir.
 > consumidor, se haya arrancado el productor como se haya arrancado.
 
 > **Pruébalo, la otra rama.** Pon el listón imposiblemente alto y mira cómo el
-> gate coge el otro brazo. El umbral se lee de una variable de entorno dentro
+> gate elige la otra rama. El umbral se lee de una variable de entorno dentro
 > del proceso de la propia task, así que ponla en la misma shell que ejecuta el
 > comando:
 >

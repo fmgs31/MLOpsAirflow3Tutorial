@@ -209,8 +209,8 @@ operators_and_xcoms()
 4. **`chain()`** — the readable form of a long `>>` line, and the only one that
    can carry a `Label`, which annotates the edge in the Graph view.
 
-And the fifth thing, `cross_downstream`, for the shape that looks like it
-should work with a list and does not:
+And a fifth, `cross_downstream`, for connecting every task in one list to every
+task in another — which looks like it should work with `>>` and does not:
 
 ```python
 [a, b] >> [c, d]              # TypeError: no operator between two lists
@@ -266,8 +266,9 @@ Templates reach them as `{{ conn.fs_default.host }}` and `{{ var.value.my_key }}
 > goes over the Task Execution API, which is what lets a remote worker resolve a
 > Connection it has no database access to.
 >
-> Prefer a **param** (§5) over a global Variable when the value is a policy
-> knob: params are recorded with the run that used them, Variables are not.
+> Prefer a **param** (§5) over a global Variable when the value is a setting
+> that changes what the Dag decides, such as a threshold: params are recorded
+> with the run that used them, Variables are not.
 
 ---
 

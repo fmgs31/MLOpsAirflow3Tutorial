@@ -4,8 +4,8 @@ Cuatro niveles, el más barato primero — y el primero de ellos es el corrector
 los siete archivos que escribiste.
 
 **Tests de integridad de Dags** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
-Estos pillan los fallos que si no aparecen como un banner rojo en la UI horas más
-tarde, y son lo de mayor valor que puedes meter en CI:
+Detectan los fallos que, si no, verías horas después como un banner rojo en la
+UI, y son lo de mayor valor que puedes meter en CI:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -18,7 +18,7 @@ def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag):
     assert "labeled_projects" in asset_names
 ```
 
-Cargan **tu carpeta `dags/`**, y codifican lo que este tutorial quería decir:
+Cargan **tu carpeta `dags/`**, y codifican lo que este tutorial espera:
 siete `dag_id` concretos; todos los Dags con tags, un `doc_md` y un owner que no
 sea `airflow`; `retries` de al menos uno en todo Dag que haga trabajo de verdad;
 `dataops` produciendo ambos assets; `mlops` programado con `labeled_projects` y
@@ -48,7 +48,8 @@ el resultado difiere.
 [`tests/test_readme_build_steps.py`](../../tests/test_readme_build_steps.py): cada
 bloque de "Constrúyelo" de arriba lleva la etiqueta del archivo al que
 pertenece; el test los concatena en orden, carga el resultado con `DagBag`, y
-falla si lo que se te dijo que teclearas no suma un Dag que importe.
+falla si lo que se te dijo que teclearas no da como resultado un Dag que se
+importe sin errores.
 
 Ejecútalo todo:
 
@@ -91,11 +92,11 @@ python scripts/sync_readme.py --check     # exit 1 when an appendix listing is s
 python scripts/sync_readme.py             # fix it
 ```
 
-Ninguno de esos niveles habría pillado los dos bugs del recuadro de la "trampa"
+Ninguno de esos niveles habría detectado los dos bugs del recuadro de la "trampa"
 de la §7: `airflow dags test` siempre aporta una logical date, así que un Dag que
 se rompe con un trigger manual pasa todos los tests de arriba. **Dispara cada Dag
 una vez de verdad** — por el scheduler, como va a correr realmente — antes de
-creértelo.
+darlo por bueno.
 
 ---
 
