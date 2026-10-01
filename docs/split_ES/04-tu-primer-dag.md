@@ -37,9 +37,12 @@ horaria que Airflow usa en todas partes; un `datetime` naive en un `start_date`
 es un error que preferirás no descubrir a las 03:00 UTC.
 
 **`default_args` es un diccionario que se aplica a todas las tasks del Dag.**
-Puede llevar cualquier cosa que acepte una task, y una task que fije el mismo
-argumento por su cuenta gana. Existe para que no repitas `owner=` y `retries=` en
-veinte tasks.
+Puede llevar cualquier cosa que acepte una task. Sus valores son solo valores por
+defecto: si una task pasa ese mismo argumento, el valor de la task sustituye al
+de `default_args`, solo para esa task. Con `"retries": 2` aquí, una task
+declarada con `@task(retries=5)` se reintenta cinco veces, y las demás siguen
+reintentándose dos. Existe para que no repitas `owner=` y `retries=` en veinte
+tasks.
 
 `owner` es una etiqueta: sale en la lista de Dags, puedes filtrar por ella, y
 dice a quién preguntar cuando el Dag se rompe. Los tests de integridad de este
