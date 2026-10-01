@@ -147,15 +147,15 @@ ni lleva tildes.
 airflow.cfg                          variable de entorno
 ─────────────────────────────────    ────────────────────────────────────────
 [core]
-executor = LocalExecutor             AIRFLOW__CORE__EXECUTOR=LocalExecutor
+dags_folder = <repo>/dags            AIRFLOW__CORE__DAGS_FOLDER=<repo>/dags
 
 [dag_processor]
 refresh_interval = 5                 AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5
 ```
 
-Es lo que hace el archivo de compose de este repo en vez de traer un archivo de
-configuración: las dos de arriba son líneas reales de
-[`docker-compose.yaml`](../../docker-compose.yaml).
+Las dos son líneas que exporta el script de arriba: configura Airflow a través
+del entorno en vez de editar `airflow.cfg`. El stack de Docker usa el mismo
+mecanismo en [`docker-compose.yaml`](../../docker-compose.yaml).
 
 > **Las connections por defecto no se crean solas.** `fs_default` se añade a mano
 > arriba porque `FileSensor` (§11) la necesita. En Docker el archivo de compose

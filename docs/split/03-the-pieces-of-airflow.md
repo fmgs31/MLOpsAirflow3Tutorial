@@ -5,11 +5,17 @@ graph in code, and Airflow decides when each node runs, retries it, records the
 attempt, and shows you the result. It does not move your data and it does not
 train your model — it starts the thing that does, waits, and reacts.
 
-That also tells you when to reach for something else. Airflow is a poor fit for
-sub-second or per-event work (use a queue or a stream processor), for anything
-needing a cycle or a `while` loop across runs, and for heavy compute inside the
-worker — trigger a Spark/Ray/Kubernetes job and track it instead. If your
-pipeline is three scripts run once a week, cron is still allowed.
+That also tells you when to use something else. Every Dag run and every task
+is scheduled, written to the metadata database and started as a process, which
+costs a few seconds per task. That is nothing for work measured in minutes, and
+far too slow for work that must finish in milliseconds. Airflow can *start* a
+run when an event arrives (§11), but one run per message, click or request, at
+thousands per second, would swamp the scheduler and the database; a queue
+consumer or a stream processor (Kafka, Flink…) is built for that. Airflow is
+also a poor fit for anything needing a cycle or a `while` loop across runs, and
+for heavy compute inside the worker — trigger a Spark/Ray/Kubernetes job and
+track it instead. If your pipeline is three scripts run once a week, cron is
+still allowed.
 
 Four processes, a database, and an executor — which, as the next section
 explains, is not always a process of its own. All of it is running in your stack
@@ -103,7 +109,8 @@ A **pool** is a named bucket of slots you assign tasks to with `pool="…"`
 (Admin → Pools), and it is how you stop twenty concurrent tasks from opening
 twenty connections to a database that tolerates five. Everything lands in
 `default_pool` unless you say otherwise. §10 sets the fourth limit on a single
-task and you will watch it bite.
+task (`max_active_tis_per_dag=2`), and you will see the effect: four training
+tasks that run two at a time instead of all at once.
 
 ### The metadata database
 
@@ -128,21 +135,27 @@ it, identified by a `run_id`, and it is `queued`, `running`, `success` or
 run, and it has many more states, because more can happen to it:
 
 ```
-                                   ┌─► success              done
-scheduled ──► queued ──► running ──┼─► failed               done — out of retries
-     ▲                             │
-     │                             ├─► up_for_retry         waiting out retry_delay
-     │                             ├─► up_for_reschedule    a sensor between pokes
-     │                             ├─► deferred             parked on the triggerer
-     │                             └─► awaiting_input       parked until a person answers
-     └─────────────────────────────────┘                    (or the timeout does)
-        those four are all "parked, will come back"
+                                                 ┌─► success              done
+no status ──► scheduled ──► queued ──► running ──┼─► failed               done — out of retries
+                   ▲                             │
+                   │                             ├─► up_for_retry         waiting out retry_delay
+                   │                             ├─► up_for_reschedule    a sensor between pokes
+                   │                             ├─► deferred             parked on the triggerer
+                   │                             └─► awaiting_input       parked until a person answers
+                   └─────────────────────────────────┘                    (or the timeout does)
+                      those four are all "parked, will come back"
 
   never started: skipped (a branch chose otherwise) · upstream_failed
 ```
 
 The distinction that catches everyone first is **`queued` vs `running`**:
 
+- **no status** — when a Dag run is created, the scheduler creates one task
+  instance for every task in the Dag at once, all without a state: in the
+  database their `state` is `null`, and the UI shows it as "no status", an
+  uncoloured box. A task stays like that while its upstream tasks have not
+  finished. This is what "waiting for another task" looks like: there is no
+  state with that name.
 - **`scheduled`** — the scheduler has decided this task *may* run: its upstream
   tasks are done and its trigger rule is satisfied. Nothing has started.
 - **`queued`** — the scheduler has handed it to the executor. Still nothing is
@@ -151,6 +164,15 @@ The distinction that catches everyone first is **`queued` vs `running`**:
   empty, because no process has written one yet.
 - **`running`** — a worker has it and your Python is executing. Now there are
   logs.
+
+**A task only waits for another one before it starts.** If `b` depends on `a`,
+`b` has no state while `a` runs. When `a` finishes, the scheduler checks `b`'s
+trigger rule (by default: every upstream task succeeded) and, if it is met,
+moves `b` to `scheduled`. Once `b` is `running`, it cannot pause
+halfway through its code to wait for something from `a` — tasks do not talk to
+each other while they run. Anything `b` needs from `a`, an XCom (§6) or a file,
+has to exist before `b` starts. If two steps must coordinate midway, they are
+two tasks with a dependency between them.
 
 The rest you will meet as you go: `up_for_retry` between attempts (§4),
 `skipped` from a branch (§10), `up_for_reschedule` from a sensor that exits

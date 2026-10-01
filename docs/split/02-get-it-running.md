@@ -145,14 +145,15 @@ underscores — an underscore *inside* either name stays single:
 airflow.cfg                          environment variable
 ─────────────────────────────────    ────────────────────────────────────────
 [core]
-executor = LocalExecutor             AIRFLOW__CORE__EXECUTOR=LocalExecutor
+dags_folder = <repo>/dags            AIRFLOW__CORE__DAGS_FOLDER=<repo>/dags
 
 [dag_processor]
 refresh_interval = 5                 AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5
 ```
 
-That is what this repo's compose file does instead of shipping a config file:
-both of those are real lines in [`docker-compose.yaml`](../../docker-compose.yaml).
+Both are lines the script above exports: it configures Airflow through the
+environment instead of editing `airflow.cfg`. The Docker stack uses the same
+mechanism in [`docker-compose.yaml`](../../docker-compose.yaml).
 
 > **Default connections are not created for you.** `fs_default` is added by hand
 > above because `FileSensor` (§11) needs it. In Docker the compose file provides

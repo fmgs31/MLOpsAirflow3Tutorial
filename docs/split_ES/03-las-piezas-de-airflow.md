@@ -5,12 +5,17 @@ grafo en código, y Airflow decide cuándo corre cada nodo, lo reintenta, regist
 el intento y te enseña el resultado. No mueve tus datos y no entrena tu modelo —
 arranca lo que sí lo hace, espera y reacciona.
 
-Eso también te dice cuándo buscar otra cosa. Airflow encaja mal con trabajo
-sub-segundo o por evento (usa una cola o un procesador de streams), con cualquier
-cosa que necesite un ciclo o un bucle `while` entre runs, y con cómputo pesado
-dentro del worker — lanza un job de Spark/Ray/Kubernetes y haz seguimiento de él.
-Si tu pipeline son tres scripts que corren una vez por semana, cron sigue estando
-permitido.
+Eso también te dice cuándo usar otra cosa. Cada Dag run y cada task se
+planifica, se escribe en la metadata database y se arranca como un proceso, y
+eso cuesta unos segundos por task. No es nada para trabajo que se mide en
+minutos, y es demasiado lento para trabajo que debe terminar en milisegundos.
+Airflow puede *arrancar* un run cuando llega un evento (§11), pero un run por
+cada mensaje, clic o petición, a miles por segundo, saturaría el scheduler y la
+base de datos; para eso están un consumidor de colas o un procesador de streams
+(Kafka, Flink…). Airflow también encaja mal con cualquier cosa que necesite un
+ciclo o un bucle `while` entre runs, y con cómputo pesado dentro del worker —
+lanza un job de Spark/Ray/Kubernetes y haz seguimiento de él. Si tu pipeline son
+tres scripts que corren una vez por semana, cron sigue estando permitido.
 
 Cuatro procesos, una base de datos y un executor — que, como explica la sección
 siguiente, no siempre es un proceso propio. Todo eso está corriendo en tu stack
@@ -104,8 +109,9 @@ list`, el tercero.)
 Un **pool** es un conjunto con nombre de slots al que asignas tasks con `pool="…"`
 (Admin → Pools), y es la forma de evitar que veinte tasks concurrentes abran
 veinte conexiones a una base de datos que tolera cinco. Todo cae en
-`default_pool` salvo que digas otra cosa. La §10 pone el cuarto límite en una
-sola task y lo verás morder.
+`default_pool` salvo que digas otra cosa. La §10 fija el cuarto límite en una
+sola task (`max_active_tis_per_dag=2`) y verás el efecto: cuatro tasks de
+entrenamiento que corren de dos en dos en vez de todas a la vez.
 
 ### La metadata database
 
@@ -131,21 +137,26 @@ task dentro de un Dag run, y tiene muchos más estados, porque le pueden pasar m
 cosas:
 
 ```
-                                   ┌─► success              terminada
-scheduled ──► queued ──► running ──┼─► failed               terminada — sin reintentos
-     ▲                             │
-     │                             ├─► up_for_retry         esperando retry_delay
-     │                             ├─► up_for_reschedule    un sensor entre pokes
-     │                             ├─► deferred             aparcada en el triggerer
-     │                             └─► awaiting_input       aparcada hasta que responda alguien
-     └─────────────────────────────────┘                    (o hasta el timeout)
-        esas cuatro son "aparcada, volverá"
+                                                  ┌─► success              terminada
+sin estado ──► scheduled ──► queued ──► running ──┼─► failed               terminada — sin reintentos
+                    ▲                             │
+                    │                             ├─► up_for_retry         esperando retry_delay
+                    │                             ├─► up_for_reschedule    un sensor entre pokes
+                    │                             ├─► deferred             aparcada en el triggerer
+                    │                             └─► awaiting_input       aparcada hasta que responda alguien
+                    └─────────────────────────────────┘                    (o hasta el timeout)
+                       esas cuatro son "aparcada, volverá"
 
   nunca arrancó: skipped (un branch eligió otra cosa) · upstream_failed
 ```
 
 La distinción que pilla a todo el mundo primero es **`queued` vs `running`**:
 
+- **sin estado** — al crear un Dag run, el scheduler crea de una vez una task
+  instance por cada task del Dag, todas sin estado: en la base de datos su
+  `state` es `null`, y la UI la muestra como "no status", una casilla sin color.
+  Una task sigue así mientras sus tasks aguas arriba no han terminado. Así se ve
+  "esperar a otra task": no hay ningún estado con ese nombre.
 - **`scheduled`** — el scheduler ha decidido que esta task *puede* correr: sus
   tasks aguas arriba están hechas y su trigger rule está satisfecha. No ha
   arrancado nada.
@@ -156,6 +167,16 @@ La distinción que pilla a todo el mundo primero es **`queued` vs `running`**:
   todavía.
 - **`running`** — un worker la tiene y tu Python se está ejecutando. Ahora sí hay
   logs.
+
+**Una task solo espera a otra antes de arrancar.** Si `b` depende de `a`, `b` no
+tiene estado mientras `a` corre. Cuando `a` termina, el scheduler comprueba la
+trigger rule de `b` (por defecto: que todas las tasks aguas arriba hayan tenido
+éxito) y, si se cumple, pasa `b` a `scheduled`. Una vez que `b`
+está `running`, no puede pararse a mitad de su código para esperar algo de `a` —
+las tasks no se hablan mientras corren. Lo que `b` necesite de `a`, un XCom (§6)
+o un archivo, tiene que existir antes de que `b` arranque. Si dos pasos tienen
+que coordinarse a mitad de camino, son dos tasks con una dependencia entre
+ellas.
 
 El resto los irás conociendo sobre la marcha: `up_for_retry` entre intentos (§4),
 `skipped` desde un branch (§10), `up_for_reschedule` desde un sensor que sale

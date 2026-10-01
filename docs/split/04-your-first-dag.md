@@ -36,8 +36,11 @@ uses everywhere; a naive `datetime` for a `start_date` is a mistake you would
 rather not learn about at 03:00 UTC.
 
 **`default_args` is a dictionary applied to every task in the Dag.** Anything a
-task accepts can go in it, and a task that sets the same argument itself wins.
-It exists so you do not repeat `owner=` and `retries=` on twenty tasks.
+task accepts can go in it. The values are only defaults: if a task passes the
+same argument itself, the task's value replaces the default for that task
+alone. With `"retries": 2` here, a task declared with `@task(retries=5)` retries
+five times, and every other task still retries twice. It exists so you do not
+repeat `owner=` and `retries=` on twenty tasks.
 
 `owner` is a label: it shows in the Dags list, you can filter on it, and it
 says who to ask when the Dag breaks. This repo's integrity tests (§14) reject
