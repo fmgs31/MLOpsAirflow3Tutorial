@@ -16,7 +16,7 @@ Beyond the standard ones there is a provider for nearly every system you would
 want to talk to — S3, Snowflake, BigQuery, Postgres, Kubernetes, Databricks,
 Slack, HTTP, Docker, dbt Cloud, Airbyte — each shipping operators, hooks and
 sensors, installed as `apache-airflow-providers-<name>` and listed in the UI
-under Admin → Providers. Reach for one before writing HTTP calls by hand: a
+under Admin → Providers. Use one before writing HTTP calls by hand: a
 provider's operator already handles connections, retries and secret lookup.
 
 When none fits, subclass `BaseOperator` — not in this lesson, but this is the
@@ -36,7 +36,7 @@ class TagifaiTrainOperator(BaseOperator):
         return train_module.train_from_files()[1]["f1"]
 ```
 
-That is the right move when a step is reused across Dags and needs its own
+Subclassing is the right choice when a step is reused across Dags and needs its own
 parameters, retries or template fields. For everything else `@task` is less code
 and this repo uses it throughout.
 
@@ -47,7 +47,7 @@ number through five tasks of three different kinds. The thing it teaches is how
 tasks hand values to each other.
 
 **XComs** ("cross-communications") are how tasks pass small values. They are
-stored in the metadata database — and, as everything a task does, a task reads
+stored in the metadata database — and, like everything else a task does, a task reads
 and writes them through the Task Execution API, never by touching the database
 itself. TaskFlow used them implicitly in lesson 1: every `return` was an XCom
 push, every argument an XCom pull. With operators you push and pull explicitly.
@@ -87,7 +87,7 @@ the same name-based injection `**context` did in lesson 1. Two things to
 notice:
 
 **`xcom_pull` without `task_ids` reads the current task's own XComs** and
-quietly returns `None`. Almost every pull you write wants `task_ids=`; the
+quietly returns `None`. Almost every pull you write needs `task_ids=`; the
 `_multiply` above names its source.
 
 > **XComs are for metadata, not payloads.** They live in the metadata database.
@@ -143,7 +143,7 @@ every time. Add it below `multiply`:
 ```
 
 Three consequences. Rendering happens per task instance, in the task's own
-process, so a template can reach anything in the task context — `run_id`,
+process, so a template can use anything in the task context — `run_id`,
 `ds`, `ti`, `params`, `var`, `conn`, `dag_run` — and the result is kept: it is
 the **Rendered Templates** tab on the task instance (§5), the place to look
 when a command did not say what you meant. A string that is *not* in
@@ -203,8 +203,8 @@ operators_and_xcoms()
    and so are `describe.set_downstream(product)` and
    `product.set_upstream(describe)`, the methods the operators call underneath;
    use those when the tasks are built in a loop and `>>` reads badly.
-3. **Fan-out and fan-in**: a list on either side of `>>` broadcasts the edge,
-   so `product >> [check_parity, check_range] >> checks_done` is four
+3. **Fan-out and fan-in**: a list on either side of `>>` creates one edge per
+   task in the list, so `product >> [check_parity, check_range] >> checks_done` is four
    dependencies, not two.
 4. **`chain()`** — the readable form of a long `>>` line, and the only one that
    can carry a `Label`, which annotates the edge in the Graph view.
@@ -260,7 +260,7 @@ def land_file() -> str:
 **Variables** hold configuration. Both are editable under Admin, settable from
 the CLI, and overridable by an `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` environment
 variable — which is how `fs_default` is defined in this repo's compose file.
-Templates reach them as `{{ conn.fs_default.host }}` and `{{ var.value.my_key }}`.
+Templates read them as `{{ conn.fs_default.host }}` and `{{ var.value.my_key }}`.
 
 > A task fetching either one does not touch the metadata database: the request
 > goes over the Task Execution API, which is what lets a remote worker resolve a

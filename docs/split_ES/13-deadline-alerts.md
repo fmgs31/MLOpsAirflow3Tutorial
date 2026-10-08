@@ -7,8 +7,8 @@ el informe de la mañana.
 
 ### Constrúyelo
 
-`dags/07_deadline_alerts.py` es el archivo más corto de los siete, y todo él es
-el decorador:
+`dags/07_deadline_alerts.py` es el archivo más corto de los siete, y lo
+interesante está todo en el decorador:
 
 ```python dags/07_deadline_alerts.py
 """Lesson 7 - deadline alerts: "tell me if this run is taking too long"."""
@@ -84,8 +84,9 @@ porque esa task duerme 75 segundos. Ese es el objetivo: te enteraste del run
 lento antes de que terminara. Los deadlines perdidos y pendientes también se
 listan bajo Browse → **Deadlines**.
 
-> **Problema conocido en 3.3.1:** `airflow dags test` revienta con cualquier Dag
-> que tenga un `deadline=` (`psycopg2.ProgrammingError: can't adapt type 'dict'`
+> **Bug de Airflow 3.3.1 (la versión que instala este tutorial):**
+> `airflow dags test` revienta con cualquier Dag que defina `deadline=`
+> (`psycopg2.ProgrammingError: can't adapt type 'dict'`
 > saliendo de `DagRun.update_state`). Las tasks corren bien; lo único que falla
 > es la actualización final de estado de la CLI. Dispara esos Dags por el
 > scheduler en su lugar — que es por lo que `mlops` no lleva deadline, ya que

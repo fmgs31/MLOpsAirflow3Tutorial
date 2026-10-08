@@ -135,6 +135,6 @@ def test_mlops_validates_before_it_trains(dagbag: DagBag) -> None:
 def test_retries_are_configured(dagbag: DagBag) -> None:
     """A task with no retry policy is a pager at 3am."""
     for dag_id, dag in dagbag.dags.items():
-        if dag_id in {"sensors_and_events", "deadline_alerts", "hello_airflow3"}:
+        if dag_id in {"sensors_and_events", "deadline_alerts"}:
             continue  # demo Dags, intentionally retry-free
         assert dag.default_args.get("retries", 0) >= 1, f"{dag_id} has no retries"

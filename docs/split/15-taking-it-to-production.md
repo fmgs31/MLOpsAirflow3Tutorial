@@ -1,10 +1,11 @@
 ## 15. Taking it to production
 
-**Executors.** `LocalExecutor` is the default and is fine up to one machine.
+**Executors.** `LocalExecutor` is the default and is fine as long as one machine
+is enough.
 Beyond that: `CeleryExecutor` (worker pool), `KubernetesExecutor` (a pod per
 task), or **multiple executors** configured together. There is also the **Edge
-executor**, for workers outside your cluster — the thing the Task Execution API
-(§3) made possible.
+executor**, for workers outside your cluster, which the Task Execution API (§3)
+makes possible.
 
 **Isolation.** Do not install your ML dependencies next to Airflow's. Use
 `KubernetesPodOperator`, or `@task.virtualenv` / `@task.external_python` for

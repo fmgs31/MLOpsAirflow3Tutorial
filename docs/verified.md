@@ -203,7 +203,8 @@ Six real defects were found while building this, all documented in
 [troubleshooting](troubleshooting.md):
 
 - `fs_default` is not created for you.
-- `airflow dags test` breaks on Dags with a `deadline=`.
+- `airflow dags test` breaks on Dags that set `deadline=` (an Airflow 3.3.1
+  bug).
 - `DagBag` needs importing from `airflow.dag_processing.dagbag`.
 - `context["logical_date"]` raises `KeyError` on any run without a logical
   date — found by a manual trigger, after every test in §14 had passed.

@@ -22,7 +22,7 @@ A monitoring event has four sensible responses, and
 
 | Response | When | What happens |
 |---|---|---|
-| **continue** | drift and performance within budget | nothing; keep serving |
+| **continue** | drift and performance within limits | nothing; keep serving |
 | **improve** | f1 dropped or the input distribution moved | ask a human, then trigger `mlops` |
 | **inspect** | an unseen label appeared | stop and page someone — the label space changed |
 | **rollback** | performance collapsed | re-point production at the previous model |
@@ -159,7 +159,7 @@ gate, `ApprovalOperator`, followed by the task that starts another Dag:
 
 `ApprovalOperator` parks the task in `awaiting_input` and shows a prompt in the
 UI, under the Dag's **Required Actions** tab. On **Reject**, everything
-downstream is skipped. `defaults` is what an unanswered run resolves to after
+downstream is skipped. `defaults` is the answer applied if nobody responds within
 `response_timeout` — sixty seconds here so the lesson finishes; give it hours
 in production. `TriggerDagRunOperator` is the cross-Dag verb: it creates a
 `manual__` run of `mlops` with the `conf` given, and with
@@ -185,7 +185,7 @@ There is no join at the end, because nothing needs to run after all of them.
 
 ### Run it
 
-Forcing the label-drift budget to zero guarantees `decide()` takes the
+Forcing the label-drift limit to zero guarantees `decide()` takes the
 retraining branch, so you see the interesting path rather than whichever one
 your current data happens to deserve:
 
@@ -209,24 +209,29 @@ Approved. Proceeding with downstream tasks…  ← 60s later, the default resolv
 Dag Run triggered successfully.  trigger_dag_id=mlops
 ```
 
-That last line is real. Check for yourself — `airflow dags list-runs mlops -o
-plain` now has a fresh `manual__…` run that this Dag created. One Dag decided
+That last line is real. Check for yourself:
+
+```bash
+docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
+```
+
+It now has a fresh `manual__…` run that this Dag created. One Dag decided
 another Dag should run, and a person was given the chance to say no.
 
 While it is in `awaiting_input`, open the Dag in the UI: the prompt is waiting
 for you under the **Required Actions** tab (§5), and answering it there resolves
 the task without waiting for the timeout. Airflow records the answer either way
-— the choice that was made, when, and *by whom*. A run that timed out and fell back
-to its `defaults` stores the choice with the "who" left empty, which is how you tell "a
-person approved this" from "nobody was looking".
+— the choice that was made, when, and *by whom*. A run that timed out and fell
+back to its `defaults` stores the choice with the "who" left empty, which is how
+you tell "a person approved this" from "nobody was looking".
 
 > **Without the `--conf` override** the outcome depends on state, which is the
 > point of a monitor. If §10 promoted a model and the data has not moved,
 > `decide()` returns `continue_serving`, the retraining arm is skipped, and the
 > run is over in seconds. If there is no production model yet, `decide()` says
 > so — `No production model yet - train one.` — and takes the retraining
-> branch anyway, timeout included. Both are correct. Run it to see a branch
-> *not* taken.
+> branch anyway, timeout included. Both are correct. Run it without `--conf`
+> to see which branch your current state picks.
 
 Reference: [`solutions/06_monitoring_and_retraining.py`](../../solutions/06_monitoring_and_retraining.py).
 
@@ -247,9 +252,9 @@ would be one more task in a real version of this Dag:
 
 The other constraint is **catastrophic forgetting**: fitting only on the new
 window makes the model forget patterns it used to get right, so it fixes
-today's errors and brings back old ones. The Dag here sidesteps it
-by always training on the full labelled table — fine at this size, and the first
-thing to revisit when the table stops fitting in a task.
+today's errors and brings back old ones. The Dag here sidesteps it by always
+training on the full labelled table — fine at this size, and the first thing to
+revisit when the table stops fitting in a task.
 
 Which is also why the promotion gate in §10 compares against the current
 production model instead of a fixed threshold alone: a retrained model that is

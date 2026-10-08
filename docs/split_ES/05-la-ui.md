@@ -4,20 +4,21 @@ La UI es una aplicación React encima de la REST API, servida por el api-server 
 <http://localhost:8080>. La mitad de lo que enseña este tutorial se entiende mejor
 viéndolo que leyéndolo, así que haz el recorrido ahora que hay un Dag que mirar.
 
-La navegación es **Home · Dags · Assets · Browse · Admin · Plugins · Security ·
-Docs**.
+La navegación es **Home · Dags · Assets · Browse · Admin** arriba y, abajo,
+**Docs**, un reloj y **User**.
 
 **Home** — salud del scheduler, el triggerer y el Dag processor, errores de
 import, runs y tasks fallidos, asset events recientes, deadlines y slots de
-pools. Ábrela primero cuando algo no corre: un Dag que nunca aparece en la lista
-suele ser un error de import esperándote en esta página.
+pools. Ábrela primero cuando algo no corre.
 
 **Dags** — la lista, como tarjetas o como tabla, filtrable por tag, owner o
 estado, con el toggle de pausa y un botón **Trigger** en cada fila. La tuya
 muestra `hello_airflow3`, su owner, sus dos tags y el único run que hizo
 `airflow dags test`. Un Dag programado con assets muestra su condición de asset
 donde un Dag con cron muestra su schedule; el tuyo, con `schedule=None`, no
-muestra ninguna de las dos.
+muestra ninguna de las dos. Un Dag que nunca aparece aquí suele ser un Dag que
+falló al importarse: junto al número de Dags aparece una insignia roja con el
+número de fallos — haz clic en ella para ver los tracebacks.
 
 **La página de un Dag** pone el histórico de runs a la izquierda y las pestañas
 de detalle a la derecha. El panel izquierdo tiene **Grid** y **Graph** — `g`
@@ -95,16 +96,31 @@ aguas arriba, que produce los datos de verdad) o registra un evento manual, que
 dispara los Dags aguas abajo sin ejecutar el productor.
 
 **Browse** — Audit Log (quién disparó, pausó o limpió qué — tu trigger desde la
-UI ya está ahí), **Deadlines** (deadline alerts pendientes y perdidas, §13) y
-XComs.
+UI ya está ahí), **Deadlines** (deadline alerts pendientes y perdidas, §13), Jobs
+(el scheduler, el triggerer y el Dag processor con sus heartbeats), XComs y
+**Required Actions** (todas las tasks que esperan a una persona, en todos los
+Dags).
 
-**Admin** — Connections, Variables, Pools, Providers, Plugins, Jobs y la
-**Config** renderizada de Airflow. Connections y Variables son las dos que vas a
-usar: nunca metas una credencial en un archivo de Dag.
+**Admin** — Variables, Pools, Providers, Plugins, Connections y la **Config**
+renderizada de Airflow. Connections y Variables son las dos que vas a usar:
+nunca metas una credencial en un archivo de Dag.
 
-> **Security y Plugins** están casi vacías aquí. Este stack corre el Simple auth
-> manager con todo el mundo como admin, así que no hay usuarios ni roles que
-> gestionar.
+**Docs** — la documentación de Airflow, el repo de GitHub, la referencia de la
+REST API que sirve este api-server, y la versión de Airflow que estás corriendo,
+enlazada a su propia documentación.
+
+**El reloj** — su etiqueta es el desfase UTC de la zona horaria en la que se
+muestran todas las fechas de la UI. Pasa el ratón por encima para ver la hora
+actual allí; haz clic para elegir otra zona horaria.
+
+**User** — idioma, modo claro/oscuro, si un Dag se abre en Grid o en Graph, un
+generador de tokens de la API y el logout.
+
+> Hay dos menús que pueden aparecer y que este stack no muestra. **Security**
+> viene con un auth manager que tiene usuarios y roles que gestionar; el stack de
+> este tutorial corre el Simple auth manager con todo el mundo como admin. **Plugins** aparece cuando
+> un plugin instalado añade páginas a la navegación; el único plugin instalado
+> en el stack, OpenLineage, no añade ninguna.
 
 ---
 

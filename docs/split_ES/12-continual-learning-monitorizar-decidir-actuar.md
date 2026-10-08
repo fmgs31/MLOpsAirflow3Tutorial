@@ -212,8 +212,13 @@ Approved. Proceeding with downstream tasks…  ← 60s después, resuelve el def
 Dag Run triggered successfully.  trigger_dag_id=mlops
 ```
 
-Esa última línea es real. Compruébalo tú mismo — `airflow dags list-runs mlops -o
-plain` tiene ahora un run `manual__…` recién creado por este Dag. Un Dag decidió
+Esa última línea es real. Compruébalo tú mismo:
+
+```bash
+docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
+```
+
+Tiene ahora un run `manual__…` recién creado por este Dag. Un Dag decidió
 que otro Dag debía correr, y a una persona se le dio la oportunidad de decir que
 no.
 
@@ -230,7 +235,7 @@ aprobó esto" de "no había nadie mirando".
 > queda skipped, y el run termina en segundos. Si todavía no hay modelo en
 > producción, `decide()` lo dice — `No production model yet - train one.` — y
 > elige la rama de reentrenamiento igualmente, timeout incluido. Ambas son
-> correctas. Ejecútalo para ver una rama *no* tomada.
+> correctas. Ejecútalo sin `--conf` para ver qué rama elige tu estado actual.
 
 Referencia: [`solutions/06_monitoring_and_retraining.py`](../../solutions/06_monitoring_and_retraining.py).
 

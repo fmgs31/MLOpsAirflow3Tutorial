@@ -151,7 +151,7 @@ hiperparámetros en runtime, y luego reduce. Tres tasks:
 `train_candidate.expand(hparams=candidates())` crea una task instance por
 elemento en runtime — cuatro aquí, una por conjunto de hiperparámetros — y cada
 una se reintenta, se loguea y se inspecciona por su cuenta.
-`context['ti'].map_index` es cuál de ellas es esta. El paso de reduce,
+`context['ti'].map_index` le dice a la task cuál de las cuatro es. El paso de reduce,
 `select_best`, simplemente recibe una `list`. Fíjate en el valor de retorno de
 `train_candidate`: un run id, un f1 y los hparams — pequeño y serializable a
 JSON. El modelo en sí se queda en el registry.
@@ -164,8 +164,9 @@ deliberadamente el más estrecho aquí. Así que el fan-out corre **de dos en do
 en dos oleadas**. Sube el tope y las cuatro se solapan; quítalo y `[core]
 max_active_tasks_per_dag` (16) es el siguiente límite. Un tope en una task de
 entrenamiento no es un ajuste de juguete: cuatro modelos ajustándose a la vez son
-cuatro copias de los datos en memoria, y un `pool` es cómo dices lo mismo sobre
-una base de datos que no aguanta cuatro conexiones.
+cuatro copias de los datos en memoria. Cuando el recurso limitado es compartido
+— por ejemplo, una base de datos que solo acepta unas pocas conexiones —, un
+`pool` (§3) pone el mismo tipo de tope a todas las tasks y Dags que lo usan.
 
 > **Ojo:** el parámetro se llama `hparams`, no `params`. TaskFlow inyecta claves
 > del contexto por nombre de parámetro, y `params` está reservado — un argumento
@@ -218,7 +219,8 @@ normal — el run tiene éxito y producción se queda como estaba. `promote_mode
 emite el segundo asset, `production_model`, que todavía no consume nadie; apunta
 el `schedule` de un Dag hacia él y la arista aparece en el grafo de Assets.
 
-Las **trigger rules** son cómo una task declara qué espera de sus padres, y el
+Las **trigger rules** son cómo una task declara qué tienen que haber hecho sus
+tasks aguas arriba antes de que ella corra, y el
 branching es donde necesitas una por primera vez. El join, `done`, necesita
 `none_failed_min_one_success`, porque el `all_success` por defecto lo saltaría en
 cuanto cualquiera de las ramas quedara skipped. Las útiles: `all_success` (por
@@ -327,10 +329,17 @@ de la 2 y la 3 son posteriores a las de fin de la 0 y la 1. Y
 gate eligió la rama de promoción, porque no había modelo en producción al que
 batir.
 
-> **Pruébalo, una vez más a mano.** `airflow dags trigger dataops` — esta vez
-> un run `manual__`. Cuando tenga éxito, un evento más, un run
-> `asset_triggered__` más de `mlops`. Cada éxito del productor es un run del
-> consumidor, se haya arrancado el productor como se haya arrancado.
+> **Pruébalo, una vez más a mano:**
+>
+> ```bash
+> docker compose exec airflow-scheduler airflow dags trigger dataops
+> ```
+>
+> Esta vez, un run `manual__`. Cuando tenga éxito, un evento más, un run
+> `asset_triggered__` más de `mlops`. Cada éxito del productor emite un evento,
+> se haya arrancado el productor como se haya arrancado — y el consumidor corre
+> con él (los eventos que llegan mientras `mlops` está ocupado comparten su
+> siguiente run, §8).
 
 > **Pruébalo, la otra rama.** Pon el listón imposiblemente alto y mira cómo el
 > gate elige la otra rama. El umbral se lee de una variable de entorno dentro

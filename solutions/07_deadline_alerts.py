@@ -21,8 +21,8 @@ This Dag deliberately misses its own 30-second deadline, so the callback in
 
     docker compose logs -f airflow-scheduler | grep "DEADLINE MISSED"
 
-KNOWN ISSUE (verified on 3.3.1): `airflow dags test <dag_id>` crashes on
-any Dag with a `deadline=`, with
+AIRFLOW 3.3.1 BUG (the version this repo installs): `airflow dags test <dag_id>`
+crashes on any Dag that sets `deadline=`, with
 `psycopg2.ProgrammingError: can't adapt type 'dict'` raised from
 `DagRun.update_state`. The tasks themselves run to completion first - only the
 CLI's final state update fails. Trigger this Dag through the scheduler instead:

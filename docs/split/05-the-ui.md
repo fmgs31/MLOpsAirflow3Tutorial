@@ -4,18 +4,20 @@ The UI is a React application on top of the REST API, served by the api-server
 at <http://localhost:8080>. Half of what this tutorial teaches is easier to see
 than to read about, so take the tour now that there is a Dag to look at.
 
-The nav is **Home · Dags · Assets · Browse · Admin · Plugins · Security · Docs**.
+The nav is **Home · Dags · Assets · Browse · Admin** at the top and **Docs**, a
+clock and **User** at the bottom.
 
 **Home** — health of the scheduler, triggerer and Dag processor, import errors,
 failed runs and tasks, recent asset events, deadlines and pool slots. Open it
-first when something is not running: a Dag that never appears in the list is
-usually an import error sitting on this page.
+first when something is not running.
 
 **Dags** — the list, as cards or a table, filtered by tag, owner or state, with
 the pause toggle and a **Trigger** button on each row. Yours shows
 `hello_airflow3`, its owner, its two tags, and the one run `airflow dags test`
 made. A Dag scheduled on assets shows its asset condition where a cron Dag
-shows its schedule; yours, with `schedule=None`, shows neither.
+shows its schedule; yours, with `schedule=None`, shows neither. A Dag that never
+appears here usually failed to import: a red badge with the count of failures
+sits next to the number of Dags — click it for the tracebacks.
 
 **A Dag's page** puts the run history on the left and detail tabs on the right.
 The left panel holds **Grid** and **Graph** — `g` toggles between them — plus
@@ -31,8 +33,8 @@ The left panel holds **Grid** and **Graph** — `g` toggles between them — plu
 
 The tabs are Overview, Runs, Tasks, Backfills, Asset Events, Audit Log,
 Calendar, Code, Details and — when a task is waiting on a human — **Required
-Actions**. Click a run, then a task, and the same strip becomes that task
-instance's: **Logs**, **XCom**, **Rendered Templates**, and **Task Instances**
+Actions**. Click a run, then a task, and the same row of tabs becomes that
+task instance's: **Logs**, **XCom**, **Rendered Templates**, and **Task Instances**
 for a mapped fan-out.
 
 **Do it now.** Open `hello_airflow3`, look at the Graph — the fan-out and
@@ -91,15 +93,29 @@ for real) or records a manual event, which triggers the downstream Dags without
 running the producer at all.
 
 **Browse** — Audit Log (who triggered, paused, cleared what — your UI trigger
-is in it now), **Deadlines** (pending and missed deadline alerts, §13), and
-XComs.
+is in it now), **Deadlines** (pending and missed deadline alerts, §13), Jobs
+(the scheduler, triggerer and Dag processor and their heartbeats), XComs, and
+**Required Actions** (every task waiting on a human, across all Dags).
 
-**Admin** — Connections, Variables, Pools, Providers, Plugins, Jobs and the
-rendered Airflow **Config**. Connections and Variables are the two you will use:
-never put a credential in a Dag file.
+**Admin** — Variables, Pools, Providers, Plugins, Connections and the rendered
+Airflow **Config**. Connections and Variables are the two you will use: never
+put a credential in a Dag file.
 
-> **Security and Plugins** are near-empty here. This stack runs the Simple auth
-> manager with everyone an admin, so there are no users or roles to manage.
+**Docs** — the Airflow documentation, the GitHub repo, the REST API reference
+served by this api-server, and the Airflow version you are running, linked to
+its own docs.
+
+**The clock** — labelled with the UTC offset of the timezone every date in the
+UI is shown in. Hover it for the current time there; click it to pick another
+timezone.
+
+**User** — language, light/dark mode, whether a Dag opens on Grid or Graph, an
+API token generator, and logout.
+
+> Two menus can appear that this stack does not show. **Security** comes with an
+> auth manager that has users and roles to manage; this tutorial's stack runs the
+> Simple auth manager with everyone an admin. **Plugins** appears when an installed plugin
+> adds pages to the nav; the only plugin installed in the stack, OpenLineage, adds none.
 
 ---
 
