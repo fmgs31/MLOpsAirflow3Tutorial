@@ -1,8 +1,8 @@
 ## 9. The DataOps Dag
 
 `dags/03_dataops.py` — extract → validate → transform → validate. The first
-Dag here that does real work, and each task is a slot you can swap for a real
-vendor:
+Dag here that does real work, and each task is a stand-in you can swap for a
+real vendor's tool:
 
 | Task here | Production option |
 |---|---|
@@ -12,7 +12,7 @@ vendor:
 
 It is also the first Dag here with a real cron — `schedule="0 3 * * *"`, the
 example from §7 — so once you un-pause it in §10 it will run by itself: once
-immediately, for the slice its cron most recently missed, and then at 03:00 UTC
+immediately, for the most recent slice its cron has already passed, and then at 03:00 UTC
 every day, each run triggering `mlops` in turn. (`monitoring`, §12, is the
 other scheduled one, at 06:00.) Leave the stack up overnight and the
 `scheduled__` runs you find in the morning are that, not a bug.
@@ -78,9 +78,10 @@ def dataops():
 
 Two imports are new. `AirflowFailException` comes from `airflow.sdk.exceptions`
 — task code imports exceptions from the Task SDK, because that is the namespace
-a remote worker has. And `from tagifai import …` works only because the compose file puts
-`/opt/airflow/src` on `PYTHONPATH` for every service: the Dag processor needs
-it to parse the file, and the executor needs it to run the tasks.
+a remote worker has. And `from tagifai import …` works only because the
+compose file puts `/opt/airflow/src` on `PYTHONPATH` for every service: the Dag
+processor needs it to parse the file, and the executor needs it to run the
+tasks.
 
 `max_active_runs=1` caps the Dag at one run at a time — a second one, from a
 trigger or a schedule, waits in `queued` until the first is done.
@@ -99,7 +100,8 @@ The first task produces an asset. Add it inside `dataops()`:
 
 `outlets=` is the declaration from §8; `outlet_events` is injected by name,
 like `ti`, and lets the task attach metadata to the event it is about to emit.
-The task returns a **path**, not the dataframe: XComs carry pointers.
+The task returns a **path**, not the dataframe: XComs carry a pointer to the
+data, not the data itself.
 
 Now the gate on the raw data, and the transform:
 
@@ -126,11 +128,12 @@ to get wrong:
 - **`AirflowFailException`, not `AirflowException`.** A data-quality failure is
   not transient; with `retries=2` in the defaults, a plain exception would run
   the same check three times and delay the alert by two minutes.
-  `AirflowFailException` fails the task at once, retries or not.
+  `AirflowFailException` fails the task at once, whatever `retries` says.
 - **Expectations are non-critical when they mean "look at this", not "stop".**
   An unexpected tag appearing is a signal to inspect the label space, not a
   reason to halt the pipeline. `validate.py` marks that one `critical=False`,
-  so it lands in `result.failures` without flipping `result.passed`.
+  so it is listed in `result.failures` but does not make `result.passed`
+  false.
 
 The final gate — the one that emits the asset `mlops` will be scheduled on:
 
@@ -156,7 +159,7 @@ whole trick: the event is written only when this task succeeds, so downstream
 Dags are scheduled on "good data arrived", never on "a task finished".
 
 One more task, inside a **task group** — `@task_group` nests tasks under one
-collapsible node in the Graph view, worth reaching for once a Dag passes a
+collapsible node in the Graph view, useful once a Dag has more than a
 dozen tasks — and then the wiring:
 
 ```python dags/03_dataops.py
@@ -217,7 +220,8 @@ passed=6/6`, and from the task group, `raw_projects: 4 checks, failed=none`
 and `labeled_projects: 6 checks, failed=none`. The file
 `data/warehouse/labeled_projects.csv` now exists on your machine. (`extract`
 downloads the source CSV over HTTPS — it is the one task in the pipeline that
-needs an internet connection, and the row count follows that file.)
+needs an internet connection, and the row count is whatever that file holds
+when you download it.)
 
 If a task fails, compare with [`solutions/03_dataops.py`](../../solutions/03_dataops.py).
 
@@ -253,7 +257,7 @@ beginning `backfill__`. Know what follows before you do it:
   `--max-active-runs` at a time.
 - Every `dataops` backfill run that succeeds emits a `labeled_projects` asset
   event exactly as a normal run does (§8), so an un-paused `mlops` trains after
-  them. Backfilling a producer backfills its consumers.
+  them. Backfilling a producer also triggers runs of its consumers.
 - The CLI in 3.3.1 only *creates* backfills. To stop one, cancel it in the
   Dag's **Backfills** tab, or through the API — `PUT
   /api/v2/backfills/{id}/cancel`, no token needed on this all-admins stack —
@@ -322,7 +326,7 @@ they map one-to-one onto the checks in `validate.py`:
 `expect_column_values_to_be_of_type`, `expect_compound_columns_to_be_unique`,
 `expect_table_row_count_to_be_between`.
 
-The Dag's shape does not change: `outlets=[LABELED_PROJECTS]` still goes on the
+The Dag's structure does not change: `outlets=[LABELED_PROJECTS]` still goes on the
 last validation task, and everything downstream still schedules on the asset.
 Those three providers are **not** installed here, which is why this tutorial
 needs no vendor account.

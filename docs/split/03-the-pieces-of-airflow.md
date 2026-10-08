@@ -102,8 +102,12 @@ defaults on this stack:
 | `default_pool` slots | 128 | tasks not assigned to another pool |
 | `max_active_tis_per_dag` on a task | unset | that one task, across all its runs |
 
-(`airflow config get-value core parallelism` prints the first; `airflow pools
-list` the third.)
+To see the first and the third on this stack:
+
+```bash
+docker compose exec airflow-scheduler airflow config get-value core parallelism
+docker compose exec airflow-scheduler airflow pools list
+```
 
 A **pool** is a named bucket of slots you assign tasks to with `pool="…"`
 (Admin → Pools), and it is how you stop twenty concurrent tasks from opening
@@ -128,8 +132,8 @@ XComs does not remove itself.
 
 ### The lifecycle of one task
 
-The vocabulary is exact, and mixing it up is what makes error messages
-confusing. A **Dag** is the graph you wrote. A **Dag run** is one execution of
+These terms have precise meanings, and mixing them up is what makes error
+messages confusing. A **Dag** is the graph you wrote. A **Dag run** is one execution of
 it, identified by a `run_id`, and it is `queued`, `running`, `success` or
 `failed` — those four, no others. A **task instance** is one task inside one Dag
 run, and it has many more states, because more can happen to it:

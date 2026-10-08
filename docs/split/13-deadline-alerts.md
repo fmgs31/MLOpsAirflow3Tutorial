@@ -7,8 +7,8 @@ morning report.
 
 ### Build it
 
-`dags/07_deadline_alerts.py` is the shortest file of the seven, and all of it
-is the decorator:
+`dags/07_deadline_alerts.py` is the shortest file of the seven, and the
+interesting part is all in the decorator:
 
 ```python dags/07_deadline_alerts.py
 """Lesson 7 - deadline alerts: "tell me if this run is taking too long"."""
@@ -45,7 +45,7 @@ def deadline_alerts():
 Three pieces: a **reference** (where the clock starts), an **interval** (how
 long after it), and a **callback** — named as a dotted path, because it runs
 somewhere other than the task, with `kwargs` passed through. Pass a list to
-`deadline=` for several budgets.
+`deadline=` for several deadlines.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)` — that last one is "slower than this Dag's own
@@ -84,8 +84,9 @@ because that task sleeps for 75 seconds. That is the point: you heard about the
 slow run before it finished. Missed and pending deadlines are also listed under
 Browse → **Deadlines**.
 
-> **Known issue on 3.3.1:** `airflow dags test` crashes on any Dag with a
-> `deadline=` (`psycopg2.ProgrammingError: can't adapt type 'dict'` out of
+> **Airflow 3.3.1 bug (the version this tutorial installs):** `airflow dags test`
+> crashes on any Dag that sets `deadline=`
+> (`psycopg2.ProgrammingError: can't adapt type 'dict'` out of
 > `DagRun.update_state`). The tasks run fine; only the CLI's final state update
 > fails. Trigger such Dags through the scheduler instead — which is why `mlops`
 > carries no deadline, since it would break the `airflow dags test mlops`

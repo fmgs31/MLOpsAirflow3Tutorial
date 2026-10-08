@@ -72,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 
 It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. It does
 not touch `dags/` — the files you write survive a reset. No step in this
-tutorial needs it; it is here for the day something is wedged and
+tutorial needs it; it is here for the day something is stuck and
 [troubleshooting](../troubleshooting.md) has not helped.
 
 > **One shell for the rest.** Every command after this point is written for

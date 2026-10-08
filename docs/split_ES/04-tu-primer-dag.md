@@ -33,8 +33,9 @@ DEFAULT_ARGS = {
 
 El docstring no es decorativo: dentro de un momento lo vas a pasar como la
 documentación del Dag en la UI. `pendulum` es la librería de datetimes con zona
-horaria que Airflow usa en todas partes; un `datetime` naive en un `start_date`
-es un error que preferirás no descubrir a las 03:00 UTC.
+horaria que Airflow usa en todas partes. Un `datetime` normal sin zona horaria
+(uno "naive") se interpreta en la zona horaria por defecto de Airflow, que puede
+no ser la que querías — y entonces tus runs arrancan a horas que no esperabas.
 
 **`default_args` es un diccionario que se aplica a todas las tasks del Dag.**
 Puede llevar cualquier cosa que acepte una task. Sus valores son solo valores por
@@ -49,7 +50,7 @@ dice a quién preguntar cuando el Dag se rompe. Los tests de integridad de este
 repo (§14) rechazan el valor por defecto, `airflow`, porque un owner que no es
 nadie significa que no se avisa a nadie.
 
-Las otras dos son las primeras que echarás de menos si no las pones:
+Las otras dos deciden qué pasa cuando una task falla:
 
 - **`retries=2`** — si la task lanza una excepción, Airflow la ejecutará hasta
   dos veces más. La task instance pasa a `up_for_retry`, espera y se vuelve a
@@ -91,12 +92,22 @@ Línea a línea:
 
 - **`@dag` convierte una función en un Dag.** Este estilo de decoradores tiene
   nombre, **TaskFlow**, y el nombre va a seguir apareciendo.
-- **`schedule=None`** — este Dag corre solo cuando algo se lo pide: tú, la UI o
-  la API. La §7 tiene los otros valores que puede tomar un schedule.
-- **`start_date`** — nunca se programa un run antes de este momento (§7). Un Dag
-  sin él parsea igual, así que Airflow no te lo va a recordar.
-- **`catchup=False`** — el valor por defecto, puesto explícitamente porque es el
-  flag que decide si quitar la pausa a un Dag te inunda de runs históricos (§7).
+- **`schedule=None`** — este Dag corre solo cuando alguien lo dispara: tú, desde
+  la UI o la CLI, o un programa a través de la API. La §7 tiene los otros
+  valores que puede tomar un schedule.
+- **`start_date`** — el primer momento para el que el scheduler crea runs por su
+  cuenta; nunca programa uno antes. No te impide lanzar un run tú mismo — un
+  trigger manual funciona aunque el `start_date` esté en el futuro —, así que en
+  este Dag con `schedule=None` todavía no cambia nada; está puesto para que el
+  Dag esté listo el día que tenga un schedule. Es opcional: un Dag con schedule
+  que no lo tiene empieza a partir del momento en que le quitas la pausa.
+- **`catchup=False`** — decide qué pasa cuando quitas la pausa a un Dag con
+  schedule cuyo `start_date` ya pasó. Con `False`, el valor por defecto, el
+  scheduler ignora el pasado perdido y crea un solo run, para la vez más
+  reciente en que el schedule debería haberse disparado. Con `True`, crea un run
+  por *cada* vez que el schedule se habría disparado desde el `start_date` —
+  meses de runs, todos de golpe. Está escrito aquí, aunque sea el valor por
+  defecto, para que nunca tengas que adivinar cuál está en vigor (§7).
 - **`tags`** — etiquetas libres; la lista de Dags filtra por ellas.
 - **`doc_md=__doc__`** — el docstring del módulo que acabas de escribir,
   renderizado como markdown en la página del Dag en la UI. `description=` es la
@@ -185,7 +196,7 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 `is_paused True`, `bundle_name dags-folder`. Recarga la UI y el Dag está en la
 lista, en pausa. (Todos los Dags empiezan en pausa — §7.)
 
-Si la fila no está, pueden estar pasando dos cosas, y desde aquí parecen
+Si la fila no está, pueden estar pasando tres cosas, y desde aquí parecen
 idénticas. La primera es un archivo que lanza una excepción al importarse — una
 errata, un paquete que falta, una función `@dag` que revienta. Eso no es un Dag
 roto en la lista, es **ningún Dag**: ausente de la UI, ausente de `airflow dags
@@ -222,15 +233,19 @@ todos los `.py` que encuentra: con `[core] dag_discovery_safe_mode` activado —
 el valor por defecto — primero lee el archivo como texto y se lo salta salvo que
 el contenido en minúsculas contenga `airflow` *y* además `dag` o `asset`. Quita
 el comentario de ese archivo roto y no se parsea nunca, no se lista nunca y no
-se reporta nunca — silencio, no un error. Todo archivo de Dag real pasa esta
-prueba por importar de `airflow.sdk`, así que solo afecta a módulos auxiliares y
-experimentos; pero es lo segundo que comprobar cuando un archivo simplemente no
-está.
+se reporta nunca — silencio, no un error. Un archivo de Dag real siempre pasa
+esta prueba: basta con `from airflow.sdk import dag` para que contenga las dos
+palabras, así que no tienes que preocuparte por ello. Los archivos que se salta
+son los que nunca las mencionan — un módulo auxiliar como un `utils.py` sin
+ningún Dag dentro, que es justo lo correcto, o un experimento desechable como el
+archivo roto de arriba. Así que cuando un archivo simplemente no está, esto es
+lo segundo que hay que comprobar.
 
-La otra forma de no obtener nada es el error de principiante de "Constrúyelo" —
-un archivo que define un Dag y nunca lo llama. Importa limpiamente, así que `list-import-errors` también está
-vacío, y el único síntoma es un Dag que no está. Mira primero esta lista, y
-después el final del archivo.
+La tercera forma de no obtener nada es el error de principiante nombrado bajo el título
+"Constrúyelo" en ésta sección — un archivo que define un Dag y nunca lo llama. Importa
+limpiamente, así que `list-import-errors` también está vacío, y el único síntoma
+es un Dag que no está. Mira primero `list-import-errors`, y después el final del
+archivo.
 
 ### Ejecútalo
 
@@ -252,27 +267,31 @@ y, al final, `DagRun Finished: ... state=success`. Ese es el bucle de autoría m
 rápido que existe: un run completo con logs reales y sin UI. Lo vas a usar
 después de cada Dag que escribas.
 
-> **Qué es `airflow dags test`, y qué no.** Ejecuta el Dag dentro de este único
-> comando — sin scheduler, sin executor, sin triggerer — y eso cambia cuatro
-> cosas que te encontrarás más adelante:
+> **Qué es `airflow dags test`, y qué no.** Ejecuta el Dag entero dentro de este
+> único comando, sin scheduler, executor ni triggerer. Hay tres cosas que
+> funcionan distinto que en un run real, y te las encontrarás más adelante:
 >
 > - Las tasks corren **de una en una**, en un orden que el grafo permita. En el
 >   log de arriba, una de `shout`/`count_words` terminó antes de que empezara la
 >   otra; cuál va primero varía de un run a otro.
 > - **Siempre aporta una logical date.** Un trigger manual de verdad no (§7), que
 >   es la forma en la que un Dag puede pasar aquí y fallar en producción.
-> - **No es un dry run**: las tasks escriben archivos reales y asset events
->   reales (§9).
-> - Una task que se defiere ejecuta su trigger dentro del mismo proceso (§11), y
->   en 3.3.1 el comando revienta con cualquier Dag que tenga un `deadline=`
->   (§13).
+> - Una task **deferrable** (§11), cuando tiene que esperar, normalmente se
+>   suspende y deja la espera en manos de otro servicio, el triggerer. Aquí no
+>   hay triggerer, así que la espera la hace el propio `airflow dags test`, y el
+>   comando no termina hasta que acaba.
 >
-> Es la forma más rápida de ver funcionar un Dag; la §14 dice cuándo dejar de
-> fiarse de él.
+> Eso sí, **no es un dry run**: las tasks escriben archivos reales y asset
+> events reales (§9). Es la forma más rápida de ver funcionar un Dag; la §14
+> dice cuándo dejar de fiarse de él.
 
 > **Pruébalo.** Cambia el saludo sin tocar el archivo:
-> `airflow dags test hello_airflow3 --conf '{"greeting": "hola"}'`. La línea de
-> `report` empieza ahora por `HOLA`. Ese `--conf` llegó a la task a través de
+>
+> ```bash
+> docker compose exec airflow-scheduler airflow dags test hello_airflow3 --conf '{"greeting": "hola"}'
+> ```
+>
+> La línea de `report` empieza ahora por `HOLA`. Ese `--conf` llegó a la task a través de
 > `context["params"]` — el `Param` que declaraste, sobrescrito para un run.
 
 **La otra forma de declarar un Dag** es el context manager, que está plenamente

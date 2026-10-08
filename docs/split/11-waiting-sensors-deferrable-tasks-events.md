@@ -1,7 +1,7 @@
 ## 11. Waiting: sensors, deferrable tasks, events
 
 `dags/05_sensors_and_events.py`. Three ways to wait for the outside world,
-cheapest last — and, after them, the one way not to wait at all:
+the one that costs fewest worker slots last — and, after them, the one way not to wait at all:
 
 ```python
 # 1. Poking sensor — holds a worker slot the entire time. Seconds, not hours.
@@ -25,8 +25,8 @@ sits in `up_for_reschedule` (§3), and the scheduler re-queues it for the next
 poke. A deferrable sensor does not wait on the worker at all: it hands the
 wait to the triggerer.
 
-The word **trigger** has more than one meaning, so pin it down before the third option can
-make sense. You *trigger* a Dag (§7): a verb. The triggerer process from §3
+The word **trigger** has more than one meaning, so pin it down before the
+third option can make sense. You *trigger* a Dag (§7): a verb. The triggerer process from §3
 runs **triggers**: nouns — small pieces of asynchronous code that wait for one
 thing (a moment in time, a file, a message) and fire an event when it happens.
 "Deferrable" means the task hands the triggerer such a trigger, exits, and is
@@ -170,7 +170,7 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_a
 
 **Checkpoint.** `settle` reads `deferred` for about five seconds — its process
 has exited and the triggerer is holding the timer — then `success`, with an
-`end_date` five-odd seconds after its `start_date`. That `deferred` is the
+`end_date` just over five seconds after its `start_date`. That `deferred` is the
 state from §3, and it is what "frees the worker slot" looks like from outside.
 Be quick with the second command; a `docker compose exec` takes a second or
 two of its own.
@@ -187,7 +187,7 @@ docker compose exec airflow-scheduler airflow dags test sensors_and_events
 ```
 
 This one does not return. Both sensors are in `mode="reschedule"`, so their task
-instances **exit between pokes** instead of holding a slot, and land in
+instances **exit between pokes** instead of holding a slot, and go into
 `up_for_reschedule` — the state from §3 that only sensors produce. The run
 announces it every second:
 
@@ -209,10 +209,10 @@ sensor eventually fails on its declared `timeout`: 120 seconds for
 minutes.
 
 The point is what was *not* happening during the wait: the task instance was
-not running between pokes — it was in `up_for_reschedule`, which you saw — so
+not running between pokes — it was in `up_for_reschedule`, as you saw — so
 no worker slot was held. A poking sensor in the default mode would have occupied
-a slot for the whole time doing nothing, which is the entire reason the other
-two modes exist.
+a slot for the whole time doing nothing, and that is exactly why the other two
+modes exist.
 
 **Rule of thumb:** seconds → a poking sensor is fine. Minutes or hours →
 deferrable, or you are paying a worker slot to sleep. An external system that can

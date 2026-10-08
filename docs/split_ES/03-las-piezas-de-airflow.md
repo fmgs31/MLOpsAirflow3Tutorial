@@ -103,8 +103,12 @@ ellos valores por defecto en este stack:
 | slots de `default_pool` | 128 | tasks no asignadas a otro pool |
 | `max_active_tis_per_dag` en una task | sin fijar | esa task concreta, en todos sus runs |
 
-(`airflow config get-value core parallelism` imprime el primero; `airflow pools
-list`, el tercero.)
+Para ver el primero y el tercero en este stack:
+
+```bash
+docker compose exec airflow-scheduler airflow config get-value core parallelism
+docker compose exec airflow-scheduler airflow pools list
+```
 
 Un **pool** es un conjunto con nombre de slots al que asignas tasks con `pool="…"`
 (Admin → Pools), y es la forma de evitar que veinte tasks concurrentes abran

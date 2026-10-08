@@ -26,7 +26,7 @@ a connection, which is what `docker-compose.yaml` does here:
 AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/"}}'
 ```
 
-## `airflow dags test` crashes on a Dag with `deadline=`
+## Airflow 3.3.1 bug: `airflow dags test` crashes on a Dag that sets `deadline=`
 
 ```
 psycopg2.ProgrammingError: can't adapt type 'dict'

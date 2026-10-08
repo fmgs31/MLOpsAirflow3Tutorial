@@ -18,7 +18,7 @@ def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag):
     assert "labeled_projects" in asset_names
 ```
 
-They load **your `dags/` folder**, and they encode what this tutorial meant:
+They load **your `dags/` folder**, and they encode what this tutorial expects:
 seven specific `dag_id`s; every Dag with tags, a `doc_md` and an owner that is
 not `airflow`; `retries` of at least one on every Dag that does real work;
 `dataops` producing both assets; `mlops` scheduled on `labeled_projects` and
@@ -48,7 +48,7 @@ result differs.
 [`tests/test_readme_build_steps.py`](../../tests/test_readme_build_steps.py): every
 "Build it" block above is tagged with the file it belongs to; the test
 concatenates them in order, loads the result with `DagBag`, and fails if what
-you were told to type does not add up to a Dag that imports.
+you were told to type does not produce a Dag that imports cleanly.
 
 Run all of it:
 
@@ -68,7 +68,7 @@ creates for that command and `--rm` removes afterwards.
 ```
 
 No scheduler was involved and no Dag ran. That is the point: every one of those
-36 is fast enough to run on every commit, which is what makes them worth having.
+36 tests is fast enough to run on every commit, which is what makes them worth having.
 
 When one fails, the message says which file and what is missing — `mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`,
@@ -92,7 +92,7 @@ python scripts/sync_readme.py             # fix it
 None of those levels would have caught the two bugs in §7's "trap" box:
 `airflow dags test` always supplies a logical date, so a Dag that breaks on a
 manual trigger passes every test above. **Trigger each Dag once for real** —
-through the scheduler, the way it will actually run — before you believe it.
+through the scheduler, the way it will actually run — before you trust it.
 
 ---
 

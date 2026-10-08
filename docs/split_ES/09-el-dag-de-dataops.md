@@ -101,7 +101,8 @@ La primera task produce un asset. Añádela dentro de `dataops()`:
 
 `outlets=` es la declaración de la §8; `outlet_events` se inyecta por nombre, como
 `ti`, y deja que la task adjunte metadatos al evento que está a punto de emitir.
-La task devuelve una **ruta**, no el dataframe: los XComs llevan punteros.
+La task devuelve una **ruta**, no el dataframe: los XComs llevan una referencia
+a los datos, no los datos en sí.
 
 Ahora el gate sobre los datos crudos, y el transform:
 
@@ -133,8 +134,8 @@ detalles en los que es fácil equivocarse:
 - **Las expectations son no-críticas cuando significan "mira esto", no "para".**
   Que aparezca un tag inesperado es una señal para inspeccionar el espacio de
   etiquetas, no un motivo para detener el pipeline. `validate.py` marca esa con
-  `critical=False`, así que acaba en `result.failures` sin cambiar
-  `result.passed`.
+  `critical=False`, así que aparece en `result.failures` pero no
+  pone `result.passed` a falso.
 
 El gate final — el que emite el asset con el que se programará `mlops`:
 
@@ -222,7 +223,8 @@ passed=6/6`, y del task group, `raw_projects: 4 checks, failed=none` y
 `labeled_projects: 6 checks, failed=none`. El archivo
 `data/warehouse/labeled_projects.csv` ya existe en tu máquina. (`extract`
 descarga el CSV de origen por HTTPS — es la única task del pipeline que
-necesita conexión a internet, y el recuento de filas sale de ese archivo.)
+necesita conexión a internet, y el recuento de filas es el que tenga ese archivo
+cuando lo descargas.)
 
 Si una task falla, compara con [`solutions/03_dataops.py`](../../solutions/03_dataops.py).
 
@@ -258,8 +260,8 @@ por `backfill__`. Ten claro qué viene después antes de hacerlo:
   `--max-active-runs` a la vez.
 - Cada run de backfill de `dataops` que tenga éxito emite un asset event de
   `labeled_projects` exactamente igual que un run normal (§8), así que un `mlops`
-  sin pausa entrena detrás de ellos. Hacer backfill de un productor lo hace
-  también de sus consumidores.
+  sin pausa entrena detrás de ellos. Hacer backfill de un productor también
+  dispara runs de sus consumidores.
 - La CLI en 3.3.1 solo *crea* backfills. Para parar uno, cancélalo en la pestaña
   **Backfills** del Dag, o por la API — `PUT /api/v2/backfills/{id}/cancel`, sin
   token en este stack, donde todos son admin — lo que marca sus runs aún en cola como

@@ -1,7 +1,7 @@
 ## 11. Esperar: sensors, deferrable tasks, eventos
 
 `dags/05_sensors_and_events.py`. Tres formas de esperar al mundo exterior, la
-más barata la última — y, después de ellas, la única forma de no esperar en
+que menos worker slots gasta la última — y, después de ellas, la única forma de no esperar en
 absoluto:
 
 ```python
@@ -174,7 +174,7 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_a
 
 **Comprobación.** `settle` marca `deferred` durante unos cinco segundos — su
 proceso ha salido y el triggerer sostiene el temporizador — y luego `success`,
-con un `end_date` unos cinco segundos y pico después de su `start_date`. Ese
+con un `end_date` algo más de cinco segundos después de su `start_date`. Ese
 `deferred` es el estado de la §3, y es el aspecto que tiene, visto desde fuera,
 "liberar el worker slot". Sé rápido con el segundo comando; un `docker compose exec`
 se lleva uno o dos segundos por su cuenta.

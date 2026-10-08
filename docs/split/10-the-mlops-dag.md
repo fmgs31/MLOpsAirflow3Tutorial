@@ -10,7 +10,7 @@ prepare_data ─► validate_training_data ─► train_candidate×N ─► sele
 
 | Task | Production option |
 |---|---|
-| the asset trigger + `prepare_data` | your warehouse client — or, as here, let the asset event carry the pointer |
+| the asset trigger + `prepare_data` | your warehouse client — or, as here, let the asset event carry the data's path |
 | `validate_training_data` | Great Expectations / Pandera / Soda, plus split checks |
 | `candidates` + `train_candidate.expand()` | Optuna / Ray Tune / a sweep service |
 | `select_best` + `evaluate_best` | your experiment tracker (MLflow, W&B) |
@@ -63,7 +63,7 @@ DEFAULT_ARGS = {
 def mlops():
 ```
 
-`schedule=[LABELED_PROJECTS]` is the whole point: a list of assets, and the Dag
+`schedule=[LABELED_PROJECTS]` is the key line: a list of assets, and the Dag
 runs when they update. Several assets in the list mean *all* of them;
 `AssetAny(a, b)` means either.
 
@@ -146,10 +146,11 @@ runtime, then reduces. Three tasks:
         return best
 ```
 
-`candidates` returns a list; in the wiring below, `train_candidate.expand(hparams=candidates())`
-creates one task instance per item at runtime — four here, one per
-hyperparameter set — and each is retried, logged and inspected on its own.
-`context['ti'].map_index` is which one this is. The reduce step, `select_best`,
+`candidates` returns a list; in the wiring below,
+`train_candidate.expand(hparams=candidates())` creates one task instance per
+item at runtime — four here, one per hyperparameter set — and each is retried,
+logged and inspected on its own. `context['ti'].map_index` tells the task which
+of the four it is. The reduce step, `select_best`,
 just takes a `list`. Note the return value of `train_candidate`: a run id, an
 f1 and the hparams — small and JSON-serialisable. The model itself stays in the
 registry.
@@ -162,8 +163,9 @@ deliberately the narrowest one here. So the fan-out runs **two at a time, in two
 waves**. Raise the cap and all four overlap; remove it and `[core]
 max_active_tasks_per_dag` (16) is the next limit up. A cap on a training task
 is not a toy setting: four models fitting at once is four copies of the data in
-memory, and a `pool` is how you say the same thing about a database that will
-not take four connections.
+memory. When the limited resource is shared — say, a database that accepts only
+a few connections — a `pool` (§3) sets the same kind of cap across every task
+and Dag that uses it.
 
 > **Gotcha:** the parameter is named `hparams`, not `params`. TaskFlow injects
 > context keys by parameter name, and `params` is reserved — a task argument
@@ -216,7 +218,8 @@ succeeds and production is left alone. `promote_model` emits the second asset,
 `production_model`, which nothing consumes yet; point a Dag's `schedule` at it
 and the edge appears in the Assets graph.
 
-**Trigger rules** are how a task states what it wants from its parents, and
+**Trigger rules** are how a task states what its upstream tasks must have done
+before it runs, and
 branching is where you first need one. The join, `done`, needs
 `none_failed_min_one_success`, because the default `all_success` would skip it as
 soon as either branch is skipped. The useful ones: `all_success` (default),
@@ -299,11 +302,11 @@ quick, `success` once its four candidates have trained, with an **empty**
 manual ones (§7). In the UI, open **Assets** and you will see the edge that
 caused it.
 
-Know where the wait comes from. Almost all of it is `dataops` itself running its four
-tasks — `extract` downloads the source file, so that part depends on your
-connection. The Airflow part is small: one scheduler loop to create the
+Know where the wait comes from. Almost all of it is `dataops` itself running
+its four tasks — `extract` downloads the source file, so that part depends on
+your connection. The Airflow part is small: one scheduler loop to create the
 `dataops` run after the un-pause, and one more to queue `mlops` once the asset
-event lands (§3). If nothing has appeared after a minute, check that both Dags
+event is recorded (§3). If nothing has appeared after a minute, check that both Dags
 are un-paused and that the `dataops` run succeeded — a failed
 `validate_transformed` emits no event, by design.
 
@@ -323,10 +326,16 @@ are after the end times of 0 and 1. And `keep_current_model` is `skipped`
 while `promote_model` is `success`: the gate took the promoting arm, because
 there was no production model to beat.
 
-> **Try it, once more by hand.** `airflow dags trigger dataops` — a
-> `manual__` run this time. When it succeeds, one more event, one more
-> `asset_triggered__` run of `mlops`. Every success of the producer is one
-> run of the consumer, whichever way the producer was started.
+> **Try it, once more by hand:**
+>
+> ```bash
+> docker compose exec airflow-scheduler airflow dags trigger dataops
+> ```
+>
+> A `manual__` run this time. When it succeeds, one more event, one more
+> `asset_triggered__` run of `mlops`. Every success of the producer emits an
+> event, whichever way the producer was started — and the consumer runs on it
+> (events that arrive while `mlops` is busy share its next run, §8).
 
 > **Try it, the other branch.** Set the bar impossibly high and watch the gate
 > take the other arm. The threshold is read from an environment variable inside
