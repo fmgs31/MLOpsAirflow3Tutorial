@@ -111,7 +111,7 @@ Línea a línea:
 - **`tags`** — etiquetas libres; la lista de Dags filtra por ellas.
 - **`doc_md=__doc__`** — el docstring del módulo que acabas de escribir,
   renderizado como markdown en la página del Dag en la UI. `description=` es la
-  versión corta, una línea que se muestra junto al Dag en la lista.
+  versión corta, una línea que se muestra junto al Dag en la lista de Dags.
 - **`params`** — entradas declaradas, con tipos. La UI las convierte en un
   formulario cuando disparas el Dag (§5), y un run registra los valores que usó.
 
@@ -194,13 +194,14 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 
 **Comprobación.** Una fila: `hello_airflow3`, owner `['mlops-course']`,
 `is_paused True`, `bundle_name dags-folder`. Recarga la UI y el Dag está en la
-lista, en pausa. (Todos los Dags empiezan en pausa — §7.)
+página **Dags**, en pausa. (Todos los Dags empiezan en pausa — §7.)
 
-Si la fila no está, pueden estar pasando tres cosas, y desde aquí parecen
-idénticas. La primera es un archivo que lanza una excepción al importarse — una
+Si la fila no está, pueden estar pasando tres cosas, y en `airflow dags list`
+parecen idénticas. La primera es un archivo que lanza una excepción al importarse — una
 errata, un paquete que falta, una función `@dag` que revienta. Eso no es un Dag
 roto en la lista, es **ningún Dag**: ausente de la UI, ausente de `airflow dags
-list`. Aparece en la página Home (§5) y con este comando:
+list`. Aparece como error de import en las páginas Home y Dags (§5) y con este
+comando:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
@@ -271,8 +272,8 @@ después de cada Dag que escribas.
 > único comando, sin scheduler, executor ni triggerer. Hay tres cosas que
 > funcionan distinto que en un run real, y te las encontrarás más adelante:
 >
-> - Las tasks corren **de una en una**, en un orden que el grafo permita. En el
->   log de arriba, una de `shout`/`count_words` terminó antes de que empezara la
+> - Las tasks corren **de una en una**, en un orden que el grafo permita. En la
+>   salida de ese run, una de `shout`/`count_words` terminó antes de que empezara la
 >   otra; cuál va primero varía de un run a otro.
 > - **Siempre aporta una logical date.** Un trigger manual de verdad no (§7), que
 >   es la forma en la que un Dag puede pasar aquí y fallar en producción.

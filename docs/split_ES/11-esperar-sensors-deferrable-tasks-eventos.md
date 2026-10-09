@@ -1,8 +1,15 @@
 ## 11. Esperar: sensors, deferrable tasks, eventos
 
 `dags/05_sensors_and_events.py`. Tres formas de esperar al mundo exterior, la
-que menos worker slots gasta la última — y, después de ellas, la única forma de no esperar en
-absoluto:
+que menos worker slots gasta la última — y, después de ellas, la única forma de
+no esperar en absoluto.
+
+Un **sensor** es una task cuyo único trabajo es esperar a que algo sea verdad:
+que exista un archivo, que una tabla tenga filas, que responda una API. Cada
+comprobación se llama **poke**. Si el poke da verdadero, la task termina con
+éxito; si no, espera `poke_interval` segundos y vuelve a comprobar; si pasa
+`timeout` sin éxito, falla. Las tres formas se distinguen en qué ocurre *entre*
+pokes:
 
 ```python
 # 1. Poking sensor — holds a worker slot the entire time. Seconds, not hours.
@@ -15,12 +22,7 @@ FileSensor(..., mode="reschedule")
 TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
 ```
 
-Un **sensor** es una task cuyo único trabajo es esperar a que algo sea verdad:
-que exista un archivo, que una tabla tenga filas, que responda una API. Cada
-comprobación se llama **poke**. Si el poke da verdadero, la task termina con
-éxito; si no, espera `poke_interval` segundos y vuelve a comprobar; si pasa
-`timeout` sin éxito, falla. Lo que distingue las tres opciones de arriba es qué
-ocurre *entre* pokes. Con el modo por defecto, `mode="poke"`, el proceso sigue
+Con el modo por defecto, `mode="poke"`, el proceso sigue
 vivo y dormido, ocupando su worker slot. Con `mode="reschedule"`, la task
 instance sale, queda en `up_for_reschedule` (§3) y el scheduler la vuelve a
 encolar para el siguiente poke. Un sensor deferrable no espera en el worker: le

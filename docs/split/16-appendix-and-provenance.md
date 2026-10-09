@@ -1,7 +1,7 @@
 ## 16. Appendix and provenance
 
-The lessons above build each Dag in pieces. Two longer documents live outside
-this file, so the tutorial stays readable and the reference material stays
+The sections before this one build each Dag in pieces. Two longer documents
+live outside the sections, so the tutorial stays readable and the reference material stays
 findable:
 
 - **[The finished Dags in full](../appendix-dags.md)** — every solution end to

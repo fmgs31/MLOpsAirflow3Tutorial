@@ -1,13 +1,14 @@
 ## 8. Assets: scheduling on data, not on time
 
 An **Asset** is a named piece of data. A task declares it produces one with
-`outlets=`; a Dag declares it consumes one by putting it in `schedule=`. That is
-the whole mechanism, and it replaces every "run 30 minutes after the other Dag,
+`outlets=`, and each time that task succeeds Airflow records an **asset event**;
+a Dag declares it consumes one by putting it in `schedule=`, and an event starts
+a run of it. That is the whole mechanism, and it replaces every "run 30 minutes after the other Dag,
 and hope" cron you have ever seen.
 
 The assets this tutorial uses are already defined, in
-[`src/tagifai/assets.py`](../../src/tagifai/assets.py), so that both Dags import the
-same objects:
+[`src/tagifai/assets.py`](../../src/tagifai/assets.py), so that `dataops` and `mlops`
+import the same objects:
 
 ```python
 from airflow.sdk import Asset
@@ -33,7 +34,11 @@ def validate_transformed(fp: str, *, outlet_events) -> dict:
     return {...}
 ```
 
-And the consumer side, §10:
+`outlet_events` is injected by name, like `ti` in §6, and lets the task attach
+an `extra` dict to the event it is about to emit.
+
+And the consumer side, §10, where `triggering_asset_events` — also injected by
+name — holds the events that started the run:
 
 ```python
 @dag(schedule=[LABELED_PROJECTS], ...)
@@ -66,7 +71,7 @@ native runs. In production give them the real URI of the data (`s3://…`,
 
 An asset exists in Airflow's eyes only once a parsed Dag refers to it — as an
 outlet or a schedule. Right now `airflow assets list` prints `No data found`,
-and the Assets tab is empty; §9 changes that the moment you save a file.
+and the Assets page is empty; §9 changes that the moment you save a file.
 
 ### What an asset event actually is
 
@@ -88,8 +93,7 @@ of them. A consumer catches up in one run, not three.
 
 > **A paused consumer does not queue, and does not catch up.** The word
 > *unpaused* above matters. If `mlops` is paused when `dataops` emits,
-> the asset event is still written — you will see it in the table and on the
-> Assets page — but no run is queued for `mlops`, and **un-pausing later does
+> the asset event is still written — you will see it on the Assets page — but no run is queued for `mlops`, and **un-pausing later does
 > not replay it**. Airflow filters paused Dags at the moment it decides what to
 > enqueue, so there is nothing left to find afterwards. The same goes for a
 > consumer that did not exist yet when the event was written: the `dataops`

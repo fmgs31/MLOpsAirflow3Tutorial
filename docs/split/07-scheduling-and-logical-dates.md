@@ -50,8 +50,8 @@ you need (§9).
 
 **A cron string fires at the time it says.** `schedule="0 3 * * *"` runs at
 03:00 and the run's `logical_date` is 03:00. Other timetables can set the run time
-and the `logical_date` differently, which is why the Dag's **Calendar** tab and the *"Next run"* column
-are worth checking after you write one.
+and the `logical_date` differently, which is why the Dag's **Calendar** tab and
+the **Next Run** column of the Dags list are worth checking after you write one.
 
 **`logical_date` can be empty.** It labels the slice a scheduled run is for —
 and manual and asset-triggered runs, which are for no slice, simply have none.
@@ -69,6 +69,24 @@ available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
 `data_interval_end`, `run_id`, `dag_run`, `ti`, `params`, `var`, `conn`,
 `macros`, `inlets`/`outlets`, `triggering_asset_events`.
 
+> **The trap worth knowing before you trigger anything:** a manual run has **no
+> logical date**, so `logical_date` is missing from the task context and `ds`,
+> `ts` and friends are *undefined* in templates. Both fail at runtime, and
+> neither fails under `airflow dags test`, which always supplies a logical date:
+>
+> ```python
+> context["logical_date"]          # KeyError on a manual run
+> context.get("logical_date")      # None — fine
+> "{{ ds }}"                       # UndefinedError: 'ds' is undefined
+> "{{ ds | default('none') }}"     # fine
+> "{{ dag_run.run_after }}"        # fine — every run has one
+> ```
+>
+> You wrote the safe form of both in §4 and §6, which is why the runs
+> you are about to trigger succeed. Both were live bugs in this tutorial's own
+> Dags until a manual trigger found them. Asset-triggered runs have no logical
+> date either, so `mlops` is exposed to the same thing.
+
 ### Manual runs
 
 A schedule is not the only way to start a Dag. Two commands cover most of it,
@@ -82,10 +100,10 @@ docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"
 - **`-c/--conf`** is a JSON object. It ends up in `dag_run.conf`, and any key that
   matches a declared `Param` overrides it for that run.
 - **`-r/--run-id`** names the run. Without it you get `manual__<timestamp>`.
-- **`-l/--logical-date`** sets one. Without it the run has none — see the trap
-  below.
+- **`-l/--logical-date`** sets one. Without it the run has none — the trap
+  under *`logical_date` can be empty*.
 - In the UI the same thing is the **Trigger** button, with the form generated
-  from your `params` (§5) — you pressed it in §5.
+  from your `params` — you used it in §5.
 
 A new Dag arrives **paused** (`[core] dags_are_paused_at_creation`), so
 `unpause` is not optional — and it is the step everyone forgets:
@@ -112,28 +130,12 @@ docker compose exec airflow-scheduler airflow dags unpause hello_airflow3     # 
 the Dag is paused the run is `queued` and stays there however long you wait —
 the scheduler sees it every loop and deliberately passes over it. Shortly after
 the `unpause`, `list-runs` shows the same `run_id` as `success`, and its
-`start_date` is later than its `run_after`: it started when you un-paused, not
-when you triggered. Nothing was lost and nothing warned you; it was simply held.
+`start_date` — the run's, the moment it actually began, not the Dag's
+`start_date` from earlier in §7 — is later than its `run_after`: it started when
+you un-paused, not when you triggered. Nothing was lost and nothing warned you;
+it was simply held.
 
 The UI's trigger form has an *"Unpause … on trigger"* checkbox for exactly this.
-
-> **The trap worth knowing before you trigger anything:** a manual run has **no
-> logical date**, so `logical_date` is missing from the task context and `ds`,
-> `ts` and friends are *undefined* in templates. Both fail at runtime, and
-> neither fails under `airflow dags test`, which always supplies a logical date:
->
-> ```python
-> context["logical_date"]          # KeyError on a manual run
-> context.get("logical_date")      # None — fine
-> "{{ ds }}"                       # UndefinedError: 'ds' is undefined
-> "{{ ds | default('none') }}"     # fine
-> "{{ dag_run.run_after }}"        # fine — every run has one
-> ```
->
-> You wrote the safe form of both in lessons 1 and 2, which is why the runs
-> you just triggered succeeded. Both were live bugs in this tutorial's own
-> Dags until a manual trigger found them. Asset-triggered runs have no logical
-> date either, so `mlops` is exposed to the same thing.
 
 Two more ways to start a run: `airflow dags test <dag_id>` runs the whole Dag in-process
 (§14), and the REST API does it over HTTP —

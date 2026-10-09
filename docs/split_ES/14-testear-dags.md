@@ -4,8 +4,8 @@ Cuatro niveles, el más barato primero — y el primero de ellos es el corrector
 los siete archivos que escribiste.
 
 **Tests de integridad de Dags** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
-Detectan los fallos que, si no, verías horas después como un banner rojo en la
-UI, y son lo de mayor valor que puedes meter en CI:
+Detectan los fallos que, si no, verías horas después como un error de import
+en la UI, y son lo de mayor valor que puedes meter en CI:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -46,7 +46,7 @@ desde `solutions/` con [`scripts/sync_readme.py`](../../scripts/sync_readme.py) 
 de copiada a mano; el test vuelve a ejecutar la inyección en memoria y falla si
 el resultado difiere.
 [`tests/test_readme_build_steps.py`](../../tests/test_readme_build_steps.py): cada
-bloque de "Constrúyelo" de arriba lleva la etiqueta del archivo al que
+bloque de "Constrúyelo" de este tutorial lleva la etiqueta del archivo al que
 pertenece; el test los concatena en orden, carga el resultado con `DagBag`, y
 falla si lo que se te dijo que teclearas no da como resultado un Dag que se
 importe sin errores.
@@ -86,6 +86,10 @@ docker compose run --rm -e DAGS_DIR=solutions --entrypoint pytest airflow-cli /o
 > En **Git Bash**, antepón `MSYS_NO_PATHCONV=1` a ambos comandos o el argumento
 > `/opt/airflow/tests` se reescribe a una ruta de Windows y pytest no recoge
 > nada.
+
+Cuando falla `test_readme_listings.py`, un listado del apéndice ya no coincide
+con su archivo en `solutions/`. El script que inyecta los listados lo comprueba
+y lo arregla:
 
 ```bash
 python scripts/sync_readme.py --check     # exit 1 when an appendix listing is stale

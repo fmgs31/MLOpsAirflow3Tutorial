@@ -83,8 +83,8 @@ in templates and the task fails while rendering, before it executes.
 ```
 
 `airflow dags test` supplies a logical date, so this too only shows up under a
-real trigger. Both of these were live bugs in this tutorial's own lesson 1 and
-lesson 2 Dags until a manual trigger found them.
+real trigger. Both of these were live bugs in this tutorial's own §4 and §6
+Dags until a manual trigger found them.
 
 ## `DagBag.__init__() got an unexpected keyword argument 'include_examples'`
 

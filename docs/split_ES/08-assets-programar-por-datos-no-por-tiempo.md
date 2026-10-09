@@ -1,13 +1,15 @@
 ## 8. Assets: programar por datos, no por tiempo
 
 Un **Asset** es un trozo de datos con nombre. Una task declara que lo produce con
-`outlets=`; un Dag declara que lo consume poniéndolo en `schedule=`. Ese es todo
+`outlets=`, y cada vez que esa task tiene éxito Airflow registra un **asset
+event**; un Dag declara que lo consume poniéndolo en `schedule=`, y cada evento
+arranca un run suyo. Ese es todo
 el mecanismo, y sustituye a cada cron del tipo "corre 30 minutos después del otro
 Dag, y reza" que hayas visto en tu vida.
 
 Los assets que usa este tutorial ya están definidos, en
-[`src/tagifai/assets.py`](../../src/tagifai/assets.py), para que ambos Dags importen
-los mismos objetos:
+[`src/tagifai/assets.py`](../../src/tagifai/assets.py), para que `dataops` y `mlops`
+importen los mismos objetos:
 
 ```python
 from airflow.sdk import Asset
@@ -33,7 +35,11 @@ def validate_transformed(fp: str, *, outlet_events) -> dict:
     return {...}
 ```
 
-Y el lado consumidor, §10:
+`outlet_events` se inyecta por nombre, como `ti` en la §6, y permite a la task
+adjuntar un dict `extra` al evento que está a punto de emitir.
+
+Y el lado consumidor, §10, donde `triggering_asset_events` — también inyectado
+por nombre — contiene los eventos que arrancaron el run:
 
 ```python
 @dag(schedule=[LABELED_PROJECTS], ...)
@@ -66,7 +72,7 @@ y en runs nativos. En producción dales la URI real de los datos (`s3://…`,
 
 Un asset existe a ojos de Airflow solo cuando un Dag parseado se refiere a él —
 como outlet o como schedule. Ahora mismo `airflow assets list` imprime `No data
-found`, y la pestaña Assets está vacía; la §9 cambia eso en cuanto guardes un
+found`, y la página Assets está vacía; la §9 cambia eso en cuanto guardes un
 archivo.
 
 ### Qué es en realidad un asset event
@@ -91,8 +97,8 @@ pone al día en un run, no en tres.
 
 > **Un consumidor en pausa no encola, y no se pone al día.** Las palabras *sin
 > pausa* de arriba importan. Si `mlops` está en pausa cuando
-> `dataops` emite, el asset event se escribe igualmente — lo verás en la tabla y
-> en la página de Assets — pero no se encola ningún run para `mlops`, y **quitar
+> `dataops` emite, el asset event se escribe igualmente — lo verás en la página
+> de Assets — pero no se encola ningún run para `mlops`, y **quitar
 > la pausa después no lo reproduce**. Airflow filtra los Dags en pausa en el
 > momento en que decide qué encolar, así que después ya no queda nada que
 > encontrar. Lo mismo vale para un consumidor que todavía no existía cuando se

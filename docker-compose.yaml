@@ -28,6 +28,10 @@ x-airflow-common: &airflow-common
     # Workers reach the Task Execution API, not the metadata DB directly.
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-tutorial-jwt-secret-change-me}
+    # Signs the request the api-server sends to fetch a task's log from the
+    # container that ran it. Unset, every service invents its own and those
+    # requests are rejected.
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-tutorial-secret-key-change-me}
     # Local-only convenience: everyone who reaches the UI is an admin.
     # Port 8080 below is published on 127.0.0.1 only, so this never leaves your machine.
     # For a login form instead, see docs/troubleshooting.md.

@@ -12,7 +12,7 @@ prepare_data ─► validate_training_data ─► train_candidate×N ─► sele
 |---|---|
 | the asset trigger + `prepare_data` | your warehouse client — or, as here, let the asset event carry the data's path |
 | `validate_training_data` | Great Expectations / Pandera / Soda, plus split checks |
-| `candidates` + `train_candidate.expand()` | Optuna / Ray Tune / a sweep service |
+| `candidates` + `train_candidate` (one per hyperparameter set) | Optuna / Ray Tune / a sweep service |
 | `select_best` + `evaluate_best` | your experiment tracker (MLflow, W&B) |
 | `promotion_gate` → `promote_model` | your registry's stage transition |
 
@@ -155,7 +155,8 @@ just takes a `list`. Note the return value of `train_candidate`: a run id, an
 f1 and the hparams — small and JSON-serialisable. The model itself stays in the
 registry.
 
-**How many of the four train at once is a choice, and it is written above.**
+**How many of the four train at once is a choice, and it is written in
+`train_candidate`'s decorator.**
 Nothing about `.expand()` says "in parallel"; it says "these are four separate
 task instances". Whether they overlap is the executor's business, bounded by the
 narrowest of the limits from §3 — and `max_active_tis_per_dag=2` on that task is
@@ -267,8 +268,18 @@ producing_tasks   [{'dag_id': 'dataops', 'task_id': 'validate_transformed', ...}
 
 `producing_tasks` names the exact task that emits it; `scheduled_dags` names
 what will start when it does. Neither Dag mentions the other anywhere. The
-Assets tab now draws the whole graph, `dataops → labeled_projects → mlops →
+Assets page now draws the whole graph, `dataops → labeled_projects → mlops →
 production_model`.
+
+`mlops`'s own page can show the same connections. Open it, switch to **Graph**,
+and change **Options → Dependencies** (§5):
+
+- **Only tasks** — the ten tasks you just wrote, nothing else.
+- **External conditions** — the same tasks, plus `labeled_projects` flowing
+  into the Dag and `production_model` coming out of `promote_model`.
+- **All Dag Dependencies** — the chain the Assets page draws: `dataops` with
+  the two assets it produces, then `mlops` with its tasks inside it, then
+  `production_model`.
 
 ### Watch the whole chain fire
 
@@ -313,8 +324,8 @@ are un-paused and that the `dataops` run succeeded — a failed
 Now the two waves. Open that `mlops` run in the UI, click `train_candidate`,
 and read its **Task Instances** tab — four rows, map index 0 to 3, each with
 its own start and end time. Two start together; the other two start only after
-the first pair has finished. **Show Gantt** draws the same thing as two pairs
-of bars. On the **Graph**, the four are one collapsed node until you raise the
+the first pair has finished. The *Show Gantt* view (§5), available now that a
+run is selected, draws the same thing as two pairs of bars. On the **Graph**, the four are one collapsed node until you raise the
 **Min. map index** filter (§5). Or read it off the CLI:
 
 ```bash

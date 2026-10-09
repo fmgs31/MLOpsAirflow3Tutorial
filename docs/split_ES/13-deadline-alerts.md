@@ -51,7 +51,8 @@ References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)` — esta última es "más lento que la propia media
 reciente de este Dag", que suele ser lo que de verdad quieres decir. Callbacks:
 `SyncCallback` (corre en el executor) o `AsyncCallback` (corre en el triggerer —
-úsalo para Notifiers, p. ej. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
+úsalo para Notifiers, los emisores de alertas ya hechos que los providers
+traen para Slack, email y similares, p. ej. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
 
 El Dag incumple su propio deadline a propósito:
 
@@ -90,7 +91,7 @@ listan bajo Browse → **Deadlines**.
 > saliendo de `DagRun.update_state`). Las tasks corren bien; lo único que falla
 > es la actualización final de estado de la CLI. Dispara esos Dags por el
 > scheduler en su lugar — que es por lo que `mlops` no lleva deadline, ya que
-> rompería la instrucción `airflow dags test mlops` de más arriba.
+> rompería el paso `airflow dags test mlops` de la §10.
 > [Detalles.](../troubleshooting.md)
 
 Referencia: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_alerts.py).

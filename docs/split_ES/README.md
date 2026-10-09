@@ -7,7 +7,7 @@ el entrenamiento del modelo, el mejor modelo se promociona a producción, y un
 Dag de monitorización decide si hay que reentrenar.
 
 Todo corre en tu máquina con Docker. Sin cuenta en la nube, sin warehouse, sin
-registrarte en ningún sitio. Cada comando de aquí abajo se ejecutó contra un
+registrarte en ningún sitio. Cada comando de este tutorial se ejecutó contra un
 stack real de Airflow 3.3.1 — ver [Qué se verificó de verdad](../verified_ES.md).
 
 **Se asume:** Python, la línea de comandos y Docker instalado. No hace falta

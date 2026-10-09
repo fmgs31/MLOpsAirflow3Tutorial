@@ -108,7 +108,7 @@ Line by line:
 - **`tags`** — free-form labels; the Dags list filters on them.
 - **`doc_md=__doc__`** — the module docstring you just wrote, rendered as
   markdown on the Dag's page in the UI. `description=` is the short version,
-  one line shown next to the Dag in the list.
+  one line shown next to the Dag in the Dags list.
 - **`params`** — declared inputs, with types. The UI turns these into a form
   when you trigger the Dag (§5), and a run records the values it used.
 
@@ -190,14 +190,15 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 ```
 
 **Checkpoint.** One row: `hello_airflow3`, owner `['mlops-course']`,
-`is_paused True`, `bundle_name dags-folder`. Reload the UI and the Dag is in
-the list, paused. (Every Dag starts paused — §7.)
+`is_paused True`, `bundle_name dags-folder`. Reload the UI and the Dag is on
+the **Dags** page, paused. (Every Dag starts paused — §7.)
 
-If the row is not there, three things can be wrong, and in this list they look
-identical. The first is a file that raises on import — a typo, a missing package, a
-`@dag` function that throws. That is not a broken Dag in the list, it is **no
-Dag at all**: absent from the UI, absent from `airflow dags list`. It surfaces
-on the Home page (§5) and in this command:
+If the row is not there, three things can be wrong, and in `airflow dags list`
+they look identical. The first is a file that raises on import — a typo, a
+missing package, a `@dag` function that throws. That is not a broken Dag in the
+list, it is **no Dag at all**: absent from the UI, absent from `airflow dags
+list`. It surfaces as an import error on the Home and Dags pages (§5) and in
+this command:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
@@ -232,8 +233,8 @@ contain `airflow` *and* either `dag` or `asset`. Leave the comment out of that
 broken file and it is never parsed, never listed, and never reported — silence,
 not an error. A real Dag file always passes this test:
 `from airflow.sdk import dag` alone contains both words, so you never have to
-think about it. The files
-that get skipped are the ones that never mention them — a helper module such as
+think about it. The files that get skipped are the ones that never mention
+them — a helper module such as
 a `utils.py` with no Dag in it, which is exactly right, or a throwaway
 experiment like the broken file above. So when a file is simply not there, this
 is the second thing to check.
@@ -267,8 +268,8 @@ after every Dag you write.
 > one command, with no scheduler, executor or triggerer. Three things behave
 > differently from a real run, and you will meet each of them later:
 >
-> - Tasks run **one at a time**, in an order the graph allows. In the log
->   above, one of `shout`/`count_words` finished before the other started;
+> - Tasks run **one at a time**, in an order the graph allows. In the output
+>   of that run, one of `shout`/`count_words` finished before the other started;
 >   which goes first varies from run to run.
 > - It **always supplies a logical date**. A real manual trigger does not (§7),
 >   which is how a Dag can pass here and fail in production.

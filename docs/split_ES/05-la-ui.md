@@ -20,40 +20,70 @@ muestra ninguna de las dos. Un Dag que nunca aparece aquí suele ser un Dag que
 falló al importarse: junto al número de Dags aparece una insignia roja con el
 número de fallos — haz clic en ella para ver los tracebacks.
 
-**La página de un Dag** pone el histórico de runs a la izquierda y las pestañas
-de detalle a la derecha. El panel izquierdo tiene **Grid** y **Graph** — `g`
-alterna entre ambos — más **Show Gantt**, un control de dirección del grafo y
-filtros que conviene conocer:
+**La página de un Dag** está dividida en dos: el Dag a la izquierda y las
+pestañas de detalle a la derecha. El panel izquierdo tiene dos vistas, que se
+eligen con los iconos de su esquina superior izquierda o se alternan con la
+tecla `g`. **Grid** es el histórico de runs — una columna por run, una fila por
+task, cada celda coloreada según su estado. **Graph** son las tasks y las
+aristas entre ellas. En el otro extremo de esa fila están los controles que
+conviene conocer:
 
-- **Dependencies: All Dag Dependencies / External conditions / Only tasks.**
-  Cámbialo de "Only tasks" en `mlops` (§10) y el grafo dibuja el asset
-  `labeled_projects` que disparó el run, no solo las tasks de dentro.
-- **Min. map index** — "shows mapped tasks expanded to at least this index". Una
-  mapped task como `train_candidate` (§10) es un único nodo colapsado hasta que
-  subes esto; súbelo y cada conjunto de hiperparámetros tiene el suyo.
-- Indicadores de versión, y **Download graph image**.
+- **Options** (el engranaje). En el Graph: la versión del Dag y el run a
+  mostrar, la dirección del grafo y **Dependencies** — si el grafo muestra solo
+  las tasks del propio Dag (el valor por defecto) o también los assets y Dags
+  conectados con él. `hello_airflow3` no está conectado con nada, así que las
+  tres opciones se ven igual; la §10 enseña la diferencia en `mlops`. En el
+  Grid: cuántos runs mostrar, e indicadores de versión que marcan dónde cambió
+  el código entre runs.
+- **Filter** (un embudo): eliges una task y se muestra solo lo que está aguas
+  arriba o aguas abajo de ella.
+- **Task Filters** (una lupa, solo en el Graph). Solo aparece cuando hay algo
+  que filtrar: hay un run seleccionado, o el Dag tiene task groups o más de un
+  tipo de operator — así que en `hello_airflow3` la ves en cuanto abres un run.
+  Filtra por estado, task group, duración y **Min. map index** — "shows mapped tasks
+  expanded to at least this index". Una mapped task como `train_candidate`
+  (§10) es un único nodo colapsado hasta que lo subes; súbelo y cada conjunto
+  de hiperparámetros tiene el suyo.
+- **Download graph image**, la flecha abajo a la derecha del Graph.
 
-Las pestañas son Overview, Runs, Tasks, Backfills, Asset Events, Audit Log,
-Calendar, Code, Details y — cuando una task espera a una persona — **Required
-Actions**. Haz clic en un run, luego en una task, y la misma barra de pestañas pasa a
-ser la de esa task instance: **Logs**, **XCom**, **Rendered Templates**, y **Task
-Instances** para un fan-out mapeado.
+Las pestañas de la derecha dependen de lo que selecciones:
 
-**Hazlo ahora.** Abre `hello_airflow3`, mira el Graph — el fan-out y el fan-in
-que dibujaste con dos llamadas a función — y luego haz clic en el run, en
-`report`, y abre **Logs**: la línea `(7 words)`, esta vez en el navegador. Haz
-clic en `make_greeting` y abre **XCom**: la cadena del saludo, guardada bajo la
-clave `return_value`. Ese es el valor que recibieron `shout` y `count_words`.
+- **Nada** — las pestañas del propio Dag: Overview, Runs, Tasks, Calendar,
+  Audit Log, Code y Details, más **Backfills** en un Dag con schedule.
+- **Una task**, con clic en el Graph sin run seleccionado — esa task en todos
+  sus runs: Overview, Task Instances, Audit Log.
+- **Un run**, con clic en la pestaña **Runs** o en una barra del Grid — Task
+  Instances, Asset Events, Audit Log, Code, Details. El panel izquierdo gana
+  además un tercer icono de vista, entre Grid y Graph, cuyo tooltip dice *Show
+  Gantt*: el Grid con una línea de tiempo de las tasks de ese run al lado.
+- **Una task dentro de un run** — esa task instance: **Logs**, **Rendered
+  Templates**, **Storage** (que contiene su **XCom**), Asset Events, Audit Log,
+  Code, Details. Una mapped task añade **Task Instances**, una fila por copia
+  mapeada, y una task que espera a una persona añade **Required Actions**.
+
+**Hazlo ahora.** Abre `hello_airflow3` y mira el Graph: `make_greeting` se abre
+hacia `shout` y `count_words`, y las dos vuelven a juntarse en `report`. Esa
+forma sale de las últimas líneas de la §4 — pasar `message` a dos tasks, y los
+resultados de ambas a `report`.
 
 **El selector de versión del Dag.** Cada Dag run registra la versión del código
-con la que corrió, así que el selector (`v1`, `v2`, … o **All Versions**) te deja
-mirar un run a través del código que de verdad lo produjo, con el nombre del
-bundle, la versión del bundle y la hora de parseo en la pestaña **Code**. Un
-*bundle* es un sitio del que el Dag processor carga Dags; este stack tiene uno,
-la carpeta `dags/`, y se llama `dags-folder` — la columna `bundle_name` que
-viste en `airflow dags list` (la §15 tiene los otros tipos). Cada vez que
-guardas un cambio en un archivo de Dag su cuenta de versiones sube, y el run de
-la semana pasada sigue mostrando el grafo de la semana pasada.
+con la que corrió: cada vez que guardas un cambio en un archivo de Dag, Airflow
+crea una versión nueva — `v1`, `v2`, … El selector, en **Options** del Graph y
+en la pestaña **Code**, muestra cada versión con la fecha en que se creó, y te
+deja mirar un run a través del código que de verdad lo produjo: el run de la
+semana pasada sigue mostrando el grafo de la semana pasada. **Code** enseña
+además cuándo se parseó el archivo y, en cuanto hay dos versiones, un botón para
+compararlas.
+
+Esas versiones salen del *bundle* del que se cargó el Dag: el sitio del que el
+Dag processor lee archivos. Este stack tiene uno, la carpeta `dags/`, llamado
+`dags-folder` — la columna `bundle_name` de `airflow dags list` en la §4. Una
+carpeta local no tiene versión propia; un bundle de Git sí (el commit), y
+entonces **Code** la muestra también (§15).
+
+**Hazlo ahora.** Pulsa **Trigger**, arriba a la derecha de la página de
+`hello_airflow3`. Se abre un formulario con un campo, `greeting`, relleno con
+`hello`: es el `Param` que declaraste en la §4.
 
 **El formulario de Trigger se genera a partir de tus `params`.** Por eso merece
 la pena declarar los params con tipos:
@@ -66,26 +96,45 @@ POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
 Un param string se convierte en un campo de texto, un number en uno numérico, un
 enum en un desplegable, y los campos obligatorios se validan antes de crear el
 run. Bajo **Advanced Options** lo mismo es editable como **Configuration JSON**
-en crudo, y el formulario ofrece además un run id, una logical date, un data
-interval manual y una casilla *"Unpause … on trigger"* — que existe porque
-disparar un Dag en pausa deja el run **queued** para siempre (§7).
+en crudo, y el formulario ofrece además un run id, una logical date y un data
+interval manual. Si el Dag está en pausa aparece también una casilla *"Unpause
+… on trigger"*, marcada por defecto, que le quita la pausa al disparar.
+Desmárcala y el run se crea igual, pero se queda **queued** hasta que quites la
+pausa (§7).
 
-**Hazlo ahora.** Pulsa **Trigger** en `hello_airflow3`. El formulario tiene un
-campo, `greeting`, relleno con `hello` — escribe otra cosa, marca *Unpause
-hello_airflow3 on trigger* y envía. Aparece un segundo run en el Grid; el log de
-su `report` lleva tu palabra en mayúsculas. Es el mismo `Param` llegando a la
-misma task por una tercera vía: un valor por defecto en el archivo, `--conf` en
-la línea de comandos, un formulario en el navegador.
+Escribe otra palabra suelta en `greeting` — deja *Unpause* marcada si aparece —
+y envía. Es el mismo `Param` llegando a la misma task por una tercera
+vía: un valor por defecto en el archivo, `--conf` en la línea de comandos, un
+formulario en el navegador.
 
-El mismo diálogo tiene un segundo modo, **Backfill**: un rango de fechas, un
-**Reprocess Behavior** (missing runs / missing and errored runs / all runs), max
-active runs, "run backwards", y un dry run que te dice *"N runs will be
-triggered"* antes de confirmar. Necesita un Dag con schedule, así que espera a la
-§9. Los Dags programados con assets dicen *"This Dag's schedule does not support
-backfills"* — a `mlops` (§10) no se le puede hacer backfill, porque no hay rango
-de fechas que reproducir, solo asset events.
+Ahora mira lo que hizo. Abre la pestaña **Runs**, haz clic en el run nuevo, haz
+clic en `report` en el grafo y abre **Logs**: tu palabra en mayúsculas y
+`(7 words)`, la línea que `airflow dags test` imprimió en tu terminal en la §4.
+Haz clic en `make_greeting`, abre **Storage** y luego **XCom**: el string del
+saludo, guardada bajo la clave `return_value` — el valor que recibieron `shout`
+y `count_words`.
 
-**Assets** — la pestaña para la que se construyó este tutorial, y vacía hasta la
+> El run que hizo `airflow dags test` no tiene logs aquí. Ese comando imprime
+> la salida de las tasks en tu terminal y no escribe ningún archivo de log, así
+> que su pestaña **Logs** solo dice que no encontró el archivo de log — y
+> sugiere configurar remote logging. No hay nada roto; simplemente no hay
+> archivo.
+
+El formulario de Trigger tiene un segundo modo, **Backfill** — *"Run this Dag
+for a range of dates"* — y en `hello_airflow3` aparece deshabilitado; pasa el
+ratón por encima y dice *"This Dag's schedule does not support backfills"*. Un
+backfill le pregunta al schedule qué runs tendrían que haber ocurrido entre dos
+fechas y los crea: un schedule diario sobre cuatro días responde "cuatro runs,
+uno por día". `schedule=None` no tiene respuesta — el Dag solo corre cuando
+alguien lo dispara, así que ningún rango de fechas contiene un run que debería
+haber tenido. Backfill se puede usar a partir de la §9, con `dataops`, que corre
+a diario: un rango de fechas, un **Reprocess Behavior** (missing runs / missing
+and errored runs / all runs), max active runs, "run backwards", y un dry run que
+te dice *"N runs will be triggered"* antes de confirmar. `mlops` (§10) lo tiene
+deshabilitado por la misma razón: corre cuando se actualiza un asset, no según
+fechas.
+
+**Assets** — la página para la que se construyó este tutorial, y vacía hasta la
 §9. En cuanto existan los Dags que los usan, lista cada asset con sus tasks
 productoras, los Dags consumidores y el histórico de eventos, y dibuja el grafo
 entre Dags: `dataops` → `labeled_projects` → `mlops` → `production_model`. Ese

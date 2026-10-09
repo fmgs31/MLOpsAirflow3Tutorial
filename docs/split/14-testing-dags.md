@@ -4,8 +4,8 @@ Four levels, cheapest first — and the first of them is the grader for the seve
 files you wrote.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
-These catch the failures that otherwise surface as a red banner in the UI hours
-later, and they are the single highest-value thing you can put in CI:
+These catch the failures that otherwise surface as an import error in the UI
+hours later, and they are the single highest-value thing you can put in CI:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -46,7 +46,7 @@ code is only useful while the quotes are true.
 copied by hand; the test re-runs the injection in memory and fails if the
 result differs.
 [`tests/test_readme_build_steps.py`](../../tests/test_readme_build_steps.py): every
-"Build it" block above is tagged with the file it belongs to; the test
+"Build it" block in this tutorial is tagged with the file it belongs to; the test
 concatenates them in order, loads the result with `DagBag`, and fails if what
 you were told to type does not produce a Dag that imports cleanly.
 
@@ -83,6 +83,10 @@ docker compose run --rm -e DAGS_DIR=solutions --entrypoint pytest airflow-cli /o
 > On **Git Bash**, prefix both commands with `MSYS_NO_PATHCONV=1` or the
 > `/opt/airflow/tests` argument is rewritten into a Windows path and pytest
 > collects nothing.
+
+When `test_readme_listings.py` fails, an appendix listing no longer matches its
+file in `solutions/`. The script that injects the listings checks and fixes
+that:
 
 ```bash
 python scripts/sync_readme.py --check     # exit 1 when an appendix listing is stale
