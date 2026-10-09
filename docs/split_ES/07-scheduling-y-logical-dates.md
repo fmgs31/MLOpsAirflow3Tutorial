@@ -21,7 +21,7 @@ Las dos decisiones: *cuándo* crear un run, y para qué trozo de tiempo es ese r
 es "cuándo corrió"; eso es `run_after`. Cómo se corta el trozo depende del
 tipo de valor que pases a `schedule=`, y los dos tipos comunes difieren:
 
-- **Una cadena cron** — `"0 3 * * *"`, que es el schedule que le darás a
+- **Un string cron** — `"0 3 * * *"`, que es el schedule que le darás a
   `dataops` en la §9 — dispara en el momento que nombra, y el trozo *es* ese
   momento: `logical_date`, `data_interval_start` y `data_interval_end` son las
   tres las 03:00.
@@ -49,10 +49,11 @@ ocurrir en la §10: quitar la pausa a `dataops` basta para arrancarlo. Si
 *quieres* el histórico, pídelo con `catchup=True` — o haz un backfill solo del
 rango que necesitas (§9).
 
-**Una cadena cron dispara a la hora que dice.** `schedule="0 3 * * *"` corre a
+**Un string cron dispara a la hora que dice.** `schedule="0 3 * * *"` corre a
 las 03:00 y la `logical_date` del run es las 03:00. Otros timetables pueden fijar la
-hora del run y la `logical_date` de otra forma, y por eso merece la pena mirar la pestaña **Calendar**
-del Dag y la columna *"Next run"* después de escribir uno.
+hora del run y la `logical_date` de otra forma, y por eso merece la pena mirar la pestaña
+**Calendar** del Dag y la columna **Next Run** de la lista de Dags después de
+escribir uno.
 
 **`logical_date` puede estar vacía.** Etiqueta el trozo para el que es un run
 programado — y los runs manuales y disparados por asset, que no son para ningún
@@ -71,6 +72,26 @@ contexto disponibles en toda task: `ds`, `ts`, `logical_date`,
 `data_interval_start`, `data_interval_end`, `run_id`, `dag_run`, `ti`, `params`,
 `var`, `conn`, `macros`, `inlets`/`outlets`, `triggering_asset_events`.
 
+> **La trampa que conviene conocer antes de disparar nada:** un run manual **no
+> tiene logical date**, así que `logical_date` falta en el task context y `ds`,
+> `ts` y compañía están *undefined* en las plantillas. Ambas fallan en tiempo de
+> ejecución, y ninguna falla bajo `airflow dags test`, que siempre aporta una
+> logical date:
+>
+> ```python
+> context["logical_date"]          # KeyError on a manual run
+> context.get("logical_date")      # None — fine
+> "{{ ds }}"                       # UndefinedError: 'ds' is undefined
+> "{{ ds | default('none') }}"     # fine
+> "{{ dag_run.run_after }}"        # fine — every run has one
+> ```
+>
+> Escribiste la forma segura de ambas en la §4 y la §6, y por eso los runs
+> que vas a disparar tienen éxito. Las dos fueron bugs reales en los Dags
+> de este mismo tutorial hasta que un trigger manual los encontró. Los runs
+> disparados por asset tampoco tienen logical date, así que `mlops` está expuesto
+> a lo mismo.
+
 ### Runs manuales
 
 Un schedule no es la única forma de arrancar un Dag. Dos comandos cubren casi
@@ -84,10 +105,10 @@ docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"
 - **`-c/--conf`** es un objeto JSON. Acaba en `dag_run.conf`, y cualquier
   clave que coincida con un `Param` declarado lo sobrescribe para ese run.
 - **`-r/--run-id`** nombra el run. Sin él obtienes `manual__<timestamp>`.
-- **`-l/--logical-date`** fija una. Sin ella el run no tiene ninguna — ver la
-  trampa de abajo.
+- **`-l/--logical-date`** fija una. Sin ella el run no tiene ninguna — la
+  trampa bajo *`logical_date` puede estar vacía*.
 - En la UI lo mismo es el botón **Trigger**, con el formulario generado a partir
-  de tus `params` (§5) — lo pulsaste en la §5.
+  de tus `params` — lo usaste en la §5.
 
 Un Dag nuevo llega **en pausa** (`[core] dags_are_paused_at_creation`), así que
 `unpause` no es opcional — y es el paso que todo el mundo olvida:
@@ -114,32 +135,13 @@ docker compose exec airflow-scheduler airflow dags unpause hello_airflow3     # 
 Mientras el Dag está en pausa el run está `queued` y ahí se queda por mucho que
 esperes — el scheduler lo ve en cada bucle y lo salta deliberadamente. Poco
 después del `unpause`, `list-runs` muestra el mismo `run_id` como `success`, y su
-`start_date` es posterior a su `run_after`: arrancó cuando quitaste la pausa, no
-cuando disparaste. No se perdió nada y nada te avisó; simplemente estaba
-retenido.
+`start_date` — la del run, el momento en que arrancó de verdad, no la
+`start_date` del Dag de antes en la §7 — es posterior a su `run_after`: arrancó
+cuando quitaste la pausa, no cuando disparaste. No se perdió nada y nada te
+avisó; simplemente estaba retenido.
 
 El formulario de trigger de la UI tiene una casilla *"Unpause … on trigger"*
 precisamente para esto.
-
-> **La trampa que conviene conocer antes de disparar nada:** un run manual **no
-> tiene logical date**, así que `logical_date` falta en el task context y `ds`,
-> `ts` y compañía están *undefined* en las plantillas. Ambas fallan en tiempo de
-> ejecución, y ninguna falla bajo `airflow dags test`, que siempre aporta una
-> logical date:
->
-> ```python
-> context["logical_date"]          # KeyError on a manual run
-> context.get("logical_date")      # None — fine
-> "{{ ds }}"                       # UndefinedError: 'ds' is undefined
-> "{{ ds | default('none') }}"     # fine
-> "{{ dag_run.run_after }}"        # fine — every run has one
-> ```
->
-> Escribiste la forma segura de ambas en las lecciones 1 y 2, y por eso los runs
-> que acabas de disparar tuvieron éxito. Las dos fueron bugs reales en los Dags
-> de este mismo tutorial hasta que un trigger manual los encontró. Los runs
-> disparados por asset tampoco tienen logical date, así que `mlops` está expuesto
-> a lo mismo.
 
 Dos formas más de arrancar un run: `airflow dags test <dag_id>` ejecuta el Dag entero
 in-process (§14), y la REST API lo hace por HTTP —

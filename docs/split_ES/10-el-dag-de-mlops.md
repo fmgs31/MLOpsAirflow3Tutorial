@@ -12,7 +12,7 @@ prepare_data ─► validate_training_data ─► train_candidate×N ─► sele
 |---|---|
 | el trigger por asset + `prepare_data` | el cliente de tu warehouse — o, como aquí, deja que el asset event lleve la ruta de los datos |
 | `validate_training_data` | Great Expectations / Pandera / Soda, más comprobaciones del split |
-| `candidates` + `train_candidate.expand()` | Optuna / Ray Tune / un servicio de sweeps |
+| `candidates` + `train_candidate` (uno por conjunto de hiperparámetros) | Optuna / Ray Tune / un servicio de sweeps |
 | `select_best` + `evaluate_best` | tu experiment tracker (MLflow, W&B) |
 | `promotion_gate` → `promote_model` | la transición de stage de tu registry |
 
@@ -156,8 +156,8 @@ una se reintenta, se loguea y se inspecciona por su cuenta.
 `train_candidate`: un run id, un f1 y los hparams — pequeño y serializable a
 JSON. El modelo en sí se queda en el registry.
 
-**Cuántas de las cuatro entrenan a la vez es una decisión, y está escrita ahí
-arriba.** Nada en `.expand()` dice "en paralelo"; dice "estas son cuatro task
+**Cuántas de las cuatro entrenan a la vez es una decisión, y está escrita en el
+decorador de `train_candidate`.** Nada en `.expand()` dice "en paralelo"; dice "estas son cuatro task
 instances separadas". Que se solapen o no es asunto del executor, acotado por el
 más estrecho de los límites de la §3 — y `max_active_tis_per_dag=2` en esa task es
 deliberadamente el más estrecho aquí. Así que el fan-out corre **de dos en dos,
@@ -268,8 +268,18 @@ producing_tasks   [{'dag_id': 'dataops', 'task_id': 'validate_transformed', ...}
 
 `producing_tasks` nombra la task exacta que lo emite; `scheduled_dags` nombra qué
 arrancará cuando lo haga. Ninguno de los dos Dags menciona al otro en ninguna
-parte. La pestaña Assets dibuja ahora el grafo entero, `dataops →
+parte. La página Assets dibuja ahora el grafo entero, `dataops →
 labeled_projects → mlops → production_model`.
+
+La página del propio `mlops` puede mostrar las mismas conexiones. Ábrela, cambia
+a **Graph** y ve cambiando **Options → Dependencies** (§5):
+
+- **Only tasks** — las diez tasks que acabas de escribir, nada más.
+- **External conditions** — las mismas tasks, más `labeled_projects` entrando
+  en el Dag y `production_model` saliendo de `promote_model`.
+- **All Dag Dependencies** — la cadena que dibuja la página Assets: `dataops`
+  con los dos assets que produce, luego `mlops` con sus tasks dentro, y luego
+  `production_model`.
 
 ### Mira cómo dispara la cadena entera
 
@@ -314,8 +324,9 @@ que ambos Dags están sin pausa y que el run de `dataops` tuvo éxito — un
 Ahora las dos oleadas. Abre ese run de `mlops` en la UI, haz clic en
 `train_candidate` y lee su pestaña **Task Instances** — cuatro filas, map index
 del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan juntas; las
-otras dos arrancan solo después de que el primer par haya terminado. **Show
-Gantt** dibuja lo mismo como dos pares de barras. En el **Graph**, las cuatro
+otras dos arrancan solo después de que el primer par haya terminado. La vista *Show
+Gantt* (§5), disponible ahora que hay un run seleccionado, dibuja lo mismo como
+dos pares de barras. En el **Graph**, las cuatro
 son un único nodo colapsado hasta que subes el filtro **Min. map index** (§5). O
 léelo desde la CLI:
 

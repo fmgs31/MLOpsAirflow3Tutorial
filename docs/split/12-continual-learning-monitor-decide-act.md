@@ -2,8 +2,8 @@
 
 **Continual**, not continuous: the system repeats *with breaks*, and the breaks
 are deliberate. A monitor fires, something is decided — by a person where it
-matters — and then the pipeline runs. The approval gate below is that decision,
-built into the Dag as a task.
+matters — and then the pipeline runs. The approval gate this section builds,
+`request_retraining`, is that decision, built into the Dag as a task.
 
 What you are watching for is **drift**, in three flavours:
 
@@ -116,7 +116,7 @@ Measure, then decide:
 
 `context["params"]` is the policy — the defaults above, or whatever this run
 was given. Note the ordering: **a new label routes to `inspect`, not to
-`improve`.** Retraining on data whose label space you have not understood yet is
+`request_retraining`.** Retraining on data whose label space you have not understood yet is
 how you ship a worse model with full confidence.
 
 Now the four arms. Three are simple; the fourth is a **human-in-the-loop**
@@ -158,7 +158,8 @@ gate, `ApprovalOperator`, followed by the task that starts another Dag:
 ```
 
 `ApprovalOperator` parks the task in `awaiting_input` and shows a prompt in the
-UI, under the Dag's **Required Actions** tab. On **Reject**, everything
+UI, on the task instance's **Required Actions** tab and under Browse →
+**Required Actions**. On **Reject**, everything
 downstream is skipped. `defaults` is the answer applied if nobody responds within
 `response_timeout` — sixty seconds here so the lesson finishes; give it hours
 in production. `TriggerDagRunOperator` is the cross-Dag verb: it creates a
@@ -218,8 +219,9 @@ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 It now has a fresh `manual__…` run that this Dag created. One Dag decided
 another Dag should run, and a person was given the chance to say no.
 
-While it is in `awaiting_input`, open the Dag in the UI: the prompt is waiting
-for you under the **Required Actions** tab (§5), and answering it there resolves
+While it is in `awaiting_input`, open the run in the UI and click
+`request_retraining`: the prompt is waiting for you on its **Required Actions**
+tab (§5), and answering it there resolves
 the task without waiting for the timeout. Airflow records the answer either way
 — the choice that was made, when, and *by whom*. A run that timed out and fell
 back to its `defaults` stores the choice with the "who" left empty, which is how

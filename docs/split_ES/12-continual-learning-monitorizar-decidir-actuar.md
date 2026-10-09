@@ -2,7 +2,8 @@
 
 **Continual**, no continuo: el sistema se repite *con pausas*, y las pausas son
 deliberadas. Un monitor dispara, se decide algo — por una persona donde importa —
-y entonces corre el pipeline. El gate de aprobación de abajo es esa decisión,
+y entonces corre el pipeline. El gate de aprobación que construye esta sección,
+`request_retraining`, es esa decisión,
 convertida en una task del Dag.
 
 Lo que estás vigilando es el **drift**, de tres tipos:
@@ -117,7 +118,7 @@ Medir, y luego decidir:
 
 `context["params"]` es la política — los defaults de arriba, o lo que se le haya
 dado a este run. Fíjate en el orden: **una etiqueta nueva enruta a `inspect`, no
-a `improve`.** Reentrenar con datos cuyo espacio de etiquetas todavía no has
+a `request_retraining`.** Reentrenar con datos cuyo espacio de etiquetas todavía no has
 entendido es la forma de publicar un modelo peor con plena confianza.
 
 Ahora las cuatro ramas. Tres son simples; el cuarto es un gate
@@ -160,7 +161,8 @@ Dag:
 ```
 
 `ApprovalOperator` aparca la task en `awaiting_input` y muestra un aviso en la
-UI, bajo la pestaña **Required Actions** del Dag. Con **Reject**, todo lo de
+UI, en la pestaña **Required Actions** de la task instance y bajo Browse →
+**Required Actions**. Con **Reject**, todo lo de
 aguas abajo queda skipped. `defaults` es la respuesta que se aplica si nadie
 responde antes de `response_timeout` — sesenta segundos aquí para que la lección
 termine; dale horas en producción. `TriggerDagRunOperator` es el verbo entre
@@ -222,8 +224,9 @@ Tiene ahora un run `manual__…` recién creado por este Dag. Un Dag decidió
 que otro Dag debía correr, y a una persona se le dio la oportunidad de decir que
 no.
 
-Mientras está en `awaiting_input`, abre el Dag en la UI: el aviso te espera en la
-pestaña **Required Actions** (§5), y responderlo ahí resuelve la task sin esperar
+Mientras está en `awaiting_input`, abre el run en la UI y haz clic en
+`request_retraining`: el aviso te espera en su pestaña **Required Actions**
+(§5), y responderlo ahí resuelve la task sin esperar
 al timeout. Airflow registra la respuesta en cualquiera de los dos casos — la
 decisión que se tomó, cuándo, y *quién*. Un run que agotó el timeout y aplicó sus
 `defaults` guarda la decisión con el "quién" vacío, que es cómo distingues "una persona

@@ -1,7 +1,7 @@
 ## 6. Operators, XComs y relaciones
 
-La lección 1 usó funciones decoradas con `@task`. Esta usa **operators**, los
-tipos de task prefabricados, y enseña que los dos estilos se mezclan sin problema
+El Dag de la §4 usó funciones decoradas con `@task`. Esta usa **operators**, los
+tipos de task prefabricados, y enseña cómo los dos estilos se mezclan sin problema
 en un mismo Dag. Los más comunes vienen en `apache-airflow-providers-standard`,
 que ya está instalado:
 
@@ -14,32 +14,13 @@ from airflow.providers.standard.sensors.filesystem import FileSensor
 
 Más allá de los estándar hay un provider para casi cualquier sistema con el que
 quieras hablar — S3, Snowflake, BigQuery, Postgres, Kubernetes, Databricks,
-Slack, HTTP, Docker, dbt Cloud, Airbyte — y cada uno trae operators, hooks y
-sensors, se instala como `apache-airflow-providers-<nombre>` y aparece en la UI
+Slack, HTTP, Docker, dbt Cloud, Airbyte — y cada uno trae operators, hooks (los
+clientes que hay debajo de ellos, *Hooks, Connections y Variables* de la §6) y
+sensors (tasks que esperan, §11), se instala como `apache-airflow-providers-<nombre>` y aparece en la UI
 bajo Admin → Providers. Usa uno antes de escribir llamadas HTTP a mano: el
 operator de un provider ya gestiona connections, reintentos y búsqueda de
-secretos.
-
-Cuando ninguno encaja, hereda de `BaseOperator` — no en esta lección, pero esta
-es la forma:
-
-```python
-from airflow.sdk import BaseOperator
-
-class TagifaiTrainOperator(BaseOperator):
-    template_fields = ("experiment_name",)      # these get Jinja-rendered
-
-    def __init__(self, *, experiment_name: str, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.experiment_name = experiment_name
-
-    def execute(self, context):                 # return value becomes the XCom
-        return train_module.train_from_files()[1]["f1"]
-```
-
-Es la opción correcta cuando un paso se reutiliza en varios Dags y
-necesita sus propios parámetros, reintentos o template fields. Para todo lo
-demás, `@task` es menos código y es lo que usa este repo de principio a fin.
+secretos. Cuando ninguno encaja, puedes escribir el tuyo; la subsección
+*Escribir tu propio operator* de la §6 enseña cómo, una vez construido este Dag.
 
 ### Constrúyelo: primero los XComs
 
@@ -50,7 +31,7 @@ se pasan valores entre sí.
 Los **XComs** ("cross-communications") son cómo las tasks se pasan valores
 pequeños. Se guardan en la metadata database — y, como todo lo que hace una
 task, una task los lee y escribe a través de la Task Execution API, nunca tocando
-la base de datos. TaskFlow los usó implícitamente en la lección 1: cada `return`
+la base de datos. TaskFlow los usó implícitamente en la §4: cada `return`
 era un push de XCom, cada argumento un pull de XCom. Con operators haces push y
 pull explícitos.
 
@@ -85,7 +66,7 @@ def _multiply(ti, factor: int) -> None:
 ```
 
 `ti` — la task instance — se inyecta porque el parámetro se llama `ti`, la misma
-inyección por nombre que hizo `**context` en la lección 1. Dos cosas en las que
+inyección por nombre que hizo `**context` en la §4. Dos cosas en las que
 fijarse:
 
 **`xcom_pull` sin `task_ids` lee los XComs de la propia task actual** y devuelve
@@ -127,13 +108,18 @@ como argumentos con nombre.
 
 ### Templates
 
-El siguiente operator es un `BashOperator`, y su comando no es una cadena
-normal. Algunos argumentos de operator — `bash_command`, y cualquier campo que un
-operator nombre en sus `template_fields` — son **plantillas Jinja**: cadenas en
-las que `{{ … }}` se rellena *justo antes de que la task instance corra*, con el
-contexto de ese run. Es lo que hace que una task, escrita una vez, actúe cada vez
-sobre un run id, una fecha o un valor de aguas arriba distinto. Añádelo debajo de
-`multiply`:
+El siguiente operator es un `BashOperator`, y su comando no es un string
+cualquiera. Algunos argumentos de operator — `bash_command`, y cualquier campo que un
+operator nombre en sus `template_fields` — son **plantillas Jinja**. Jinja es
+una librería de plantillas de Python, la misma que usan Flask y dbt: una
+plantilla es texto normal con huecos, y *renderizarla* sustituye cada
+`{{ expresión }}` por el valor de esa expresión. Dentro de las llaves puedes
+leer un atributo (`dag_run.run_after`), llamar a un método (`ti.xcom_pull(...)`)
+o pasar un valor por un **filtro** con `|` — `default('x')` da `'x'` cuando el
+valor no está definido. Airflow renderiza estos argumentos *justo antes de que
+la task instance corra*, con el contexto de ese run como variables. Es lo que
+hace que una task, escrita una vez, actúe cada vez sobre un run id, una fecha o
+un valor de aguas arriba distinto. Añádelo debajo de `multiply`:
 
 ```python dags/02_operators_and_xcoms.py
     describe = BashOperator(
@@ -147,17 +133,32 @@ sobre un run id, una fecha o un valor de aguas arriba distinto. Añádelo debajo
 ```
 
 Tres consecuencias. El renderizado ocurre por task instance, en el proceso de la
-propia task, así que una plantilla puede acceder a cualquier cosa del task context
-— `run_id`, `ds`, `ti`, `params`, `var`, `conn`, `dag_run` — y el resultado se
-guarda: es la pestaña **Rendered Templates** de la task instance (§5), el sitio
-donde mirar cuando un comando no dijo lo que querías. Una cadena que *no* está en
+propia task, así que una plantilla puede acceder a cualquier cosa del task
+context — las mismas claves que `**context` le dio a un `@task` en la §4:
+
+- `run_id` — el id de este run, p. ej. `manual__2026-09-09T08:22:31+00:00`.
+- `dag_run` — el run en sí: su `run_id`, `run_after` (cuándo le tocaba
+  arrancar), `conf` (el JSON pasado con un trigger), `state`.
+- `ti` — esta task instance, el objeto con el que `_multiply` hizo push y pull
+  de XComs.
+- `params` — las entradas declaradas del Dag (§4), con lo que se sobrescriba en
+  cada run.
+- `ds` — la logical date del run como `YYYY-MM-DD`. La §7 explica las logical
+  dates; el párrafo que sigue a esta lista explica por qué `ds` necesita un
+  default.
+- `var` y `conn` — las Variables y Connections de Airflow, leídas por nombre:
+  `{{ var.value.my_key }}`, `{{ conn.fs_default.host }}`. *Hooks, Connections y
+  Variables*, al final de la §6, cuenta qué guardan.
+
+Y el resultado se guarda: es la pestaña **Rendered Templates** de la task instance (§5), el sitio
+donde mirar cuando un comando no dijo lo que querías. Un string que *no* está en
 `template_fields` no se renderiza nunca, por muchas llaves que lleve. Y una
 función `@task` no necesita nada de esto — recibe el contexto como Python
 (`**context`, o un argumento con nombre como `ti`) — así que el templating es
 sobre todo cosa de operators.
 
 El `| default(...)` sobre `ds` es el gemelo, en plantilla, del `.get()` de la
-lección 1: `ds` deriva de `logical_date`, y un run manual o disparado por asset
+§4: `ds` deriva de `logical_date`, y un run manual o disparado por asset
 no tiene ninguna. Sin el default la task falla con `UndefinedError: 'ds' is
 undefined` mientras renderiza, antes de ejecutarse — y, como con `KeyError`,
 `airflow dags test` nunca lo enseña. La §7 es donde se explican ambas trampas;
@@ -202,7 +203,7 @@ operators_and_xcoms()
 ```
 
 1. **Implícitamente, pasando la salida de una task a otra.** Solo TaskFlow, y
-   la lección 1 estaba hecha de eso. Aquí `taskflow_reader` no recibe ningún
+   el Dag de la §4 estaba hecho de eso. Aquí `taskflow_reader` no recibe ningún
    argumento, así que nada le dibuja su arista.
 2. **Los operadores de desplazamiento**, cuando no fluyen datos —
    `describe >> product` es "describe, y luego product". `product << describe`
@@ -237,11 +238,68 @@ docker compose exec airflow-scheduler airflow dags test operators_and_xcoms
 ```
 
 **Comprobación.** La línea de la task `describe`, `run=manual__… ds=…
-product=42`, y luego `TaskFlow saw product=42` del reader. Después abre la vista
+run_after=… product=42`, y luego `TaskFlow saw product=42` del reader. Después abre la vista
 **Graph** del Dag en la UI: la etiqueta `seed -> product` en una arista, un
 fan-out de dos ramas hacia `check_parity`/`check_range`, y esas dos abriéndose
 hacia `publish` y `notify`. Si el grafo no coincide, compara con
 [`solutions/02_operators_and_xcoms.py`](../../solutions/02_operators_and_xcoms.py).
+
+### Escribir tu propio operator
+
+Cuando ningún provider tiene un operator para un paso, heredas de
+`BaseOperator`. La clase usa tres cosas que este Dag ya ha enseñado: argumentos
+que se dan al instanciar el operator, `template_fields`, y un valor devuelto que
+se convierte en XCom. Un paso de entrenamiento como operator:
+
+```python
+from airflow.sdk import BaseOperator
+
+from tagifai import train as train_module
+
+
+class TagifaiTrainOperator(BaseOperator):
+    template_fields = ("experiment_name",)
+
+    def __init__(self, *, experiment_name: str, **kwargs) -> None:
+        super().__init__(**kwargs)          # task_id, retries, ... go to BaseOperator
+        self.experiment_name = experiment_name
+
+    def execute(self, context):
+        print(f"experiment={self.experiment_name}")   # already rendered here
+        _, metrics = train_module.train_from_files()
+        return metrics["f1"]                # pushed as an XCom
+```
+
+Un Dag lo instancia como cualquier otro operator:
+
+```python
+train = TagifaiTrainOperator(task_id="train", experiment_name="tagifai_{{ run_id }}")
+```
+
+`__init__` corre cuando se parsea el archivo del Dag y solo guarda los
+argumentos. `execute` corre cuando corre la task instance, después de que
+Airflow haya renderizado cada atributo nombrado en `template_fields` — así que
+`self.experiment_name` contiene `tagifai_manual__…`, no las llaves. Lo que
+devuelva `execute` se guarda como XCom, exactamente igual que el `return` de una
+función `@task`.
+
+El mismo paso como `@task`:
+
+```python
+@task
+def train(**context) -> float:
+    print(f"experiment=tagifai_{context['run_id']}")
+    _, metrics = train_module.train_from_files()
+    return metrics["f1"]
+```
+
+Los dos dan una task con el mismo XCom. La diferencia es el empaquetado: la
+función `@task` pertenece a un archivo de Dag y lee el contexto directamente; la
+clase se importa, se configura en cada uso con sus propios argumentos (con
+plantilla o sin ella) y se comparte entre Dags — que es como está construido el
+operator de cualquier provider. Escribe una clase cuando un paso se reutiliza en
+varios Dags con argumentos distintos; si no, `@task` es menos código, y es lo
+que usa este repo de principio a fin.
 
 ### Hooks, Connections y Variables
 

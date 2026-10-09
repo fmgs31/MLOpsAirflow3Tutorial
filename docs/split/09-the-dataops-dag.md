@@ -98,9 +98,8 @@ The first task produces an asset. Add it inside `dataops()`:
         return str(fp)
 ```
 
-`outlets=` is the declaration from §8; `outlet_events` is injected by name,
-like `ti`, and lets the task attach metadata to the event it is about to emit.
-The task returns a **path**, not the dataframe: XComs carry a pointer to the
+`outlets=` and `outlet_events` work as in §8: the declaration, and the
+metadata attached to the event this task emits when it succeeds. The task returns a **path**, not the dataframe: XComs carry a pointer to the
 data, not the data itself.
 
 Now the gate on the raw data, and the transform:
@@ -205,7 +204,7 @@ docker compose exec airflow-scheduler airflow assets list -o plain
 **Checkpoint.** Two rows, `labeled_projects` and `raw_projects`, each with its
 group and extra. Nothing has run; the Dag processor parsed a file with
 `outlets=` in it, and that was enough. `production_model`, defined in the same
-`assets.py`, is not listed — no Dag refers to it yet. The Assets tab in the UI
+`assets.py`, is not listed — no Dag refers to it yet. The Assets page in the UI
 now shows both, with `dataops` as the producer and no consumer.
 
 ### Run it
@@ -227,7 +226,7 @@ If a task fails, compare with [`solutions/03_dataops.py`](../../solutions/03_dat
 
 > **`airflow dags test` is not a dry run.** It executed the real tasks and wrote
 > the real rows: the file on disk, and a genuine `labeled_projects` asset event
-> in the metadata database — open the Assets tab and it is there, with the
+> in the metadata database — open the Assets page and it is there, with the
 > `extra` you attached. Nothing is scheduled on that asset yet, so nothing else
 > happens. And per §8, nothing will: when `mlops` appears in §10 this event is
 > already history, and Airflow does not replay history.
@@ -258,10 +257,11 @@ beginning `backfill__`. Know what follows before you do it:
 - Every `dataops` backfill run that succeeds emits a `labeled_projects` asset
   event exactly as a normal run does (§8), so an un-paused `mlops` trains after
   them. Backfilling a producer also triggers runs of its consumers.
-- The CLI in 3.3.1 only *creates* backfills. To stop one, cancel it in the
-  Dag's **Backfills** tab, or through the API — `PUT
-  /api/v2/backfills/{id}/cancel`, no token needed on this all-admins stack —
-  which marks its still-queued runs `failed`. Pausing the Dag is the emergency
+- The CLI in 3.3.1 only *creates* backfills. While one is unfinished, the
+  Dag's page shows a *Backfill in progress* banner with a pause and a stop
+  button; stop cancels it. So does the API — `PUT
+  /api/v2/backfills/{id}/cancel`, no token needed on this all-admins stack.
+  Cancelling marks the backfill's still-queued runs `failed`. Pausing the Dag is the emergency
   brake: a paused Dag starts nothing.
 
 `--reprocess-behavior` decides what to do with slices that already have a run —

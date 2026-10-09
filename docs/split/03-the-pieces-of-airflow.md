@@ -17,7 +17,7 @@ for heavy compute inside the worker — trigger a Spark/Ray/Kubernetes job and
 track it instead. If your pipeline is three scripts run once a week, cron is
 still allowed.
 
-Four processes, a database, and an executor — which, as the next section
+Four processes, a database, and an executor — which, as "The executor" below
 explains, is not always a process of its own. All of it is running in your stack
 right now:
 

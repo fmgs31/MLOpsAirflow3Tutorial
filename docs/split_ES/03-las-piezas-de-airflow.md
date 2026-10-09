@@ -17,8 +17,8 @@ ciclo o un bucle `while` entre runs, y con cómputo pesado dentro del worker —
 lanza un job de Spark/Ray/Kubernetes y haz seguimiento de él. Si tu pipeline son
 tres scripts que corren una vez por semana, cron sigue estando permitido.
 
-Cuatro procesos, una base de datos y un executor — que, como explica la sección
-siguiente, no siempre es un proceso propio. Todo eso está corriendo en tu stack
+Cuatro procesos, una base de datos y un executor — que, como explica "El executor"
+más abajo, no siempre es un proceso propio. Todo eso está corriendo en tu stack
 ahora mismo:
 
 | Componente | Trabajo |

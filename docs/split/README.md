@@ -7,7 +7,7 @@ the best model is promoted to production, and a monitoring Dag decides whether
 to retrain.
 
 Everything runs on your machine in Docker. No cloud account, no warehouse, no
-vendor signup. Every command below was executed against a real Airflow 3.3.1
+vendor signup. Every command in this tutorial was executed against a real Airflow 3.3.1
 stack — see [What was actually verified](../verified.md).
 
 **Assumed:** Python, the command line, and Docker installed. No Airflow

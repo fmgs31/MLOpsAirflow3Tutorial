@@ -12,8 +12,8 @@ aislamiento más ligero. El cómputo pesado pertenece a un clúster (Ray, Spark,
 EMR, Dataproc) con Airflow disparándolo y siguiéndolo — Airflow es un
 orquestador, no un motor de cómputo.
 
-**Dag bundles.** `dags_folder` sigue funcionando, pero el Dag processor lee
-*bundles*; el de por defecto es un `LocalDagBundle` llamado `dags-folder`.
+**Dag bundles.** El Dag processor lee *bundles*; el de por defecto es un
+`LocalDagBundle` llamado `dags-folder`, que lee el setting `dags_folder`.
 Cambiar a `GitDagBundle` te da versionado: cada Dag run registra el commit con el
 que corrió, así que un re-run usa el mismo código.
 
@@ -51,8 +51,8 @@ gente se salta hasta que hay un incidente. Tres capas:
 - **Traces** — `[traces] otel_on = True` envía spans de los bucles del scheduler
   y de los runs de task, que es como encuentras *qué* task de un Dag lento se
   volvió más lenta.
-- **Health** — `GET /api/v2/monitor/health` informa del estado del scheduler, el
-  triggerer y el Dag processor; la página Home de la UI muestra lo mismo.
+- **Health** — `GET /api/v2/monitor/health` informa del estado de la metadata
+  database, el scheduler, el triggerer y el Dag processor; la página Home de la UI muestra lo mismo.
 
 Y luego la higiene de siempre: `airflow db clean` programado (si no, la metadata
 DB crece para siempre), deadline alerts en los Dags que importan (§13), y
