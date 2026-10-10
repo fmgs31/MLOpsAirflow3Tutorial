@@ -18,7 +18,8 @@ cadencia que cron no sabe expresar.
 Las dos decisiones: *cuándo* crear un run, y para qué trozo de tiempo es ese run
 — su **data interval**, expuesto a todas las tasks como `data_interval_start` y
 `data_interval_end`, y etiquetado por la `logical_date` del run. Ninguno de esos
-es "cuándo corrió"; eso es `run_after`. Cómo se corta el trozo depende del
+dice cuándo ocurre el run: eso es `run_after`, el momento a partir del cual el
+run puede arrancar. Cómo se corta el trozo depende del
 timetable, y hay dos clases:
 
 - **Un string cron o un `timedelta`** — `"0 3 * * *"`, el schedule que le darás
@@ -39,8 +40,8 @@ Es opcional — sin él, un Dag con schedule empieza a partir del momento en que
 quitas la pausa — y solo rige los runs que crea el scheduler; a un trigger
 manual nunca lo frena.
 
-Ten presente esa imagen: el resto de esta sección se deduce de ella. Tres cosas
-sobre scheduling que te ahorrarán una tarde:
+Tres cosas sobre scheduling que se deducen de lo anterior y que te ahorrarán una
+tarde:
 
 **`catchup` es `False` por defecto** (`[scheduler] catchup_by_default`), y
 conviene saber exactamente qué significa eso al quitar la pausa a un Dag. Quitar la pausa a un Dag con cron y un
@@ -74,8 +75,11 @@ mlops   asset_triggered__2026-09-09T08:23:16+00:00  success  2026-09-09T08:23:16
 mlops   manual__2026-09-09T08:22:31+00:00           success  2026-09-09T08:22:32   2026-09-09T08:22:31
 ```
 
-Usa `run_after` cuando quieras decir "cuándo arrancó esto de verdad". Claves del
-contexto disponibles en toda task: `ds`, `ts`, `logical_date`,
+Usa `run_after` cuando quieras decir "cuándo le tocaba arrancar a este run".
+Cuándo arrancó de verdad lo dice la `start_date` del propio run, que puede ser
+posterior; el ejemplo del Dag en pausa, más abajo en la §7, enseña uno.
+
+Claves del contexto disponibles en toda task: `ds`, `ts`, `logical_date`,
 `data_interval_start`, `data_interval_end`, `run_id`, `dag_run`, `ti`, `params`,
 `var`, `conn`, `macros`, `inlets`/`outlets`, `triggering_asset_events`.
 
@@ -94,10 +98,9 @@ contexto disponibles en toda task: `ds`, `ts`, `logical_date`,
 > ```
 >
 > Escribiste la forma segura de ambas en la §4 y la §6, y por eso los runs
-> que vas a disparar tienen éxito. Las dos fueron bugs reales en los Dags
-> de este mismo tutorial hasta que un trigger manual los encontró. Los runs
-> disparados por asset tampoco tienen logical date, así que `mlops` está expuesto
-> a lo mismo.
+> que vas a disparar desde la CLI tienen éxito. Los runs disparados por asset
+> tampoco tienen logical date, y por eso `mlops` (§10), que corre por asset, no
+> lee `logical_date` ni `ds` en ninguna parte.
 
 ### Runs manuales
 
@@ -151,8 +154,8 @@ avisó; simplemente estaba retenido.
 El formulario de trigger de la UI tiene una casilla *"Unpause … on trigger"*
 precisamente para esto.
 
-Dos formas más de arrancar un run: `airflow dags test <dag_id>` ejecuta el Dag entero
-in-process (§14), y la REST API lo hace por HTTP —
+Dos formas más de arrancar un run: `airflow dags test <dag_id>` ejecuta el Dag
+entero dentro del propio comando (§4), y la REST API lo hace por HTTP —
 `POST /api/v2/dags/{dag_id}/dagRuns`, que es lo que llama el botón de la UI.
 
 ---

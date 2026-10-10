@@ -13,20 +13,22 @@ prepare_data ─► validate_training_data ─┐
 |---|---|
 | el trigger por asset + `prepare_data` | el cliente de tu warehouse — o, como aquí, deja que el asset event lleve la ruta de los datos |
 | `validate_training_data` | Great Expectations / Pandera / Soda, más comprobaciones del split |
-| `candidates` + `train_candidate` (uno por conjunto de hiperparámetros) | Optuna / Ray Tune / un servicio de sweeps |
+| `candidates` + `train_candidate` (uno por conjunto de hiperparámetros) | Optuna / Ray Tune / un servicio que reparte la búsqueda de hiperparámetros |
 | `select_best` + `evaluate_best` | tu experiment tracker (MLflow, W&B) |
-| `promotion_gate` → `promote_model` | la transición de stage de tu registry |
+| `promotion_gate` → `promote_model` | el paso a producción en tu model registry (MLflow, por ejemplo) |
 
 ### Constrúyelo
 
 Funciones nuevas de la carga de trabajo: `data.split(df)` devuelve un par
-estratificado `(train, test)`; `validate.check_split(train, test)` es una
-segunda suite, sobre el split; `train_module.SEARCH_SPACE` es una lista de dicts
-de hiperparámetros y `train_module.train_from_files(hparams)` ajusta un modelo,
-devolviendo `(model, metrics)`; `registry.save_run`, `load_metrics`, `promote` y
-`get_production` son el registry en sistema de archivos;
-`config.MIN_F1_TO_PROMOTE` es el umbral de promoción, leído de `TAGIFAI_MIN_F1`
-si está definida.
+`(train, test)` con la misma proporción de cada tag en los dos;
+`validate.check_split(train, test)` es una segunda suite, sobre el split;
+`train_module.SEARCH_SPACE` es una lista de dicts de hiperparámetros y
+`train_module.train_from_files(hparams)` ajusta un modelo, devolviendo
+`(model, metrics)`; `registry.save_run`, `load_metrics`, `promote` y
+`get_production` son el *model registry* del repo, en sistema de archivos: guarda
+cada modelo entrenado con sus métricas y apunta cuál está en producción;
+`config.MIN_F1_TO_PROMOTE` es el f1 mínimo para pasar un modelo a producción
+(0.65, o el valor de `TAGIFAI_MIN_F1` si está definida).
 
 Crea `dags/04_mlops.py`:
 
@@ -121,11 +123,12 @@ tabla no puede hacer en absoluto — mira el **split**:
 
 Cada problema de esos comentarios — una clase solo en train, tres filas de una
 clase, el mismo proyecto en los dos splits — pasa una suite a nivel de columna
-sin ningún aviso, y aun así produce un modelo cuyo f1 en held-out no significa
-nada. Ese f1 es exactamente lo que el promotion gate compara contra producción.
+sin ningún aviso, y aun así produce un modelo cuyo f1 sobre el conjunto de test
+no significa nada. Ese f1 es exactamente lo que el promotion gate compara contra producción.
 
-**El dynamic task mapping** despliega una task instance por conjunto de
-hiperparámetros en runtime, y luego reduce. Tres tasks:
+**El dynamic task mapping** crea, mientras corre el Dag, una task instance por
+conjunto de hiperparámetros, y una task posterior reúne todos los resultados.
+Tres tasks:
 
 ```python dags/04_mlops.py
     @task
@@ -150,10 +153,11 @@ hiperparámetros en runtime, y luego reduce. Tres tasks:
 
 `candidates` devuelve una lista; en el cableado de abajo,
 `train_candidate.expand(hparams=candidates())` crea una task instance por
-elemento en runtime — cuatro aquí, una por conjunto de hiperparámetros — y cada
-una se reintenta, se loguea y se inspecciona por su cuenta.
-`context['ti'].map_index` le dice a la task cuál de las cuatro es. El paso de reduce,
-`select_best`, simplemente recibe una `list`. Fíjate en el valor de retorno de
+elemento cuando corre el Dag — cuatro aquí, una por conjunto de
+hiperparámetros — y cada una se reintenta, se loguea y se inspecciona por su
+cuenta. `context['ti'].map_index` le dice a la task cuál de las cuatro es
+(0 a 3). La task que reúne los resultados, `select_best`, simplemente recibe
+una `list` con los cuatro valores devueltos. Fíjate en el valor de retorno de
 `train_candidate`: un run id, un f1 y los hparams — pequeño y serializable a
 JSON. El modelo en sí se queda en el registry.
 
@@ -169,12 +173,15 @@ cuatro copias de los datos en memoria. Cuando el recurso limitado es compartido
 — por ejemplo, una base de datos que solo acepta unas pocas conexiones —, un
 `pool` (§3) pone el mismo tipo de tope a todas las tasks y Dags que lo usan.
 
-> **Ojo:** el parámetro se llama `hparams`, no `params`. TaskFlow inyecta claves
-> del contexto por nombre de parámetro, y `params` está reservado — un argumento
+> **Ojo:** el parámetro se llama `hparams`, no `params`. Un `@task` recibe
+> claves del contexto por nombre de parámetro (§4), y `params` está reservado — un argumento
 > de task llamado `params` recibe los params del Dag, no tus datos.
 
-El **promotion gate** es un branch, no un fallo. Añade la evaluación, el gate, la
-promoción y los dos `EmptyOperator` que el branch necesita:
+El **promotion gate** decide si el mejor candidato pasa a producción. A
+diferencia de los gates de la §9, no falla la task cuando la respuesta es no: es
+un *branch*, una task que elige cuál de dos ramas del Dag sigue. Añade la
+evaluación, el gate, la promoción y los dos `EmptyOperator` que el branch
+necesita:
 
 ```python dags/04_mlops.py
     @task

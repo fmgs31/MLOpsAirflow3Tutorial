@@ -43,8 +43,10 @@ def deadline_alerts():
 ```
 
 Tres piezas: una **reference** (dónde arranca el reloj), un **interval** (cuánto
-después) y un **callback** — nombrado como ruta con puntos, porque corre en
-algún sitio que no es la task, con `kwargs` que se le pasan. Pasa una lista a
+después) y un **callback**, la función que se llama cuando vence el plazo, con
+los `kwargs` que se le pasan. El callback se nombra por su ruta de import
+(`módulo.función`) porque no corre dentro de ninguna task: lo importa y lo
+ejecuta otro proceso, el que indica su tipo (más abajo). Pasa una lista a
 `deadline=` para varios plazos.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,

@@ -10,8 +10,8 @@ What you are watching for is **drift**, in three flavours:
 | Drift | What moved | Caught here by |
 |---|---|---|
 | **data drift** | the input distribution — the text itself | `mean_length_shift` in `monitoring.drift_report()` |
-| **target drift** | the label distribution — one tag takes over, or a new tag appears | `label_tvd` (total variation distance) and `new_labels` |
-| **concept drift** | the mapping itself — the same input now deserves a different label | only the live performance check: f1 falls while inputs look unchanged |
+| **target drift** | the label distribution — one tag takes over, or a new tag appears | `label_tvd` (total variation distance: how much the share of each tag changed, from 0 to 1) and `new_labels` |
+| **concept drift** | the relation between input and label — the same input now deserves a different label | only the live performance check: f1 falls while inputs look unchanged |
 
 Concept drift is the one no input-side statistic can see, which is why
 `monitoring.production_performance()` scores recently labelled rows instead of
@@ -23,14 +23,15 @@ A monitoring event has four sensible responses, and
 | Response | When | What happens |
 |---|---|---|
 | **continue** | drift and performance within limits | nothing; keep serving |
-| **improve** | f1 dropped or the input distribution moved | ask a human, then trigger `mlops` |
+| **improve** | f1 dropped, or the input or label distribution moved | ask a human, then trigger `mlops` |
 | **inspect** | an unseen label appeared | stop and page someone — the label space changed |
 | **rollback** | performance collapsed | re-point production at the previous model |
 
 ### Build it
 
 The workload: `monitoring.monitor()` returns a report with a `drift` dict
-(`label_tvd`, `new_labels`, `current_distribution`, …) and a `performance`
+(`label_tvd`, `new_labels`, `mean_length_shift`, `current_distribution`, …)
+and a `performance`
 dict (`f1_at_promotion`, `f1_now`) — or `performance=None` when nothing is
 promoted; `registry.rollback()` re-promotes the previous model.
 
@@ -58,6 +59,9 @@ DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 
 POLICY_PARAMS = {
     "max_label_tvd": Param(0.15, type="number", description="Label-drift budget."),
+    "max_length_shift": Param(
+        0.25, type="number", description="Input-drift budget: relative change in mean text length."
+    ),
     "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
 }
@@ -87,7 +91,10 @@ Measure, then decide:
     def measure() -> dict[str, Any]:
         report = monitoring.monitor()
         drift = report["drift"]
-        print(f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']}")
+        print(
+            f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']} "
+            f"length shift={drift['mean_length_shift']:+.4f}"
+        )
         if report["performance"]:
             perf = report["performance"]
             print(f"f1 at promotion={perf['f1_at_promotion']:.4f} now={perf['f1_now']:.4f}")
@@ -109,18 +116,26 @@ Measure, then decide:
             return "rollback"
         if drift["new_labels"]:
             return "inspect"
-        if f1_drop >= policy["max_f1_drop"] or drift["label_tvd"] >= policy["max_label_tvd"]:
+        if (
+            f1_drop >= policy["max_f1_drop"]                                 # concept drift
+            or drift["label_tvd"] >= policy["max_label_tvd"]                 # target drift
+            or abs(drift["mean_length_shift"]) >= policy["max_length_shift"] # data drift
+        ):
             return "request_retraining"
         return "continue_serving"
 ```
 
 `context["params"]` is the policy — the defaults above, or whatever this run
-was given. Note the ordering: **a new label routes to `inspect`, not to
+was given. Each retraining condition watches one of the three kinds of drift
+in the table. `mean_length_shift` is the relative change in the text's mean
+length (`+0.10` = 10% longer), and it goes through `abs()` because text that
+gets shorter is as much drift as text that gets longer. Note the ordering: **a new label routes to `inspect`, not to
 `request_retraining`.** Retraining on data whose label space you have not understood yet is
 how you ship a worse model with full confidence.
 
 Now the four arms. Three are simple; the fourth is a **human-in-the-loop**
-gate, `ApprovalOperator`, followed by the task that starts another Dag:
+gate (a task that waits for a person to answer), `ApprovalOperator`, followed
+by the task that starts another Dag:
 
 ```python dags/06_monitoring_and_retraining.py
     continue_serving = EmptyOperator(task_id="continue_serving")
@@ -181,7 +196,7 @@ Finish with the wiring:
 monitoring_dag()
 ```
 
-Four arms out of one branch; `decide` returns the `task_id` of the one to run.
+Four arms out of one branch; `decide` returns the `task_id` of the arm to run.
 There is no join at the end, because nothing needs to run after all of them.
 
 ### Run it
@@ -248,10 +263,10 @@ would be one more task in a real version of this Dag:
 |---|---|
 | **labeling** | the new rows need real labels, not the model's own predictions fed back as truth |
 | **active learning** | label the rows that would teach the model most — you rarely have budget for all of them |
-| **QA** | audit the labels before training on them: false positives, labeller disagreement, weak slices |
+| **QA** | audit the labels before training on them: false positives, labeller disagreement, subgroups of the data where the model fails |
 | **augmentation** | expand the new data so a small window is not drowned out by history |
 | **sampling** | up/downsample to fix the imbalance the drift introduced |
-| **evaluation** | build the held-out set to reflect *deployment* conditions |
+| **evaluation** | build the test set to resemble the data the model will see in production |
 
 The other constraint is **catastrophic forgetting**: fitting only on the new
 window makes the model forget patterns it used to get right, so it fixes

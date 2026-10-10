@@ -119,7 +119,7 @@ Inside the function, the tasks. Indent them — they are the body of
     @task
     def make_greeting(**context) -> str:
         greeting = context["params"]["greeting"]
-        when = context.get("logical_date") or "no logical date (manual run)"
+        when = context.get("logical_date") or "no logical date"
         return f"{greeting} from run {context['run_id']} at {when}"
 
     @task

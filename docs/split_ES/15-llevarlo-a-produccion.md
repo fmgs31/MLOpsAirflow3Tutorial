@@ -1,7 +1,8 @@
 ## 15. Llevarlo a producción
 
 **Executors.** `LocalExecutor` es el de por defecto y sirve mientras baste una máquina. Más
-allá: `CeleryExecutor` (pool de workers), `KubernetesExecutor` (un pod por task),
+allá: `CeleryExecutor` (varias máquinas worker que toman tasks de una cola),
+`KubernetesExecutor` (un pod por task),
 o **varios executors** configurados a la vez. También existe el **Edge
 executor**, para workers fuera de tu clúster, algo que es posible gracias a la
 Task Execution API (§3).
@@ -36,8 +37,8 @@ polling.
 nunca en la `uri` o el `extra` de un asset — los extras de asset se guardan en
 texto plano. Usa Connections, Variables o un secrets backend.
 
-**Auth.** Cambia el Simple auth manager por FAB o por un proveedor de identidad
-real antes de que nadie más pueda llegar a la UI.
+**Auth.** Cambia el Simple auth manager por FAB (§2) o por un proveedor de
+identidad real antes de que nadie más pueda llegar a la UI.
 
 **Observabilidad.** Airflow emite sus propias métricas, y esta es la parte que la
 gente se salta hasta que hay un incidente. Tres capas:

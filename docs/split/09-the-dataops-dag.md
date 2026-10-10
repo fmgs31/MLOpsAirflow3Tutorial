@@ -6,9 +6,9 @@ real vendor's tool:
 
 | Task here | Production option |
 |---|---|
-| `extract_projects` | Airbyte / Fivetran / an EL job |
+| `extract_projects` | Airbyte / Fivetran / your own extract-load job |
 | `validate_raw`, `validate_transformed` | Great Expectations / Soda / dbt tests |
-| `transform` | dbt Cloud / astronomer-cosmos |
+| `transform` | dbt Cloud / dbt Core inside Airflow with astronomer-cosmos |
 
 It is also the first Dag here with a real cron — `schedule="0 3 * * *"`, the
 example from §7 — so once you un-pause it in §10 it will run by itself: once
@@ -33,11 +33,12 @@ other scheduled one, at 06:00.) Leave the stack up overnight and the
 ### Build it
 
 The workload this Dag calls, all in `src/tagifai/`: `data.extract()` downloads
-the CSV into the landing zone and returns its path; `data.load_raw(fp)` and
-`data.load_labeled(fp)` read a table; `data.transform(df)` produces the curated
-table and `data.save_labeled(df)` writes it, returning the path;
-`validate.run_suite(df, suite_name)` runs a named set of expectations and
-returns a result with `.passed`, `.failures`, `.results`, `.suite` and a
+the CSV into the *landing zone* (the folder where raw data arrives) and returns
+its path; `data.load_raw(fp)` and `data.load_labeled(fp)` read a table;
+`data.transform(df)` produces the cleaned table and `data.save_labeled(df)`
+writes it, returning the path; `validate.run_suite(df, suite_name)` runs a
+*suite*, a named set of checks on the data (*expectations*, the Great
+Expectations term), and returns a result with `.passed`, `.failures`, `.results`, `.suite` and a
 `.summary()` line. `config.ensure_dirs()` creates the folders.
 
 Create `dags/03_dataops.py`:
@@ -76,12 +77,11 @@ DEFAULT_ARGS = {
 def dataops():
 ```
 
-Two imports are new. `AirflowFailException` comes from `airflow.sdk.exceptions`
-— task code imports exceptions from the Task SDK, because that is the namespace
-a remote worker has. And `from tagifai import …` works only because the
-compose file puts `/opt/airflow/src` on `PYTHONPATH` for every service: the Dag
-processor needs it to parse the file, and the executor needs it to run the
-tasks.
+Two imports are new. `AirflowFailException` comes from `airflow.sdk.exceptions`,
+part of the Task SDK (§4), like everything else this Dag imports from Airflow.
+And `from tagifai import …` works only because the compose file puts
+`/opt/airflow/src` on `PYTHONPATH` for every service: the Dag processor needs it
+to parse the file, and the processes that run the tasks need it too.
 
 `max_active_runs=1` caps the Dag at one run at a time — a second one, from a
 trigger or a schedule, waits in `queued` until the first is done.
@@ -102,7 +102,8 @@ The first task produces an asset. Add it inside `dataops()`:
 metadata attached to the event this task emits when it succeeds. The task returns a **path**, not the dataframe: XComs carry a pointer to the
 data, not the data itself.
 
-Now the gate on the raw data, and the transform:
+Now the *gate* on the raw data — a task that lets the pipeline through only if
+the data passes the suite, and stops it otherwise —, and the transform:
 
 ```python dags/03_dataops.py
     @task
@@ -189,8 +190,9 @@ dataops()
 Read the wiring twice. `transform` takes `raw_fp`, so data flow draws its edge
 from `extract_projects` — but nothing it consumes comes from `validate_raw`, so
 `raw_report >> curated_fp` adds the edge by hand: the transform must wait for
-the gate even though it does not use its output. That is the §6 rule in
-practice — implicit edges when data flows, `>>` when only the order matters.
+the gate even though it does not use its output. Those are the first and
+second ways from §6: implicit edges when data flows, `>>` when only the order
+matters.
 
 ### See the assets appear
 
@@ -234,8 +236,9 @@ If a task fails, compare with [`solutions/03_dataops.py`](../../solutions/03_dat
 ### Backfills
 
 Now that you have a Dag with a schedule, backfills make sense. A backfill
-creates the runs for every slice in a date range, after the fact. They are
-first-class objects, with their own API, UI form and reprocess policy.
+creates the runs for every slice in a date range, after the fact. In Airflow a
+backfill is an object of its own, with its own API, UI form and reprocess
+policy (further down).
 **Dry-run it first** — a backfill over the wrong date range is the easiest way
 to create thirty runs by accident:
 
@@ -252,8 +255,8 @@ Drop `--dry-run` and the same command creates those three runs, with run ids
 beginning `backfill__`. Know what follows before you do it:
 
 - The runs are created **queued**, and if the Dag is paused they stay that way
-  — the §7 rule — until you un-pause it, when they all start,
-  `--max-active-runs` at a time.
+  — the §7 rule — until you un-pause it. Then they start, at most as many at
+  a time as `backfill create`'s `--max-active-runs` option says.
 - Every `dataops` backfill run that succeeds emits a `labeled_projects` asset
   event exactly as a normal run does (§8), so an un-paused `mlops` trains after
   them. Backfilling a producer also triggers runs of its consumers.
@@ -279,7 +282,9 @@ Connections, from the CLI, or as an `AIRFLOW_CONN_*` environment variable; the
 Dag only ever names it:
 
 ```bash
-docker compose exec airflow-scheduler airflow connections add airbyte     --conn-type airbyte --conn-host https://airbyte.example.com/api/public/v1/     --conn-login <client-id> --conn-password <client-secret>
+docker compose exec airflow-scheduler airflow connections add airbyte \
+    --conn-type airbyte --conn-host https://airbyte.example.com/api/public/v1/ \
+    --conn-login <client-id> --conn-password <client-secret>
 ```
 
 ```python

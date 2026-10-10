@@ -34,7 +34,8 @@ tasks hand values to each other.
 **XComs** ("cross-communications") are how tasks pass small values. They are
 stored in the metadata database, but a task never accesses the metadata
 database directly: it reads and writes XComs by asking the API server, through
-the Task Execution API (§3). TaskFlow used them implicitly in §4: every
+the Task Execution API (§3). §4's `@task` functions already used them, out of
+sight: every
 `return` was an XCom push, every argument an XCom pull. With operators you push and pull explicitly.
 
 Create `dags/02_operators_and_xcoms.py` with the imports and two plain Python
@@ -126,7 +127,7 @@ below `multiply`:
     describe = BashOperator(
         task_id="describe",
         bash_command=(
-            'echo "run={{ run_id }} ds={{ ds | default(\'none (manual run)\') }} '
+            'echo "run={{ run_id }} ds={{ ds | default(\'none\') }} '
             'run_after={{ dag_run.run_after }} '
             'product={{ ti.xcom_pull(task_ids=\'multiply\', key=\'product\') }}"'
         ),
@@ -166,15 +167,35 @@ Three things to know about templates:
 3. **A `@task` function rarely needs this.** It receives the context as
    Python (`**context`, or a named argument like `ti`), so templating is mostly
    an operator concern. The arguments you pass when calling a `@task` are
-   rendered, though: TaskFlow hands them to the task through template fields,
-   so `show("run={{ run_id }}")` receives the real run id.
+   rendered, though: the `@task` decorator turns the function into an
+   operator, stores those arguments in its `op_args` and `op_kwargs`
+   attributes, and names both in its `template_fields`. If `show` is
+   a `@task` function that prints its argument, `show("run={{ run_id }}")`
+   prints the real run id.
 
-The `| default(...)` on `ds` is the template equivalent of `.get()` in §4:
+The `| default(...)` on `ds` does in the template what `.get()` did in §4.
 `ds` is derived from `logical_date`, and an asset-triggered run, or one
-triggered from the CLI without a logical date, has none. Without the default the task fails with `UndefinedError: 'ds' is
-undefined` while rendering, before it executes — and, as with `KeyError`,
-`airflow dags test` never shows it. §7 is where both traps are explained;
-`{{ dag_run.run_after }}` is the safe alternative, because every run has one.
+triggered from the CLI without a logical date, has none. Without the default,
+the task fails while rendering the template, before it executes, with
+`UndefinedError: 'ds' is undefined`. `airflow dags test` never shows this
+failure, for the same reason it never shows the `KeyError` from §4: it always
+gives the run a logical date. §7 explains why some runs have no logical date.
+
+If all you need is a date for the run, to name a file for example, use
+`{{ dag_run.run_after }}` instead of `ds`: every run has a `run_after`, so no
+default is needed. It is not always the same date as the logical date; §7
+explains when they differ.
+
+A template field can also hold the name of a file instead of the template.
+Each operator declares in `template_ext` the extensions it recognises —
+`BashOperator` declares `(".sh", ".bash")` —, and when the value ends in one of
+them, Airflow looks for that file next to the Dag file and renders its
+contents. With `bash_command="describe.sh"`, the task runs `describe.sh` with
+its `{{ run_id }}` already filled in. That way a long script or SQL query lives
+in its own file, not in a string inside the Dag. A `@task` does the same with
+two decorator arguments: `@task(templates_exts=[".sql"],
+templates_dict={"query": "query.sql"})` passes the function, in its
+`templates_dict` parameter, the rendered contents of `query.sql`.
 
 Now a TaskFlow task in the same Dag, reading an operator's XCom:
 
@@ -191,8 +212,8 @@ and vice versa, and the same `ti.xcom_pull` works from either side.
 
 ### Relationships
 
-Nothing above is connected yet. An edge between two tasks is declared one of
-five ways, and this Dag uses the last four. Finish the file with the wiring:
+Nothing above is connected yet. Finish the file with the remaining tasks and
+the edges between them all:
 
 ```python dags/02_operators_and_xcoms.py
     chain(start, push_seed, Label("seed -> product"), multiply, describe)
@@ -222,11 +243,14 @@ operators_and_xcoms()
 XCom and check it with `test`, which exits with an error when the condition is
 false, and that fails the task.
 
+An edge between two tasks is declared one of five ways, and this code uses the
+last four:
+
 1. **Implicitly, by passing one task's output to another.** §4's Dag was made
    of it: a `@task` called with another task's return value. An operator's
    output works too — `describe.output` passed as an argument would draw the
-   same edge. Here `taskflow_reader` takes no argument, so nothing draws its
-   edge for it.
+   same edge. Here `taskflow_reader` takes no argument, so its edge from
+   `describe` has to be declared the second way.
 2. **The shift operators**, when no data flows — `describe >> product` is
    "describe, then product". `>>` only sets the order: it passes nothing to the
    downstream task, which is why the checks read their value from XCom.
@@ -265,9 +289,9 @@ group to every task in the next.
 docker compose exec airflow-scheduler airflow dags test operators_and_xcoms
 ```
 
-**Checkpoint.** The `describe` task's line, `run=manual__… ds=… run_after=… product=42`,
-then `TaskFlow saw product=42` from the reader, and `even` and `under 100` from
-the checks. Then open the Dag's **Graph**
+**Checkpoint.** In the output, look for the `describe` task's line,
+`run=manual__… ds=… run_after=… product=42`, then `TaskFlow saw product=42`
+from `taskflow_reader`, and `even` and `under 100` from the checks. Then open the Dag's **Graph**
 view in the UI: the `seed -> product` label on one edge, a two-way fan-out into
 `check_parity`/`check_range`, and those two fanning into `checks_done`,
 `publish` and `notify`. If the graph does not match, compare with
@@ -285,22 +309,33 @@ templates, as the third point under *Templates* says.
 A class is worth its extra code when the step needs something a function does
 not get:
 
-- **Arguments checked when the file is parsed.** `__init__` runs at parse
-  time, so a missing or invalid argument shows up as an import error in the UI
-  as soon as the file is saved, not as a task failure hours later.
-- **Hooks into the task's lifecycle.** `on_kill` runs when the task is
-  stopped, so it can cancel the job the task started on an external system;
-  `self.defer(...)` hands the wait to the triggerer, which is how the
-  deferrable operators in §11 are built.
-- **Settings Airflow and the UI read from the class.** `template_ext` makes
-  Airflow render a file named in an argument — a `.sql` file, say — and
-  `operator_extra_links` adds a button that opens the run in the external
-  system.
+- **Argument values checked when the file is parsed.** A `@task` call already
+  fails at parse time when an argument is missing, but it cannot look at the
+  values. An operator's `__init__` runs every time the operator is
+  instantiated, and the Dag processor instantiates every operator in the Dag
+  each time it parses the file. Since `__init__` can run any check, a wrong
+  value shows up as an import error in the UI as soon as the Dag processor
+  parses the file again (§3), not as a task failure hours later.
+- **Methods Airflow calls while the task runs.** `on_kill` runs when the task
+  is stopped (for example, when you mark the task instance as failed in the
+  UI), so it can cancel the work the task started on another service, such as
+  a BigQuery query. `self.defer(...)` suspends the task and hands the wait to
+  the triggerer (§3); that is how the deferrable operators in §11 are built.
+- **Buttons of its own in the UI.** `operator_extra_links`, a class
+  attribute, adds an **Extra Links** section to the task instance view in the
+  UI, with one button per link. Each link is a `BaseOperatorLink` subclass
+  whose `get_link` method computes the URL for each task instance, usually the
+  page of the job the task started on the service it talks to: the Databricks
+  job, the BigQuery query. None of the classes underneath a `@task`
+  (`_PythonDecoratedOperator`, `PythonOperator`, `BaseOperator`) accepts it as
+  an argument — `@task(operator_extra_links=...)` fails with `TypeError` —, and
+  neither does any operator from the providers installed in this stack. Buttons
+  of your own take a class of your own.
 
-That is why every provider's operator is a class. The training step below
-needs none of those; it shows the shape of an operator, using three things
-this Dag already showed: arguments given when the operator is instantiated,
-`template_fields`, and a returned value becoming an XCom.
+Provider operators need these, which is why they are classes. The training
+step below needs the first one. It takes a threshold, `min_f1`, and fails when
+the model's f1 (its quality metric, from 0 to 1) falls below it. A threshold typed as `65` instead of `0.65` should
+be caught when the file is saved, not after a training run:
 
 ```python
 from airflow.sdk import BaseOperator
@@ -311,25 +346,36 @@ from tagifai import train as train_module
 class TagifaiTrainOperator(BaseOperator):
     template_fields = ("experiment_name",)
 
-    def __init__(self, *, experiment_name: str, **kwargs) -> None:
+    def __init__(self, *, experiment_name: str, min_f1: float, **kwargs) -> None:
         super().__init__(**kwargs)          # task_id, retries, ... go to BaseOperator
+        if not 0 < min_f1 <= 1:             # runs at parse time
+            raise ValueError(f"min_f1 must be between 0 and 1, got {min_f1}")
         self.experiment_name = experiment_name
+        self.min_f1 = min_f1
 
     def execute(self, context):
         print(f"experiment={self.experiment_name}")   # already rendered here
         _, metrics = train_module.train_from_files()
+        if metrics["f1"] < self.min_f1:
+            raise ValueError(f"f1={metrics['f1']:.4f} is below min_f1={self.min_f1}")
         return metrics["f1"]                # pushed as an XCom
 ```
 
 A Dag instantiates it like any other operator:
 
 ```python
-train = TagifaiTrainOperator(task_id="train", experiment_name="tagifai_{{ run_id }}")
+train = TagifaiTrainOperator(
+    task_id="train",
+    experiment_name="tagifai_{{ run_id }}",
+    min_f1=0.65,
+)
 ```
 
-`__init__` runs when the Dag file is parsed and only stores the arguments.
-`execute` runs when the task instance runs, after Airflow has rendered every
-attribute named in `template_fields` — so `self.experiment_name` holds
+`__init__` runs when the Dag file is parsed: it checks `min_f1` and stores the
+arguments. With `min_f1=65` the Dag does not load at all, and the UI shows the
+import error `ValueError: min_f1 must be between 0 and 1, got 65`. `execute`
+runs when the task instance runs, after Airflow has rendered every attribute
+named in `template_fields` — so `self.experiment_name` holds
 `tagifai_manual__…`, not the braces. Whatever `execute` returns is pushed as an
 XCom, exactly like a `@task` function's `return`.
 
@@ -342,21 +388,29 @@ attribute from `self`, renders it, and writes the result back. It is declared
 on the class rather than passed to `super().__init__()` because it describes
 the operator type, the same for every instance; a subclass extends its
 parent's list with `template_fields = (*Parent.template_fields, "new_field")`.
+`min_f1` stays out of `template_fields` on purpose: a template is still
+unrendered text at parse time, so `__init__` could not check it.
 
-The same step as a `@task`:
+The same step as a `@task` can only run the check inside the function:
 
 ```python
 @task
-def train(experiment_name: str) -> float:
+def train(experiment_name: str, min_f1: float) -> float:
+    if not 0 < min_f1 <= 1:                       # runs only when the task runs
+        raise ValueError(f"min_f1 must be between 0 and 1, got {min_f1}")
     print(f"experiment={experiment_name}")        # rendered before the call
     _, metrics = train_module.train_from_files()
+    if metrics["f1"] < min_f1:
+        raise ValueError(f"f1={metrics['f1']:.4f} is below min_f1={min_f1}")
     return metrics["f1"]
 
-train(experiment_name="tagifai_{{ run_id }}")
+train(experiment_name="tagifai_{{ run_id }}", min_f1=0.65)
 ```
 
-Both give one task with the same rendered name and the same XCom, and for this
-step the `@task` is the better choice — it is what this repo uses throughout.
+With `min_f1=65` this Dag loads without errors, and the mistake shows up only
+when a run reaches `train`. That difference is the whole reason for the class.
+A step with no such need is better as a `@task`, which is what this repo uses
+throughout.
 
 **Why `BaseOperator` and not `PythonOperator`?** `BaseOperator` is the class
 every operator derives from: it holds what all tasks share (`task_id`,
@@ -371,16 +425,18 @@ which is why the logs call `taskflow_reader` a `_PythonDecoratedOperator`.
 
 An operator is a whole task that does one fixed thing: `SQLExecuteQueryOperator`
 runs a query, `SqlToS3Operator` copies a query's result into a file on S3. A
-**hook** is the client underneath an operator. It takes a `conn_id`, looks up
-that Connection, builds the authenticated client, and gives you methods to call
-— `PostgresHook.get_df` runs a query and returns a dataframe,
-`S3Hook.load_string` writes a string to S3. Every operator that talks to an
-outside system does it through a hook.
+**hook** is the client underneath an operator. It takes a `conn_id` — the name
+of a **Connection**, the credentials for a service that Airflow stores under
+that name (explained further down) —, builds the authenticated client, and
+gives you methods to call — `PostgresHook.get_df` runs a query and returns a
+dataframe, `S3Hook.load_string` writes a string to S3. Every operator that
+talks to a service outside Airflow (a database, S3, an API) does it through a
+hook.
 
 You call a hook yourself, inside a `@task`, when one task has to make several
 calls with your own code in between — something no single operator does. None
-of the tutorial's Dags needs one, so here is what it would look like with the
-warehouse on Postgres and the exports on S3:
+of the tutorial's Dags needs one. The example assumes the projects live in a
+Postgres database and the task exports a CSV to S3:
 
 ```python
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
@@ -403,7 +459,7 @@ def export_labeled_projects(day: str) -> str:
 The task names two Connections, `warehouse` and `aws_default`, and never a
 password. If the step were only "copy the query's result to S3",
 `SqlToS3Operator` would do it as one task with no code; the hook version is for
-when your own logic sits in the middle. A system with no hook can still use a
+when your own logic sits in the middle. A service with no hook can still use a
 Connection: `BaseHook`, the class every hook derives from, has
 `BaseHook.get_connection("warehouse")`, which returns the Connection itself —
 host, login, password, extra — for you to pass to any client library.

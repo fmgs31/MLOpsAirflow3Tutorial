@@ -122,7 +122,7 @@ Dentro de la función, las tasks. Indéntalas — son el cuerpo de
     @task
     def make_greeting(**context) -> str:
         greeting = context["params"]["greeting"]
-        when = context.get("logical_date") or "no logical date (manual run)"
+        when = context.get("logical_date") or "no logical date"
         return f"{greeting} from run {context['run_id']} at {when}"
 
     @task

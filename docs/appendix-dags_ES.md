@@ -126,12 +126,13 @@ def hello_airflow3():
         # dag_run, ds, data_interval_start/end, var, conn, macros.
         #
         # Read `logical_date` with `.get()`, never `context["logical_date"]`:
-        # a manual or asset-triggered run has no logical date, and the key is
-        # then missing from the context entirely - indexing it raises KeyError
-        # at runtime while `airflow dags test` (which always supplies one)
-        # stays green. `run_id` is always there; prefer it for naming things.
+        # a run triggered by an asset, or from the CLI without `-l`, has no
+        # logical date, and the key is then missing from the context entirely -
+        # indexing it raises KeyError at runtime while `airflow dags test`
+        # (which always supplies one) stays green. `run_id` is always there;
+        # prefer it for naming things.
         greeting = context["params"]["greeting"]
-        when = context.get("logical_date") or "no logical date (manual run)"
+        when = context.get("logical_date") or "no logical date"
         return f"{greeting} from run {context['run_id']} at {when}"
 
     @task
@@ -246,8 +247,9 @@ def operators_and_xcoms():
     # just before the task runs, so `{{ run_id }}`, `{{ ds }}` and
     # `{{ ti.xcom_pull(...) }}` are filled in with this run's values.
     #
-    # Careful with `ds`: it is derived from `logical_date`, and a manual or
-    # asset-triggered run has none. The variable is then *undefined* and the
+    # Careful with `ds`: it is derived from `logical_date`, and a run triggered
+    # by an asset, or from the CLI without `-l`, has none. The variable is then
+    # *undefined* and the
     # task fails with `UndefinedError: 'ds' is undefined` while rendering.
     # `airflow dags test` always supplies a logical date, so this only shows up
     # once a real trigger reaches it. Guard it with `default`, or template
@@ -255,7 +257,7 @@ def operators_and_xcoms():
     describe = BashOperator(
         task_id="describe",
         bash_command=(
-            'echo "run={{ run_id }} ds={{ ds | default(\'none (manual run)\') }} '
+            'echo "run={{ run_id }} ds={{ ds | default(\'none\') }} '
             'run_after={{ dag_run.run_after }} '
             'product={{ ti.xcom_pull(task_ids=\'multiply\', key=\'product\') }}"'
         ),
@@ -811,6 +813,9 @@ DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 #     airflow dags test monitoring --conf '{"max_label_tvd": 0.0}'
 POLICY_PARAMS = {
     "max_label_tvd": Param(0.15, type="number", description="Label-drift budget."),
+    "max_length_shift": Param(
+        0.25, type="number", description="Input-drift budget: relative change in mean text length."
+    ),
     "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
 }
@@ -832,7 +837,10 @@ def monitoring_dag():
     def measure() -> dict[str, Any]:
         report = monitoring.monitor()
         drift = report["drift"]
-        print(f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']}")
+        print(
+            f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']} "
+            f"length shift={drift['mean_length_shift']:+.4f}"
+        )
         if report["performance"]:
             perf = report["performance"]
             print(f"f1 at promotion={perf['f1_at_promotion']:.4f} now={perf['f1_now']:.4f}")
@@ -856,7 +864,11 @@ def monitoring_dag():
             # An unseen label means the schema/label space moved. Retraining on
             # data you do not understand yet is how you ship a worse model.
             return "inspect"
-        if f1_drop >= policy["max_f1_drop"] or drift["label_tvd"] >= policy["max_label_tvd"]:
+        if (
+            f1_drop >= policy["max_f1_drop"]                                 # concept drift
+            or drift["label_tvd"] >= policy["max_label_tvd"]                 # target drift
+            or abs(drift["mean_length_shift"]) >= policy["max_length_shift"] # data drift
+        ):
             return "request_retraining"
         return "continue_serving"
 

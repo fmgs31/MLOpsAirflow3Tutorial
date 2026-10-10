@@ -2,7 +2,7 @@
 
 **Executors.** `LocalExecutor` is the default and is fine as long as one machine
 is enough.
-Beyond that: `CeleryExecutor` (worker pool), `KubernetesExecutor` (a pod per
+Beyond that: `CeleryExecutor` (several worker machines taking tasks from a queue), `KubernetesExecutor` (a pod per
 task), or **multiple executors** configured together. There is also the **Edge
 executor**, for workers outside your cluster, which the Task Execution API (§3)
 makes possible.
@@ -36,7 +36,7 @@ processor's job is to parse, not to poll.
 `uri` or `extra` — asset extras are stored in cleartext. Use Connections,
 Variables, or a secrets backend.
 
-**Auth.** Swap the Simple auth manager for FAB or a real identity provider
+**Auth.** Swap the Simple auth manager for FAB (§2) or a real identity provider
 before anyone else can reach the UI.
 
 **Observability.** Airflow emits its own metrics, and this is the part people

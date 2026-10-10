@@ -51,12 +51,13 @@ def hello_airflow3():
         # dag_run, ds, data_interval_start/end, var, conn, macros.
         #
         # Read `logical_date` with `.get()`, never `context["logical_date"]`:
-        # a manual or asset-triggered run has no logical date, and the key is
-        # then missing from the context entirely - indexing it raises KeyError
-        # at runtime while `airflow dags test` (which always supplies one)
-        # stays green. `run_id` is always there; prefer it for naming things.
+        # a run triggered by an asset, or from the CLI without `-l`, has no
+        # logical date, and the key is then missing from the context entirely -
+        # indexing it raises KeyError at runtime while `airflow dags test`
+        # (which always supplies one) stays green. `run_id` is always there;
+        # prefer it for naming things.
         greeting = context["params"]["greeting"]
-        when = context.get("logical_date") or "no logical date (manual run)"
+        when = context.get("logical_date") or "no logical date"
         return f"{greeting} from run {context['run_id']} at {when}"
 
     @task
