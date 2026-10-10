@@ -21,6 +21,10 @@ LABELED_PROJECTS = Asset(
 )
 ```
 
+`name` es lo que identifica al asset. `group` y `extra` son descripciones que
+la UI enseña en la página del asset; este `extra` describe el asset en sí, no
+un evento concreto.
+
 El lado productor es lo que escribirás en la §9 — fíjate en que el outlet va en
 la task de **validación**, no en la de transform:
 
@@ -36,7 +40,9 @@ def validate_transformed(fp: str, *, outlet_events) -> dict:
 ```
 
 `outlet_events` se inyecta por nombre, como `ti` en la §6, y permite a la task
-adjuntar un dict `extra` al evento que está a punto de emitir.
+adjuntar un dict `extra` al evento que está a punto de emitir — un `extra`
+distinto en cada evento, a diferencia del `extra` fijo del asset.
+`AirflowFailException` hace fallar la task sin reintentos; la §9 lo explica.
 
 Y el lado consumidor, §10, donde `triggering_asset_events` — también inyectado
 por nombre — contiene los eventos que arrancaron el run:
@@ -53,27 +59,30 @@ def mlops():
 
 Esa es la idea en una línea: **los Dags aguas abajo se programan con "llegaron
 datos buenos", nunca con "terminó una task" y nunca con una adivinanza de cron.**
-El evento incluso lleva el recuento de filas que lo causó.
+El evento incluso lleva el número de filas que validó la task.
 
 Más maquinaria de assets que conviene conocer:
 
 | Funcionalidad | Qué hace |
 |---|---|
 | `AssetAny(a, b)` / `AssetAll(a, b)` | condiciones OR / AND en un `schedule` |
-| `AssetAlias` | outlets cuya URI solo se conoce en runtime |
+| `AssetAlias` | un outlet cuyo asset concreto decide la task mientras corre (por ejemplo, uno por fecha) |
 | `@asset` / `@asset.multi` | define asset + Dag + task en un solo decorador |
-| `Metadata(asset, {...})` | adjunta metadatos haciendo yield desde la task |
+| `Metadata(asset, {...})` | otra forma de poner el `extra` de un evento: la task hace `yield Metadata(...)` en vez de usar `outlet_events` |
 | `AssetWatcher` + `BaseEventTrigger` | runs **event-driven** (§11) |
-| `CronPartitionTimetable` | assets particionados |
+| `CronPartitionTimetable` | un cron que crea runs por partición: cada run lleva una clave (por ejemplo, una fecha) que dice qué trozo de los datos le toca |
 
-Aquí los assets son **solo nombre**, lo que mantiene su identidad igual en Docker
-y en runs nativos. En producción dales la URI real de los datos (`s3://…`,
-`bq://…`) para que el lineage en la UI apunte a algún sitio.
+Aquí los assets son **solo nombre**. Un asset también puede tener una **URI**,
+la dirección de sus datos reales (`s3://bucket/labeled_projects.csv`, por
+ejemplo). Este tutorial no le pone ninguna porque la ruta de `data/` no es la
+misma dentro del contenedor que en la instalación nativa de la §2. En
+producción dale a cada asset la URI de sus datos, para que la UI diga dónde
+están.
 
 Un asset existe a ojos de Airflow solo cuando un Dag parseado se refiere a él —
 como outlet o como schedule. Ahora mismo `airflow assets list` imprime `No data
-found`, y la página Assets está vacía; la §9 cambia eso en cuanto guardes un
-archivo.
+found`, y la página Assets está vacía; la §9 cambia eso en cuanto el Dag
+processor parsee el primer archivo que guardes allí.
 
 ### Qué es en realidad un asset event
 

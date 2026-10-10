@@ -11,8 +11,8 @@ Lo que estás vigilando es el **drift**, de tres tipos:
 | Drift | Qué se movió | Aquí lo detecta |
 |---|---|---|
 | **data drift** | la distribución de entrada — el texto en sí | `mean_length_shift` en `monitoring.drift_report()` |
-| **target drift** | la distribución de etiquetas — un tag domina, o aparece uno nuevo | `label_tvd` (total variation distance) y `new_labels` |
-| **concept drift** | el propio mapeo — la misma entrada ahora merece otra etiqueta | solo la comprobación de rendimiento en vivo: el f1 cae mientras las entradas parecen iguales |
+| **target drift** | la distribución de etiquetas — un tag domina, o aparece uno nuevo | `label_tvd` (total variation distance: cuánto cambió la proporción de los tags, de 0 a 1) y `new_labels` |
+| **concept drift** | la relación entre entrada y etiqueta — la misma entrada ahora merece otra etiqueta | solo la comprobación de rendimiento en vivo: el f1 cae mientras las entradas parecen iguales |
 
 El concept drift es el que ninguna estadística del lado de la entrada puede ver,
 y por eso `monitoring.production_performance()` puntúa filas etiquetadas
@@ -24,14 +24,15 @@ Un evento de monitorización tiene cuatro respuestas sensatas, y
 | Respuesta | Cuándo | Qué pasa |
 |---|---|---|
 | **continue** | drift y rendimiento dentro de los límites | nada; seguimos sirviendo |
-| **improve** | el f1 bajó o la distribución de entrada se movió | preguntar a una persona, y luego disparar `mlops` |
+| **improve** | el f1 bajó, o se movió la distribución de entrada o la de etiquetas | preguntar a una persona, y luego disparar `mlops` |
 | **inspect** | apareció una etiqueta no vista | parar y avisar a alguien — el espacio de etiquetas cambió |
 | **rollback** | el rendimiento se desplomó | volver a apuntar producción al modelo anterior |
 
 ### Constrúyelo
 
 La carga de trabajo: `monitoring.monitor()` devuelve un informe con un dict
-`drift` (`label_tvd`, `new_labels`, `current_distribution`, …) y un dict
+`drift` (`label_tvd`, `new_labels`, `mean_length_shift`, `current_distribution`,
+…) y un dict
 `performance` (`f1_at_promotion`, `f1_now`) — o `performance=None` cuando no hay
 nada promocionado; `registry.rollback()` vuelve a promocionar el modelo
 anterior.
@@ -60,6 +61,9 @@ DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 
 POLICY_PARAMS = {
     "max_label_tvd": Param(0.15, type="number", description="Label-drift budget."),
+    "max_length_shift": Param(
+        0.25, type="number", description="Input-drift budget: relative change in mean text length."
+    ),
     "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
 }
@@ -89,7 +93,10 @@ Medir, y luego decidir:
     def measure() -> dict[str, Any]:
         report = monitoring.monitor()
         drift = report["drift"]
-        print(f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']}")
+        print(
+            f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']} "
+            f"length shift={drift['mean_length_shift']:+.4f}"
+        )
         if report["performance"]:
             perf = report["performance"]
             print(f"f1 at promotion={perf['f1_at_promotion']:.4f} now={perf['f1_now']:.4f}")
@@ -111,19 +118,26 @@ Medir, y luego decidir:
             return "rollback"
         if drift["new_labels"]:
             return "inspect"
-        if f1_drop >= policy["max_f1_drop"] or drift["label_tvd"] >= policy["max_label_tvd"]:
+        if (
+            f1_drop >= policy["max_f1_drop"]                                 # concept drift
+            or drift["label_tvd"] >= policy["max_label_tvd"]                 # target drift
+            or abs(drift["mean_length_shift"]) >= policy["max_length_shift"] # data drift
+        ):
             return "request_retraining"
         return "continue_serving"
 ```
 
 `context["params"]` es la política — los defaults de arriba, o lo que se le haya
-dado a este run. Fíjate en el orden: **una etiqueta nueva enruta a `inspect`, no
+dado a este run. Cada condición de reentrenamiento vigila uno de los tres tipos
+de drift de la tabla. `mean_length_shift` es el cambio relativo de la longitud
+media del texto (`+0.10` = un 10 % más largo), y va con `abs()` porque un texto
+que se acorta es tanto drift como uno que se alarga. Fíjate en el orden: **una etiqueta nueva enruta a `inspect`, no
 a `request_retraining`.** Reentrenar con datos cuyo espacio de etiquetas todavía no has
 entendido es la forma de publicar un modelo peor con plena confianza.
 
-Ahora las cuatro ramas. Tres son simples; el cuarto es un gate
-**human-in-the-loop**, `ApprovalOperator`, seguido de la task que arranca otro
-Dag:
+Ahora las cuatro ramas. Tres son simples; la cuarta es un gate
+**human-in-the-loop** (una task que espera a que una persona responda),
+`ApprovalOperator`, seguido de la task que arranca otro Dag:
 
 ```python dags/06_monitoring_and_retraining.py
     continue_serving = EmptyOperator(task_id="continue_serving")
@@ -184,8 +198,8 @@ Termina con el cableado:
 monitoring_dag()
 ```
 
-Cuatro ramas a partir de un branch; `decide` devuelve el `task_id` del que hay
-que ejecutar. No hay join al final, porque nada tiene que correr después de
+Cuatro ramas a partir de un branch; `decide` devuelve el `task_id` de la rama
+que hay que ejecutar. No hay join al final, porque nada tiene que correr después de
 todos ellos.
 
 ### Ejecútalo
@@ -254,10 +268,10 @@ este Dag:
 |---|---|
 | **labeling** | las filas nuevas necesitan etiquetas reales, no las predicciones del propio modelo realimentadas como verdad |
 | **active learning** | etiqueta las filas que más enseñarían al modelo — rara vez hay presupuesto para todas |
-| **QA** | audita las etiquetas antes de entrenar con ellas: falsos positivos, desacuerdo entre etiquetadores, slices débiles |
+| **QA** | audita las etiquetas antes de entrenar con ellas: falsos positivos, desacuerdo entre etiquetadores, subgrupos de datos donde el modelo falla |
 | **augmentation** | amplía los datos nuevos para que una ventana pequeña no quede ahogada por el histórico |
 | **sampling** | sube/baja muestreo para arreglar el desbalanceo que introdujo el drift |
-| **evaluation** | construye el conjunto held-out para que refleje las condiciones de *deployment* |
+| **evaluation** | construye el conjunto de test para que se parezca a los datos que verá el modelo en producción |
 
 La otra restricción es el **catastrophic forgetting**: ajustar solo sobre la ventana
 nueva hace que el modelo olvide patrones que antes acertaba, así que corrige los

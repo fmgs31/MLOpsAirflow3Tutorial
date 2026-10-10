@@ -20,6 +20,10 @@ LABELED_PROJECTS = Asset(
 )
 ```
 
+`name` is what identifies the asset. `group` and `extra` are descriptions the
+UI shows on the asset's page; this `extra` describes the asset itself, not any
+one event.
+
 The producer side is what you will write in §9 — note that the outlet goes on
 the **validation** task, not the transform task:
 
@@ -35,7 +39,9 @@ def validate_transformed(fp: str, *, outlet_events) -> dict:
 ```
 
 `outlet_events` is injected by name, like `ti` in §6, and lets the task attach
-an `extra` dict to the event it is about to emit.
+an `extra` dict to the event it is about to emit — a different `extra` on each
+event, unlike the asset's fixed one. `AirflowFailException` fails the task
+without retries; §9 explains it.
 
 And the consumer side, §10, where `triggering_asset_events` — also injected by
 name — holds the events that started the run:
@@ -52,26 +58,29 @@ def mlops():
 
 That is the idea in one line: **downstream Dags are scheduled on "good data
 arrived", never on "a task finished" and never on a cron guess.** The event even
-carries the row count that caused it.
+carries the number of rows the task validated.
 
 More asset machinery worth knowing:
 
 | Feature | What it does |
 |---|---|
 | `AssetAny(a, b)` / `AssetAll(a, b)` | OR / AND conditions in a `schedule` |
-| `AssetAlias` | outlets whose URI is only known at runtime |
+| `AssetAlias` | an outlet whose actual asset the task decides while it runs (one per date, say) |
 | `@asset` / `@asset.multi` | define asset + Dag + task in one decorator |
-| `Metadata(asset, {...})` | attach metadata by yielding from the task |
+| `Metadata(asset, {...})` | another way to set an event's `extra`: the task does `yield Metadata(...)` instead of using `outlet_events` |
 | `AssetWatcher` + `BaseEventTrigger` | **event-driven** runs (§11) |
-| `CronPartitionTimetable` | partitioned assets |
+| `CronPartitionTimetable` | a cron that creates runs per partition: each run carries a key (a date, say) that says which slice of the data it is for |
 
-Assets here are **name-only**, which keeps their identity the same in Docker and
-native runs. In production give them the real URI of the data (`s3://…`,
-`bq://…`) so the lineage in the UI points somewhere.
+Assets here are **name-only**. An asset can also have a **URI**, the address
+of its real data (`s3://bucket/labeled_projects.csv`, say). This tutorial
+gives them none because the path of `data/` is not the same inside the
+container as in §2's native install. In production give each asset the URI of
+its data, so the UI says where it lives.
 
 An asset exists in Airflow's eyes only once a parsed Dag refers to it — as an
 outlet or a schedule. Right now `airflow assets list` prints `No data found`,
-and the Assets page is empty; §9 changes that the moment you save a file.
+and the Assets page is empty; §9 changes that as soon as the Dag processor
+parses the first file you save there.
 
 ### What an asset event actually is
 

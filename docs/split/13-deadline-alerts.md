@@ -43,8 +43,10 @@ def deadline_alerts():
 ```
 
 Three pieces: a **reference** (where the clock starts), an **interval** (how
-long after it), and a **callback** — named as a dotted path, because it runs
-somewhere other than the task, with `kwargs` passed through. Pass a list to
+long after it), and a **callback**, the function called when the deadline
+passes, with the `kwargs` passed to it. The callback is named by its import
+path (`module.function`) because it does not run inside any task: another
+process imports and runs it, the one its type says (below). Pass a list to
 `deadline=` for several deadlines.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,

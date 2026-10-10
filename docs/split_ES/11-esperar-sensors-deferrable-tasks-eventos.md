@@ -118,8 +118,9 @@ arranca enseguida, a la vez que `settle`, y `proceed` espera tanto a
 `wait_for_curated_data` como a `enough_rows`.
 
 Una opción más elimina la espera del todo: el **event-driven scheduling**. No va
-en el archivo, porque necesita una cola que no tienes. Engancha un watcher a un
-asset y un evento externo arranca el run; nada hace polling, nada ocupa un slot:
+en el archivo, porque necesita una cola de mensajes (como Amazon SQS) que no
+tienes. Engancha a un asset un *watcher* (un trigger que vigila la cola) y cada
+mensaje que llega arranca un run; nada hace polling, nada ocupa un slot:
 
 ```python
 from airflow.providers.common.messaging.triggers.msg_queue import MessageQueueTrigger
@@ -194,7 +195,7 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
 docker compose exec airflow-scheduler airflow dags test sensors_and_events
 ```
 
-Este no vuelve. Ambos sensors están en `mode="reschedule"`, así que sus task
+Esta vez el comando no termina. Ambos sensors están en `mode="reschedule"`, así que sus task
 instances **salen entre pokes** en vez de retener un slot, y pasan a
 `up_for_reschedule` — el estado que la §3 da para un sensor entre pokes. El run lo
 anuncia cada segundo:
@@ -223,8 +224,9 @@ defecto habría ocupado un slot todo ese tiempo sin hacer nada, y esa es
 precisamente la razón por la que existen los otros dos modos.
 
 **Regla práctica:** segundos → un poking sensor vale. Minutos u horas →
-deferrable, o estás pagando un worker slot para dormir. Un sistema externo capaz
-de hacer push → un `AssetWatcher`, y ninguna task espera.
+deferrable, o estás pagando un worker slot para dormir. Un servicio que avisa
+por sí mismo, enviando un mensaje a una cola → un `AssetWatcher`, y ninguna
+task espera.
 
 Referencia: [`solutions/05_sensors_and_events.py`](../../solutions/05_sensors_and_events.py).
 

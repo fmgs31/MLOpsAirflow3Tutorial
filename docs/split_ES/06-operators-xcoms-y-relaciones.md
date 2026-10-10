@@ -35,7 +35,7 @@ Los **XComs** ("cross-communications") son cómo las tasks se pasan valores
 pequeños. Se guardan en la metadata database, pero una task nunca accede a la
 metadata database directamente: lee y escribe los XComs pidiéndoselo al API
 server, a través de la Task Execution API (§3).
-TaskFlow los usó implícitamente en la §4: cada `return` era un push de XCom,
+Las funciones `@task` de la §4 ya los usaban sin que se viera: cada `return` era un push de XCom,
 cada argumento un pull de XCom. Con operators haces push y pull explícitos.
 
 Crea `dags/02_operators_and_xcoms.py` con los imports y dos funciones Python
@@ -128,7 +128,7 @@ un valor de aguas arriba distinto. Añádelo debajo de `multiply`:
     describe = BashOperator(
         task_id="describe",
         bash_command=(
-            'echo "run={{ run_id }} ds={{ ds | default(\'none (manual run)\') }} '
+            'echo "run={{ run_id }} ds={{ ds | default(\'none\') }} '
             'run_after={{ dag_run.run_after }} '
             'product={{ ti.xcom_pull(task_ids=\'multiply\', key=\'product\') }}"'
         ),
@@ -177,12 +177,30 @@ Tres cosas que saber sobre las plantillas:
    `show` es una función `@task` que imprime su argumento,
    `show("run={{ run_id }}")` imprime el run id real.
 
-El `| default(...)` sobre `ds` es el equivalente, en plantilla, del `.get()` de la
-§4: `ds` deriva de `logical_date`, y un run disparado por asset, o desde la CLI
-sin logical date, no tiene ninguna. Sin el default la task falla con `UndefinedError: 'ds' is
-undefined` mientras renderiza, antes de ejecutarse — y, como con `KeyError`,
-`airflow dags test` nunca lo enseña. La §7 es donde se explican ambas trampas;
-`{{ dag_run.run_after }}` es la alternativa segura, porque todo run tiene uno.
+El `| default(...)` sobre `ds` cumple en la plantilla el papel que cumplía
+`.get()` en la §4. `ds` deriva de `logical_date`, y un run disparado por asset,
+o desde la CLI sin logical date, no tiene ninguna. Sin el default, la task falla
+al renderizar la plantilla, antes de ejecutarse, con `UndefinedError: 'ds' is
+undefined`. `airflow dags test` nunca enseña este fallo, por la misma razón que
+no enseña el `KeyError` de la §4: siempre le da una logical date al run. La §7
+explica por qué algunos runs no tienen logical date.
+
+Si solo necesitas una fecha del run, por ejemplo para nombrar un archivo, usa
+`{{ dag_run.run_after }}` en lugar de `ds`: todo run tiene `run_after`, así que
+no hace falta ningún default. No siempre es la misma fecha que la logical date;
+la §7 explica cuándo difieren.
+
+Un template field también puede contener el nombre de un archivo en lugar de la
+plantilla. Cada operator declara en `template_ext` las extensiones que
+reconoce — `BashOperator` declara `(".sh", ".bash")` —, y cuando el valor
+termina en una de ellas, Airflow busca ese archivo junto al archivo del Dag y
+renderiza su contenido. Con `bash_command="describe.sh"`, la task ejecuta
+`describe.sh` con sus `{{ run_id }}` ya sustituidos. Así un script o una
+consulta SQL larga vive en su propio archivo, no en un string dentro del Dag.
+Un `@task` hace lo mismo con dos argumentos del decorador:
+`@task(templates_exts=[".sql"], templates_dict={"query": "query.sql"})` le pasa
+a la función, en su parámetro `templates_dict`, el contenido renderizado de
+`query.sql`.
 
 Ahora una task de TaskFlow en el mismo Dag, leyendo el XCom de un operator:
 
@@ -200,9 +218,8 @@ desde cualquiera de los dos lados.
 
 ### Relaciones
 
-Nada de lo de arriba está conectado todavía. Una arista entre dos tasks se
-declara de una de estas cinco formas, y este Dag usa las cuatro últimas. Termina
-el archivo con el cableado:
+Nada de lo de arriba está conectado todavía. Termina el archivo con las tasks
+que faltan y las aristas entre todas:
 
 ```python dags/02_operators_and_xcoms.py
     chain(start, push_seed, Label("seed -> product"), multiply, describe)
@@ -232,11 +249,15 @@ operators_and_xcoms()
 `taskflow_reader` y lo comprueban con `test`, que sale con error si la
 condición es falsa, y eso hace fallar la task.
 
+Una arista entre dos tasks se declara de una de estas cinco formas, y este
+código usa las cuatro últimas:
+
 1. **Implícitamente, pasando la salida de una task a otra.** El Dag de la §4
    estaba hecho de eso: un `@task` llamado con el valor que devolvió otra task.
    La salida de un operator también sirve — pasar `describe.output` como
    argumento dibujaría la misma arista. Aquí `taskflow_reader` no recibe ningún
-   argumento, así que nada le dibuja su arista.
+   argumento, así que su arista con `describe` hay que declararla con la forma
+   2.
 2. **Los operadores de desplazamiento**, cuando no fluyen datos —
    `describe >> product` es "describe, y luego product". `>>` solo fija el
    orden: no le pasa nada a la task de aguas abajo, y por eso las comprobaciones
@@ -277,9 +298,9 @@ grupo con cada task del siguiente.
 docker compose exec airflow-scheduler airflow dags test operators_and_xcoms
 ```
 
-**Comprobación.** La línea de la task `describe`, `run=manual__… ds=…
-run_after=… product=42`, luego `TaskFlow saw product=42` del reader, y `even` y
-`under 100` de las comprobaciones. Después abre la vista
+**Comprobación.** En la salida busca la línea de la task `describe`,
+`run=manual__… ds=… run_after=… product=42`, luego `TaskFlow saw product=42` de
+`taskflow_reader`, y `even` y `under 100` de las comprobaciones. Después abre la vista
 **Graph** del Dag en la UI: la etiqueta `seed -> product` en una arista, un
 fan-out de dos ramas hacia `check_parity`/`check_range`, y esas dos abriéndose
 hacia `checks_done`, `publish` y `notify`. Si el grafo no coincide, compara con
@@ -299,22 +320,34 @@ no tiene:
 
 - **Valores de los argumentos comprobados al parsear el archivo.** Una llamada
   a un `@task` ya falla al parsear si falta un argumento, pero no puede mirar
-  los valores. El `__init__` de un operator corre al parsear y puede hacer
-  cualquier comprobación, así que un valor erróneo aparece como error de import
-  en la UI en cuanto guardas el archivo, no como un fallo de la task horas
+  los valores. El `__init__` de un operator corre cada vez que se instancia el
+  operator, y el Dag processor instancia todos los operators del Dag cada vez
+  que parsea su archivo. Como `__init__` puede hacer cualquier comprobación, un
+  valor erróneo aparece como error de import en la UI en cuanto el Dag
+  processor vuelve a parsear el archivo (§3), no como un fallo de la task horas
   después.
 - **Métodos que Airflow llama mientras corre la task.** `on_kill` corre cuando
-  se detiene la task, así que puede cancelar el job que la task arrancó en un
-  sistema externo; `self.defer(...)` le pasa la espera al triggerer, que es
-  como están construidos los operators deferrable de la §11.
-- **Ajustes que Airflow y la UI leen de la clase.** `template_ext` hace que
-  Airflow renderice un archivo nombrado en un argumento — un `.sql`, por
-  ejemplo — y `operator_extra_links` añade un botón que abre el job en el
-  sistema externo.
+  se detiene la task (por ejemplo, cuando marcas la task instance como failed
+  en la UI), así que puede cancelar el trabajo que la task lanzó en otro
+  servicio, como una consulta en BigQuery. `self.defer(...)` suspende la task y
+  le pasa la espera al triggerer (§3); así están construidos los operators
+  deferrable de la §11.
+- **Botones propios en la UI.** `operator_extra_links`, un atributo de clase,
+  añade una sección **Extra Links** a la vista de la task instance en la UI,
+  con un botón por enlace. Cada enlace es una subclase de `BaseOperatorLink`
+  cuyo método `get_link` calcula la URL para cada task instance, normalmente la
+  página del trabajo que la task lanzó en el servicio con el que habla: el job
+  de Databricks, la consulta de BigQuery. Ninguna de las clases
+  que hay debajo de un `@task` (`_PythonDecoratedOperator`, `PythonOperator`,
+  `BaseOperator`) lo acepta como argumento — `@task(operator_extra_links=...)`
+  falla con `TypeError` —, y tampoco ninguno de los operators de los providers
+  instalados en este stack. Para tener botones propios hace falta una clase
+  propia.
 
 Los operators de los providers necesitan estas cosas, y por eso son clases. El
 paso de entrenamiento de abajo necesita la primera. Recibe un umbral, `min_f1`,
-y falla cuando el modelo puntúa por debajo. Un umbral escrito como `65` en vez
+y falla cuando el f1 del modelo (su métrica de calidad, de 0 a 1) queda por
+debajo. Un umbral escrito como `65` en vez
 de `0.65` debería detectarse al guardar el archivo, no después de un
 entrenamiento:
 
@@ -412,15 +445,18 @@ quieres, `@task` ya es eso: por debajo un `@task` es una subclase de
 Un operator es una task entera que hace una cosa fija: `SQLExecuteQueryOperator`
 ejecuta una consulta, `SqlToS3Operator` copia el resultado de una consulta a un
 archivo en S3. Un **hook** es el cliente que hay debajo de un operator. Recibe un
-`conn_id`, busca esa Connection, construye el cliente autenticado y te da
-métodos a los que llamar — `PostgresHook.get_df` ejecuta una consulta y devuelve
-un dataframe, `S3Hook.load_string` escribe un string en S3. Todo operator que
-habla con un sistema externo lo hace a través de un hook.
+`conn_id` — el nombre de una **Connection**, las credenciales de un servicio
+que Airflow guarda con ese nombre (se explican más abajo) —, construye el
+cliente autenticado y te da métodos a los que llamar — `PostgresHook.get_df`
+ejecuta una consulta y devuelve un dataframe, `S3Hook.load_string` escribe un
+string en S3. Todo operator que habla con un servicio fuera de Airflow (una
+base de datos, S3, una API) lo hace a través de un hook.
 
 Llamas a un hook tú mismo, dentro de un `@task`, cuando una task tiene que hacer
 varias llamadas con tu propio código entre ellas — algo que ningún operator
-hace por sí solo. Ninguno de los Dags del tutorial necesita uno, así que así se
-vería con el warehouse en Postgres y los exports en S3:
+hace por sí solo. Ninguno de los Dags del tutorial necesita uno. El ejemplo
+supone que los proyectos están en una base de datos Postgres y que la task
+exporta un CSV a S3:
 
 ```python
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
@@ -443,8 +479,8 @@ def export_labeled_projects(day: str) -> str:
 La task nombra dos Connections, `warehouse` y `aws_default`, y nunca una
 contraseña. Si el paso fuera solo "copia el resultado de la consulta a S3",
 `SqlToS3Operator` lo haría como una única task sin código; la versión con hooks
-es para cuando tu propia lógica va en medio. Un sistema sin hook también puede
-usar una Connection: `BaseHook`, la clase de la que derivan todos los hooks,
+es para cuando tu propia lógica va en medio. Un servicio para el que no hay hook
+también puede usar una Connection: `BaseHook`, la clase de la que derivan todos los hooks,
 tiene `BaseHook.get_connection("warehouse")`, que devuelve la Connection en sí —
 host, login, password, extra — para que se la pases a cualquier librería
 cliente.

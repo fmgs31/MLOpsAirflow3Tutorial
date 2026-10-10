@@ -78,8 +78,9 @@ def operators_and_xcoms():
     # just before the task runs, so `{{ run_id }}`, `{{ ds }}` and
     # `{{ ti.xcom_pull(...) }}` are filled in with this run's values.
     #
-    # Careful with `ds`: it is derived from `logical_date`, and a manual or
-    # asset-triggered run has none. The variable is then *undefined* and the
+    # Careful with `ds`: it is derived from `logical_date`, and a run triggered
+    # by an asset, or from the CLI without `-l`, has none. The variable is then
+    # *undefined* and the
     # task fails with `UndefinedError: 'ds' is undefined` while rendering.
     # `airflow dags test` always supplies a logical date, so this only shows up
     # once a real trigger reaches it. Guard it with `default`, or template
@@ -87,7 +88,7 @@ def operators_and_xcoms():
     describe = BashOperator(
         task_id="describe",
         bash_command=(
-            'echo "run={{ run_id }} ds={{ ds | default(\'none (manual run)\') }} '
+            'echo "run={{ run_id }} ds={{ ds | default(\'none\') }} '
             'run_after={{ dag_run.run_after }} '
             'product={{ ti.xcom_pull(task_ids=\'multiply\', key=\'product\') }}"'
         ),

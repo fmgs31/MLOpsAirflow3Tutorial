@@ -3,8 +3,8 @@
 Four levels — and the first of them checks the seven files you wrote.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
-These catch the failures that otherwise surface as an import error in the UI
-hours later, and they are the single highest-value thing you can put in CI:
+These catch, before the file reaches Airflow, the failures that would otherwise
+surface as an import error in the UI, and they are the single highest-value thing you can put in CI:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -37,8 +37,8 @@ in the loop. That separation is deliberate: Airflow orchestrates the
 code, it does not contain it.
 
 **Whole-run tests** — `airflow dags test <dag_id>` executes a real Dag run
-in-process, and `airflow tasks test <dag_id> <task_id>` runs one task without
-writing state.
+inside the command itself (§4), and `airflow tasks test <dag_id> <task_id>`
+runs a single task without recording its state in the metadata database.
 
 **Tests on the documentation** — two of them, because a tutorial that quotes
 code is only useful while the quotes are true.
@@ -74,7 +74,7 @@ No scheduler was involved and no Dag ran. That is the point: every one of those
 
 When one fails, the message says which file and what is missing — `mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`,
-`dataops` missing an outlet — and the fix is in the lesson that built that
+`dataops` missing an outlet — and the fix is in the section that built that
 file, or in `solutions/`. To see the suite pass against the finished versions,
 point it there:
 
@@ -95,7 +95,8 @@ python scripts/sync_readme.py --check     # exit 1 when an appendix listing is s
 python scripts/sync_readme.py             # fix it
 ```
 
-None of those levels would have caught the two bugs in §7's "trap" box:
+None of those levels would have caught the failures in §7's "trap" box (the
+`KeyError` and the `UndefinedError` of a run without a logical date):
 `airflow dags test` always supplies a logical date, so a Dag that breaks on a
 run without one passes every test above. **Trigger each Dag once for real** —
 through the scheduler, with `airflow dags trigger` and no `-l`, so the run has

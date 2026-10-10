@@ -4,8 +4,9 @@ Cuatro niveles — y el primero de ellos comprueba los siete archivos que
 escribiste.
 
 **Tests de integridad de Dags** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
-Detectan los fallos que, si no, verías horas después como un error de import
-en la UI, y son lo de mayor valor que puedes meter en CI:
+Detectan, antes de que el archivo llegue a Airflow, los fallos que si no verías
+como un error de import en la UI, y son lo de mayor valor que puedes meter en
+CI:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -38,8 +39,8 @@ Airflow, así que el código de ML es testeable sin un scheduler de por medio. E
 código, no lo contiene.
 
 **Tests de run completo** — `airflow dags test <dag_id>` ejecuta un Dag run real
-in-process, y `airflow tasks test <dag_id> <task_id>` ejecuta una task sin
-escribir estado.
+dentro del propio comando (§4), y `airflow tasks test <dag_id> <task_id>`
+ejecuta una sola task sin guardar su estado en la metadata database.
 
 **Tests sobre la documentación** — dos, porque un tutorial que cita código solo
 es útil mientras las citas son verdad.
@@ -79,7 +80,7 @@ lo que hace que merezca la pena tenerlos.
 
 Cuando uno falla, el mensaje dice qué archivo y qué falta — `mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`, a
-`dataops` le falta un outlet — y el arreglo está en la lección que construyó ese
+`dataops` le falta un outlet — y el arreglo está en la sección que construyó ese
 archivo, o en `solutions/`. Para ver la suite pasar contra las versiones
 terminadas, apúntala ahí:
 
@@ -100,8 +101,9 @@ python scripts/sync_readme.py --check     # exit 1 when an appendix listing is s
 python scripts/sync_readme.py             # fix it
 ```
 
-Ninguno de esos niveles habría detectado los dos bugs del recuadro de la "trampa"
-de la §7: `airflow dags test` siempre aporta una logical date, así que un Dag que
+Ninguno de esos niveles habría detectado los fallos del recuadro de la "trampa"
+de la §7 (el `KeyError` y el `UndefinedError` de un run sin logical date):
+`airflow dags test` siempre aporta una logical date, así que un Dag que
 se rompe en un run sin ella pasa todos los tests de arriba. **Dispara cada Dag
 una vez de verdad** — por el scheduler, con `airflow dags trigger` y sin `-l`,
 para que el run no tenga logical date, igual que uno disparado por asset — antes

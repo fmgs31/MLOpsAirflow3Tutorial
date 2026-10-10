@@ -13,19 +13,21 @@ prepare_data ─► validate_training_data ─┐
 |---|---|
 | the asset trigger + `prepare_data` | your warehouse client — or, as here, let the asset event carry the data's path |
 | `validate_training_data` | Great Expectations / Pandera / Soda, plus split checks |
-| `candidates` + `train_candidate` (one per hyperparameter set) | Optuna / Ray Tune / a sweep service |
+| `candidates` + `train_candidate` (one per hyperparameter set) | Optuna / Ray Tune / a service that distributes the hyperparameter search |
 | `select_best` + `evaluate_best` | your experiment tracker (MLflow, W&B) |
-| `promotion_gate` → `promote_model` | your registry's stage transition |
+| `promotion_gate` → `promote_model` | the move to production in your model registry (MLflow, say) |
 
 ### Build it
 
-New workload functions: `data.split(df)` returns a stratified `(train, test)`
-pair; `validate.check_split(train, test)` is a second suite, on the split;
-`train_module.SEARCH_SPACE` is a list of hyperparameter dicts and
-`train_module.train_from_files(hparams)` fits one model, returning
-`(model, metrics)`; `registry.save_run`, `load_metrics`, `promote` and
-`get_production` are the filesystem registry; `config.MIN_F1_TO_PROMOTE` is
-the promotion threshold, read from `TAGIFAI_MIN_F1` if set.
+New workload functions: `data.split(df)` returns a `(train, test)` pair with
+the same share of each tag in both; `validate.check_split(train, test)` is a
+second suite, on the split; `train_module.SEARCH_SPACE` is a list of
+hyperparameter dicts and `train_module.train_from_files(hparams)` fits one
+model, returning `(model, metrics)`; `registry.save_run`, `load_metrics`,
+`promote` and `get_production` are the repo's *model registry*, on the
+filesystem: it stores each trained model with its metrics and records which
+one is in production; `config.MIN_F1_TO_PROMOTE` is the minimum f1 for moving a
+model to production (0.65, or the value of `TAGIFAI_MIN_F1` if set).
 
 Create `dags/04_mlops.py`:
 
@@ -120,11 +122,11 @@ all — it looks at the **split**:
 
 Each problem in those comments — a class only in train, three rows of a class,
 the same project in both splits — passes a column-level suite without a
-warning, and still produces a model whose held-out f1 means nothing. That f1 is
+warning, and still produces a model whose f1 on the test set means nothing. That f1 is
 exactly what the promotion gate compares against production.
 
-**Dynamic task mapping** fans out one task instance per hyperparameter set at
-runtime, then reduces. Three tasks:
+**Dynamic task mapping** creates, while the Dag runs, one task instance per
+hyperparameter set, and a later task gathers all the results. Three tasks:
 
 ```python dags/04_mlops.py
     @task
@@ -149,10 +151,10 @@ runtime, then reduces. Three tasks:
 
 `candidates` returns a list; in the wiring below,
 `train_candidate.expand(hparams=candidates())` creates one task instance per
-item at runtime — four here, one per hyperparameter set — and each is retried,
-logged and inspected on its own. `context['ti'].map_index` tells the task which
-of the four it is. The reduce step, `select_best`,
-just takes a `list`. Note the return value of `train_candidate`: a run id, an
+item when the Dag runs — four here, one per hyperparameter set — and each is
+retried, logged and inspected on its own. `context['ti'].map_index` tells the
+task which of the four it is (0 to 3). The task that gathers the results,
+`select_best`, just takes a `list` of the four return values. Note the return value of `train_candidate`: a run id, an
 f1 and the hparams — small and JSON-serialisable. The model itself stays in the
 registry.
 
@@ -169,12 +171,15 @@ memory. When the limited resource is shared — say, a database that accepts onl
 a few connections — a `pool` (§3) sets the same kind of cap across every task
 and Dag that uses it.
 
-> **Gotcha:** the parameter is named `hparams`, not `params`. TaskFlow injects
-> context keys by parameter name, and `params` is reserved — a task argument
+> **Gotcha:** the parameter is named `hparams`, not `params`. A `@task`
+> receives context keys by parameter name (§4), and `params` is reserved — a task argument
 > called `params` gets the Dag's params, not your data.
 
-The **promotion gate** is a branch, not a failure. Add the evaluation, the
-gate, the promotion and the two `EmptyOperator`s the branch needs:
+The **promotion gate** decides whether the best candidate goes to production.
+Unlike the gates in §9, it does not fail the task when the answer is no: it is
+a *branch*, a task that picks which of two paths of the Dag continues. Add the
+evaluation, the gate, the promotion and the two `EmptyOperator`s the branch
+needs:
 
 ```python dags/04_mlops.py
     @task

@@ -17,7 +17,8 @@ writing your own Timetable class is how you get a cadence cron cannot express.
 The two decisions: *when* to create a run, and which slice of time that run is
 *for* — its **data interval**, exposed to every task as `data_interval_start`
 and `data_interval_end`, and labelled by the run's `logical_date`. None of
-those is "when it ran"; `run_after` is that. How the slice is cut depends on
+those says when the run happens: that is `run_after`, the earliest time the run
+may start. How the slice is cut depends on
 the timetable, and there are two kinds:
 
 - **A cron string or a `timedelta`** — `"0 3 * * *"`, the schedule you will
@@ -37,8 +38,8 @@ is optional — without one, a scheduled Dag starts from the moment you un-pause
 it — and it only governs the runs the scheduler creates; a manual trigger is
 never held back by it.
 
-Keep that picture in mind: the rest of this section follows from it. Three
-things about scheduling that will save you an afternoon:
+Three things about scheduling that follow from the above and will save you an
+afternoon:
 
 **`catchup` defaults to `False`** (`[scheduler] catchup_by_default`), and it is
 worth knowing exactly what that means when you un-pause a Dag. Un-pausing a cron Dag with a 2025 `start_date`
@@ -71,8 +72,11 @@ mlops   asset_triggered__2026-09-09T08:23:16+00:00  success  2026-09-09T08:23:16
 mlops   manual__2026-09-09T08:22:31+00:00           success  2026-09-09T08:22:32   2026-09-09T08:22:31
 ```
 
-Use `run_after` when you mean "when did this actually start". Context keys
-available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
+Use `run_after` when you mean "when was this run due to start". When it
+actually started is the run's own `start_date`, which can be later; the paused
+Dag example further down in §7 shows one.
+
+Context keys available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
 `data_interval_end`, `run_id`, `dag_run`, `ti`, `params`, `var`, `conn`,
 `macros`, `inlets`/`outlets`, `triggering_asset_events`.
 
@@ -90,9 +94,9 @@ available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
 > ```
 >
 > You wrote the safe form of both in §4 and §6, which is why the runs
-> you are about to trigger succeed. Both were live bugs in this tutorial's own
-> Dags until a manual trigger found them. Asset-triggered runs have no logical
-> date either, so `mlops` is exposed to the same thing.
+> you are about to trigger from the CLI succeed. Asset-triggered runs have no
+> logical date either, which is why `mlops` (§10), which runs on an asset,
+> reads neither `logical_date` nor `ds` anywhere.
 
 ### Manual runs
 
@@ -145,8 +149,8 @@ it was simply held.
 
 The UI's trigger form has an *"Unpause … on trigger"* checkbox for exactly this.
 
-Two more ways to start a run: `airflow dags test <dag_id>` runs the whole Dag in-process
-(§14), and the REST API does it over HTTP —
+Two more ways to start a run: `airflow dags test <dag_id>` runs the whole Dag
+inside the command itself (§4), and the REST API does it over HTTP —
 `POST /api/v2/dags/{dag_id}/dagRuns`, which is what the UI button calls.
 
 ---
