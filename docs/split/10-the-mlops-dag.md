@@ -70,8 +70,9 @@ def mlops():
 runs when they update. Several assets in the list mean *all* of them;
 `AssetAny(a, b)` means either.
 
-**Validate before you train.** `dataops` validated `labeled_projects` on its way
-out of the warehouse, and this Dag validates it again on the way in. That is not
+**Validate before you train.** `dataops` validated `labeled_projects` when it
+wrote it to the warehouse, and this Dag validates it again before training on
+it. That is not
 redundant: it was a different Dag run, possibly hours ago, this run may have been
 triggered by hand, and what the model is fitted on is the snapshot on disk *now*.
 Add the first two tasks:
@@ -341,7 +342,7 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 Four `train_candidate` rows with `map_index` 0–3; 2 and 3 each start after one
 of 0 and 1 has ended. And `keep_current_model` is `skipped`
 while `promote_model` is `success`: the gate took the promoting arm, because
-there was no production model to beat.
+the best f1 cleared the threshold and there was no production model to beat.
 
 > **Try it, once more by hand:**
 >

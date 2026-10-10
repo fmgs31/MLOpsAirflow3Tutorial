@@ -78,7 +78,9 @@ quietly returns `None`. Almost every pull you write needs `task_ids=`; the
 
 **XComs are for metadata, not payloads.** They live in the metadata database.
 Pass a path, a run id, a row count; put the dataframe in object storage and
-the model in a registry. Values must be JSON-serialisable.
+the model in a registry. Airflow serialises the value when it stores it and
+accepts more than JSON — a `datetime`, a `set`, even a dataframe —, but that
+it fits does not mean it belongs there.
 
 Now the Dag header and the first three operators:
 
@@ -257,7 +259,8 @@ last four:
    `product << describe` is the same edge backwards, and so are
    `describe.set_downstream(product)` and `product.set_upstream(describe)`, the
    methods the operators call underneath.
-3. **Fan-out and fan-in**: a list on either side of `>>` creates one edge per
+3. **Fan-out and fan-in**: a list on one side of `>>` (one side, not both:
+   see the fifth way) creates one edge per
    task in the list, so `product >> [check_parity, check_range] >> checks_done` is four
    dependencies, not two: `product` → `check_parity`, `product` → `check_range`,
    `check_parity` → `checks_done` and `check_range` → `checks_done`. Both checks
@@ -335,7 +338,8 @@ not get:
 Provider operators need these, which is why they are classes. The training
 step below needs the first one. It takes a threshold, `min_f1`, and fails when
 the model's f1 (its quality metric, from 0 to 1) falls below it. A threshold typed as `65` instead of `0.65` should
-be caught when the file is saved, not after a training run:
+be caught as soon as the Dag processor parses the file, not after a training
+run:
 
 ```python
 from airflow.sdk import BaseOperator
@@ -412,6 +416,14 @@ when a run reaches `train`. That difference is the whole reason for the class.
 A step with no such need is better as a `@task`, which is what this repo uses
 throughout.
 
+> This holds for a value written in the Dag file. If the value arrives when
+> the run is triggered, as a param (§4), it does not exist yet at parse time,
+> and neither the class nor the `@task` can check it at parse time, only when
+> the task runs. For the case where it
+> needs validating, put the limit on the `Param` itself:
+> `Param(0.65, type="number", exclusiveMinimum=0, maximum=1)` makes Airflow
+> reject a trigger with `min_f1=65` before the run is created.
+
 **Why `BaseOperator` and not `PythonOperator`?** `BaseOperator` is the class
 every operator derives from: it holds what all tasks share (`task_id`,
 retries, templating) and leaves `execute` for you to write. `PythonOperator`
@@ -472,9 +484,11 @@ variable — which is how this repo's compose file defines `fs_default`, the
 Connection the `FileSensor` in §11 uses.
 Templates read them as `{{ conn.warehouse.host }}` and `{{ var.value.min_rows }}`.
 
-> A task fetching either one does not touch the metadata database: the request
-> goes over the Task Execution API, which is what lets a remote worker resolve a
-> Connection without access to the metadata database.
+> A task fetching either one does not touch the metadata database. It first
+> looks at the `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` environment variables — that
+> is how it finds `fs_default` without asking anyone — and, if it is not there,
+> asks the API server over the Task Execution API, which is what lets a remote
+> worker resolve a Connection without access to the metadata database.
 >
 > Prefer a **param** (§4) over a global Variable when the value is a setting
 > that changes what the Dag decides, such as a threshold: params are recorded

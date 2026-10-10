@@ -186,7 +186,7 @@ airflow dags reserialize
 
 ## A deferrable task or a HITL task hangs forever
 
-`TimeDeltaSensorAsync`, `deferrable=True` operators, and `ApprovalOperator` all
+`deferrable=True` sensors and operators, and `ApprovalOperator`, all
 depend on the **triggerer**. Without `airflow triggerer` running they sit in
 `deferred` / `awaiting_input` indefinitely.
 

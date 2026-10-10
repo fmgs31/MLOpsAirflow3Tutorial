@@ -204,9 +204,11 @@ todos ellos.
 
 ### Ejecútalo
 
-Forzar a cero el límite de label drift garantiza que `decide()` elija la rama
-de reentrenamiento, así que ves el camino interesante en vez del que toque con
-tus datos actuales:
+Forzar a cero el límite de label drift hace que `decide()` elija la rama de
+reentrenamiento, así que ves el camino interesante en vez del que toque con tus
+datos actuales. (Solo `rollback` o `inspect` pasarían antes, y ninguno de los
+dos se da con los datos del tutorial: no hay etiquetas nuevas ni una caída de
+f1 de 0.25.)
 
 ```bash
 docker compose exec airflow-scheduler \

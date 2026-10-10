@@ -99,7 +99,9 @@ The first task produces an asset. Add it inside `dataops()`:
 ```
 
 `outlets=` and `outlet_events` work as in §8: the declaration, and the
-metadata attached to the event this task emits when it succeeds. The task returns a **path**, not the dataframe: XComs carry a pointer to the
+metadata attached to the event this task emits when it succeeds. This event
+announces raw data, not yet validated, which is why no Dag in the tutorial is
+scheduled on `raw_projects`. The task returns a **path**, not the dataframe: XComs carry a pointer to the
 data, not the data itself.
 
 Now the *gate* on the raw data — a task that lets the pipeline through only if

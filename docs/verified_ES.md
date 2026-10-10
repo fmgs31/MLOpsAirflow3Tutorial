@@ -51,14 +51,15 @@ afirmaciones que el cuerpo te devuelve impresos:
   run de `mlops` fue de 0.12–0.65s — un bucle del scheduler. El texto no cita
   ninguna cifra de extremo a extremo porque la parte de `dataops` depende de la
   red.
-- El `settle` de la §11 (`TimeDeltaSensorAsync`, 5s) **no** se defiere bajo
-  `airflow dags test`: su objetivo se mide desde la logical date del run, que el
-  comando fija antes de que arranque la task, así que el momento ya ha pasado
-  cuando la task corre y vuelve de inmediato — sin estado `deferred`, sin
-  triggerer (`sensors/time_delta.py`: `if utcnow() > target_dttm: return`). Una
-  task que se difiriera bajo `dags test` tampoco llegaría al triggerer: el
-  comando ejecuta los triggers inline (`sdk/definitions/dag.py`,
-  `_run_inline_trigger`). Enviada por el scheduler con `airflow dags trigger`, la
+- El `settle` de la §11 (`TimeDeltaSensor(deferrable=True)`, 5s) bajo `airflow
+  dags test`: su objetivo se mide desde el `data_interval_end` del run (o
+  `run_after` si no hay, según `TimeDeltaSensor._derive_base_time`), que el
+  comando fija al arrancar. Si el momento ya pasó cuando la task corre, vuelve
+  de inmediato (`sensors/time_delta.py`: `if utcnow() > target_dttm: return
+  True`); si no, se difiere, y el comando ejecuta el trigger él mismo — línea de
+  log `[DAG TEST] running trigger in line` — sin llegar al triggerer. Cuál de
+  las dos ocurre depende de cuánto tardó en arrancar la task: el 2026-10-10 un
+  Dag de prueba de una sola task arrancó 3s después de `run_after` y se difirió. Enviada por el scheduler con `airflow dags trigger`, la
   misma task estuvo `deferred` seis segundos, pasó a `scheduled` y luego a
   `success` — consultado cada medio segundo desde la tabla `task_instance`.
 - El `ApprovalOperator` de la §12 en 3.3 aparca la task en `awaiting_input` sin

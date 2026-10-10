@@ -18,7 +18,7 @@ FileSensor(task_id="wait", filepath=..., poke_interval=10, timeout=300)
 FileSensor(..., mode="reschedule")
 
 # 3. Deferrable — suspends onto the triggerer and frees the slot entirely.
-TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
+TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 ```
 
 In the default mode, `mode="poke"`, the process stays alive and asleep,
@@ -48,7 +48,7 @@ from datetime import timedelta
 
 import pendulum
 from airflow.providers.standard.sensors.filesystem import FileSensor
-from airflow.providers.standard.sensors.time_delta import TimeDeltaSensorAsync
+from airflow.providers.standard.sensors.time_delta import TimeDeltaSensor
 from airflow.sdk import PokeReturnValue, dag, task
 
 from tagifai import config, data
@@ -66,7 +66,7 @@ DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
     doc_md=__doc__,
 )
 def sensors_and_events():
-    settle = TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
+    settle = TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 
     wait_for_curated_data = FileSensor(
         task_id="wait_for_curated_data",
@@ -136,7 +136,8 @@ Only triggers deriving from `BaseEventTrigger` can be watchers — a trigger
 testing a permanent condition ("file exists") would re-fire forever.
 
 > Deferrable sensors and watchers both need `airflow triggerer` running. Without
-> it they sit in `deferred` indefinitely.
+> it, a deferrable sensor sits in `deferred` indefinitely, and a watcher sees no
+> messages, so it starts no runs.
 
 ### Run it
 
@@ -159,11 +160,12 @@ Data is ready (764 rows). Downstream work can start.
 
 `wait_for_curated_data` pokes once, finds the file and exits; `enough_rows`
 counts the rows and clears its threshold on the first poke. And `settle`, the
-deferrable one, returns at once without deferring at all: its five-second target
-is measured from the run's `data_interval_end`, which `airflow dags test` fixed
-before the task started, so by the time the task ran the moment had already
-passed.
-Nothing in this run touched the triggerer.
+deferrable one, barely waits: its five-second target is measured from the run's
+`data_interval_end` (or its `run_after`), which `airflow dags test` sets when it
+starts, so by the time the task runs some or all of that time has passed. If
+any is left, there is no triggerer to hand the wait to: `airflow dags test`
+runs the trigger itself, and says so in the log with `[DAG TEST] running
+trigger in line` (§4).
 
 **To watch a task actually defer**, send the run through the scheduler instead,
 then read the task states a few times over the next ten seconds:
@@ -174,9 +176,9 @@ docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events defer-demo -o plain
 ```
 
-**Checkpoint.** `settle` reads `deferred` for about five seconds — its process
-has exited and the triggerer is holding the timer — then `success`, with an
-`end_date` just over five seconds after its `start_date`. That `deferred` is the
+**Checkpoint.** `settle` reads `deferred` for a few seconds — its process has
+exited and the triggerer is holding the timer — then turns `success` about
+five seconds after the trigger. That `deferred` is the
 state from §3, and it is what "frees the worker slot" looks like from outside.
 Be quick with the last command; a `docker compose exec` takes a second or
 two of its own.
@@ -192,7 +194,7 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
 docker compose exec airflow-scheduler airflow dags test sensors_and_events
 ```
 
-This time the command does not return. Both sensors are in `mode="reschedule"`, so their task
+This time the command sits there waiting. Both sensors are in `mode="reschedule"`, so their task
 instances **exit between pokes** instead of holding a slot, and go into
 `up_for_reschedule` — the state §3 gives for a sensor between pokes. The run
 announces it every second:
