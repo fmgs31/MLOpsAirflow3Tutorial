@@ -48,13 +48,15 @@ the body prints back to you:
   asset event being written to the `mlops` run being queued was 0.12–0.65s —
   one scheduler loop. The text quotes no end-to-end figure because the
   `dataops` part depends on the network.
-- §11's `settle` (`TimeDeltaSensorAsync`, 5s) does **not** defer under `airflow
-  dags test`: its target is measured from the run's logical date, which the
-  command sets before the task starts, so the moment has already passed when
-  the task runs and it returns at once — no `deferred` state, no triggerer
-  (`sensors/time_delta.py`: `if utcnow() > target_dttm: return`). A deferring
-  task under `dags test` would not reach the triggerer either: the command runs
-  triggers inline (`sdk/definitions/dag.py`, `_run_inline_trigger`). Sent
+- §11's `settle` (`TimeDeltaSensor(deferrable=True)`, 5s) under `airflow dags
+  test`: its target is measured from the run's `data_interval_end` (or
+  `run_after` when there is none, per `TimeDeltaSensor._derive_base_time`), which
+  the command sets when it starts. If the moment has passed by the time the task
+  runs, it returns at once (`sensors/time_delta.py`: `if utcnow() > target_dttm:
+  return True`); if not, it defers, and the command runs the trigger inline —
+  log line `[DAG TEST] running trigger in line` — never reaching the triggerer.
+  Which of the two happens depends on how long the task took to start: on
+  2026-10-10 a one-task probe Dag started 3s after `run_after` and deferred. Sent
   through the scheduler with `airflow dags trigger`, the same task sat in
   `deferred` for six seconds, went to `scheduled`, then `success` — polled every
   half-second from the `task_instance` table.

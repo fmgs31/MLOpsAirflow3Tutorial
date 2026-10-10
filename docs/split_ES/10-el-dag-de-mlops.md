@@ -71,8 +71,8 @@ def mlops():
 corre cuando se actualizan. Varios assets en la lista significan *todos*;
 `AssetAny(a, b)` significa cualquiera.
 
-**Valida antes de entrenar.** `dataops` validó `labeled_projects` a su salida del
-warehouse, y este Dag lo valida otra vez a la entrada. Eso no es redundante: fue
+**Valida antes de entrenar.** `dataops` validó `labeled_projects` al escribirlo
+en el warehouse, y este Dag lo valida otra vez antes de entrenar con él. Eso no es redundante: fue
 otro Dag run, posiblemente hace horas, este run puede haberse disparado a mano, y
 lo que el modelo ajusta es el snapshot que hay en disco *ahora*. Añade las dos
 primeras tasks:
@@ -345,8 +345,8 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 Cuatro filas de `train_candidate` con `map_index` de 0 a 3; la 2 y la 3 arrancan
 cada una después de que haya terminado una de la 0 y la 1. Y
 `keep_current_model` está `skipped` mientras `promote_model` está `success`: el
-gate eligió la rama de promoción, porque no había modelo en producción al que
-batir.
+gate eligió la rama de promoción, porque el mejor f1 superó el umbral y no había
+modelo en producción al que batir.
 
 > **Pruébalo, una vez más a mano:**
 >

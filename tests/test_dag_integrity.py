@@ -1,7 +1,7 @@
 """Dag integrity tests - the cheapest CI you can put on an Airflow repo.
 
-They catch the failures that otherwise show up as a red "Import Error" banner in
-the UI hours later: a typo, a missing dependency, a cycle, a Dag that lost its
+They catch, before a file reaches Airflow, the failures that otherwise show up
+as a red "Import Error" banner in the UI: a typo, a missing dependency, a cycle, a Dag that lost its
 owner. Run them in the same image your scheduler uses:
 
     docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
@@ -101,10 +101,8 @@ def test_every_dag_has_owner_tags_and_docs(dagbag: DagBag) -> None:
 
 
 def test_no_cycles(dagbag: DagBag) -> None:
-    from airflow.utils.dag_cycle_tester import check_cycle
-
     for dag in dagbag.dags.values():
-        check_cycle(dag)
+        dag.check_cycle()
 
 
 def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag: DagBag) -> None:

@@ -152,7 +152,9 @@ value = ti.xcom_pull(key="x")
 value = ti.xcom_pull(task_ids="upstream_task", key="x")
 ```
 
-Also: `enable_xcom_pickling` is gone — XCom values must be JSON-serialisable.
+Also: `enable_xcom_pickling` is gone — XCom values go through Airflow's own
+serialiser, which accepts JSON types plus common ones such as `datetime`, `set`
+and pandas dataframes, but not arbitrary pickled objects.
 The original lesson enabled pickling for Great Expectations; on Airflow 3 you
 return a plain dict instead (see `solutions/03_dataops.py`).
 

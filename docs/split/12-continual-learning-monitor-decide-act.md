@@ -201,9 +201,10 @@ There is no join at the end, because nothing needs to run after all of them.
 
 ### Run it
 
-Forcing the label-drift limit to zero guarantees `decide()` takes the
-retraining branch, so you see the interesting path rather than whichever one
-your current data happens to deserve:
+Forcing the label-drift limit to zero makes `decide()` take the retraining
+branch, so you see the interesting path rather than whichever one your current
+data happens to deserve. (Only `rollback` or `inspect` would come first, and
+neither applies to the tutorial's data: no new labels, no 0.25 f1 drop.)
 
 ```bash
 docker compose exec airflow-scheduler \

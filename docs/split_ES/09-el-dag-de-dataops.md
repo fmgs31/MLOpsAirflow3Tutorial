@@ -102,8 +102,9 @@ La primera task produce un asset. Añádela dentro de `dataops()`:
 ```
 
 `outlets=` y `outlet_events` funcionan como en la §8: la declaración, y los
-metadatos adjuntos al evento que esta task emite cuando tiene éxito. La task
-devuelve una **ruta**, no el dataframe: los XComs llevan una referencia
+metadatos adjuntos al evento que esta task emite cuando tiene éxito. Este
+evento anuncia datos crudos, todavía sin validar, y por eso ningún Dag del
+tutorial se programa con `raw_projects`. La task devuelve una **ruta**, no el dataframe: los XComs llevan una referencia
 a los datos, no los datos en sí.
 
 Ahora el *gate* sobre los datos crudos — una task que deja pasar el pipeline

@@ -679,7 +679,7 @@ from datetime import timedelta
 
 import pendulum
 from airflow.providers.standard.sensors.filesystem import FileSensor
-from airflow.providers.standard.sensors.time_delta import TimeDeltaSensorAsync
+from airflow.providers.standard.sensors.time_delta import TimeDeltaSensor
 from airflow.sdk import PokeReturnValue, dag, task
 
 from tagifai import config, data
@@ -699,7 +699,7 @@ DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
 def sensors_and_events():
     # Deferrable: releases its worker slot while waiting. Needs `airflow triggerer`,
     # and a scheduler-driven run to see it - `dags test` returns at once (docstring).
-    settle = TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
+    settle = TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 
     # `reschedule` mode is the non-deferrable way to free a slot between pokes:
     # the task instance exits and is re-queued each interval.

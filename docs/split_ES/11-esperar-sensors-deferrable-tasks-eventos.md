@@ -19,7 +19,7 @@ FileSensor(task_id="wait", filepath=..., poke_interval=10, timeout=300)
 FileSensor(..., mode="reschedule")
 
 # 3. Deferrable — suspends onto the triggerer and frees the slot entirely.
-TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
+TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 ```
 
 Con el modo por defecto, `mode="poke"`, el proceso sigue
@@ -50,7 +50,7 @@ from datetime import timedelta
 
 import pendulum
 from airflow.providers.standard.sensors.filesystem import FileSensor
-from airflow.providers.standard.sensors.time_delta import TimeDeltaSensorAsync
+from airflow.providers.standard.sensors.time_delta import TimeDeltaSensor
 from airflow.sdk import PokeReturnValue, dag, task
 
 from tagifai import config, data
@@ -68,7 +68,7 @@ DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
     doc_md=__doc__,
 )
 def sensors_and_events():
-    settle = TimeDeltaSensorAsync(task_id="settle", delta=timedelta(seconds=5))
+    settle = TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 
     wait_for_curated_data = FileSensor(
         task_id="wait_for_curated_data",
@@ -139,7 +139,9 @@ trigger que comprueba una condición permanente ("el archivo existe") se
 dispararía una y otra vez para siempre.
 
 > Tanto los sensors deferrable como los watchers necesitan `airflow triggerer`
-> corriendo. Sin él se quedan en `deferred` indefinidamente.
+> corriendo. Sin él, un sensor deferrable se queda en `deferred`
+> indefinidamente, y un watcher no ve ningún mensaje, así que no arranca ningún
+> run.
 
 ### Ejecútalo
 
@@ -162,10 +164,11 @@ Data is ready (764 rows). Downstream work can start.
 
 `wait_for_curated_data` hace un poke, encuentra el archivo y sale; `enough_rows`
 cuenta las filas y supera su umbral en el primer poke. Y `settle`, el deferrable,
-vuelve de inmediato sin diferirse en absoluto: su objetivo de cinco segundos se
-mide desde el `data_interval_end` del run, que `airflow dags test` fijó antes de
-que la task arrancara, así que para cuando la task corrió el momento ya había pasado.
-Nada de este run tocó el triggerer.
+apenas espera: su objetivo de cinco segundos se mide desde el `data_interval_end`
+del run (o su `run_after`), que `airflow dags test` fija al arrancar, así que
+cuando la task corre ya ha pasado parte de ese tiempo, o todo. Si queda algo, no
+hay triggerer al que pasarle la espera: `airflow dags test` ejecuta el trigger él
+mismo, y lo anuncia en el log con `[DAG TEST] running trigger in line` (§4).
 
 **Para ver una task diferirse de verdad**, manda el run por el scheduler, y luego
 lee los estados de las tasks unas cuantas veces a lo largo de los siguientes diez
@@ -177,9 +180,9 @@ docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events defer-demo -o plain
 ```
 
-**Comprobación.** `settle` marca `deferred` durante unos cinco segundos — su
-proceso ha salido y el triggerer sostiene el temporizador — y luego `success`,
-con un `end_date` algo más de cinco segundos después de su `start_date`. Ese
+**Comprobación.** `settle` marca `deferred` unos segundos — su proceso ha salido
+y el triggerer sostiene el temporizador — y pasa a `success` unos cinco segundos
+después del trigger. Ese
 `deferred` es el estado de la §3, y es el aspecto que tiene, visto desde fuera,
 "liberar el worker slot". Sé rápido con el último comando; un `docker compose exec`
 se lleva uno o dos segundos por su cuenta.
@@ -195,7 +198,7 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
 docker compose exec airflow-scheduler airflow dags test sensors_and_events
 ```
 
-Esta vez el comando no termina. Ambos sensors están en `mode="reschedule"`, así que sus task
+Esta vez el comando se queda esperando. Ambos sensors están en `mode="reschedule"`, así que sus task
 instances **salen entre pokes** en vez de retener un slot, y pasan a
 `up_for_reschedule` — el estado que la §3 da para un sensor entre pokes. El run lo
 anuncia cada segundo:
