@@ -15,13 +15,13 @@ metadata database; para eso están un consumidor de colas o un procesador de str
 (Kafka, Flink…). Airflow también encaja mal con cualquier cosa que necesite un
 ciclo o un bucle `while` entre runs, y con cómputo pesado dentro del worker —
 lanza un job de Spark/Ray/Kubernetes y haz seguimiento de él. Si tu pipeline son
-tres scripts que corren una vez por semana, cron sigue estando permitido.
+tres scripts que corren una vez por semana, cron sigue siendo una opción válida.
 
 Cuatro procesos, la metadata database y un executor — que, como explica "El executor"
 más abajo, no siempre es un proceso propio. Todo eso está corriendo en tu stack
 ahora mismo:
 
-| Componente | Trabajo |
+| Componente | Función |
 |---|---|
 | **API server** | Sirve la REST API, la UI de React y la **Task Execution API** que llaman los workers |
 | **Scheduler** | Decide qué ejecutar y entrega el trabajo al executor |
@@ -31,7 +31,7 @@ ahora mismo:
 | **Metadata DB** | El estado de todo: runs, task instances, XComs, connections |
 
 Esa tabla es el sistema entero, pero unas cuantas de esas filas deciden casi todo
-sobre cómo se comportan tus Dags, y valen más que una fila cada una.
+sobre cómo se comportan tus Dags, y merecen algo más que una fila cada una.
 
 ### El scheduler, y por qué las cosas pasan "un momento después"
 
@@ -45,20 +45,20 @@ que hacer; en este stack es **1 segundo**.
 Por eso nada en Airflow es instantáneo, y por eso tampoco nada es muy lento.
 Cuando `dataops` publica su asset en la §10, el run de `mlops` no aparece *porque*
 la task terminó — aparece porque el siguiente bucle del scheduler vio el evento
-que la task registró. Con un segundo de sueño entre bucles, ese retraso es como
+que la task registró. Con una pausa de un segundo entre bucles, ese retraso es como
 mucho un segundo, y no lo vas a notar. Lo que *sí* vas a notar es lo que tarden
 las propias tasks de aguas arriba, y eso no tiene nada que ver con el scheduler.
 
-El parseo se hace con otro reloj distinto, y es del que vas a depender enseguida. El Dag
+El parseo sigue otro ritmo distinto, y es del que vas a depender enseguida. El Dag
 processor vuelve a parsear cada archivo, haya cambiado o no, cada
-`[dag_processor] min_file_process_interval` segundos, y re-escanea la carpeta
+`[dag_processor] min_file_process_interval` segundos, y vuelve a escanear la carpeta
 buscando archivos nuevos cada `refresh_interval`. Este stack pone ambos a **5**, así que un
 archivo que guardas aparece en la UI en unos segundos. Los valores por defecto
 son 30 y 300: en un stack que los conserve, un archivo recién creado puede
 tardar cinco minutos en aparecer, lo que se ve exactamente igual que un Dag roto
 si no sabes que ese número existe.
 
-Los tres números son settings, y puedes imprimir los tuyos:
+Los tres números son ajustes de configuración, y puedes imprimir los tuyos:
 
 ```bash
 docker compose exec airflow-scheduler airflow config get-value scheduler scheduler_idle_sleep_time
@@ -71,30 +71,30 @@ docker compose exec airflow-scheduler airflow config get-value dag_processor ref
 El executor es la respuesta a "dónde corre de verdad el Python de esta task". El
 bucle del scheduler no ejecuta tu código; solo decide *que* ese código debería
 ejecutarse y entrega la task al executor, que la arranca en algún sitio e informa
-de vuelta. (Con `LocalExecutor`, ese "algún sitio" es un subproceso del propio
+del resultado. (Con `LocalExecutor`, ese "algún sitio" es un subproceso del propio
 proceso del scheduler, como explica el párrafo siguiente.)
 
 `LocalExecutor` — el de este stack — arranca cada task como **su propio
 subproceso en la máquina que corre el scheduler**, usando `multiprocessing` de
-Python. Paralelismo real, del tamaño de una máquina. `CeleryExecutor` en cambio
-deja la task en una cola para un conjunto de máquinas worker de larga vida, y
+Python. Paralelismo real, limitado a una máquina. `CeleryExecutor` en cambio
+deja la task en una cola para un conjunto de máquinas worker permanentes, y
 `KubernetesExecutor` le pide a Kubernetes un pod nuevo por task. Cambiar entre
 ellos no cambia ni una línea del código del Dag — esa es la afirmación de la §1, y
 este es el mecanismo que hay detrás.
 
 Y por eso `docker compose ps` no te muestra ningún contenedor de executor.
 `LocalExecutor` es un *componente del proceso del scheduler*, no un servicio: el
-scheduler lo importa y desde ahí forkea hijos. Cambia `AIRFLOW__CORE__EXECUTOR` a
-`CeleryExecutor` y los workers pasan a ser máquinas reales que despliegas y
-escalas por separado. El executor es la costura entre "un portátil" y "un
-clúster", y es un valor de configuración.
+scheduler lo importa y desde ahí crea procesos hijo con `fork`. Cambia
+`AIRFLOW__CORE__EXECUTOR` a `CeleryExecutor` y los workers pasan a ser máquinas
+reales que despliegas y escalas por separado. El executor es lo que separa "un
+portátil" de "un clúster", y es un valor de configuración.
 
 Así que "worker" significa algo ligeramente distinto según el executor: aquí un
-subproceso forkeado, allí un proceso worker de Celery, allá un pod en Kubernetes.
+subproceso creado con `fork`, allí un proceso worker de Celery, allá un pod en Kubernetes.
 Lo constante es que el worker recibe la task, la ejecuta y responde por la Task
 Execution API.
 
-Cuántas corren a la vez lo decide el **más estrecho** de varios límites. Estos
+Cuántas corren a la vez lo decide el **más restrictivo** de varios límites. Estos
 cuatro son los de tasks que usa este tutorial, todos con su valor por defecto en
 este stack (hay más: `max_active_tis_per_dagrun` en una task, `max_active_tasks`
 en un Dag, y `max_active_runs`, que limita runs en vez de tasks y usan la §9 y
@@ -123,7 +123,7 @@ entrenamiento que corren de dos en dos en vez de todas a la vez.
 
 ### La metadata database
 
-Cada hecho que Airflow conoce vive en una base de datos relacional: las
+Todo lo que Airflow sabe vive en una base de datos relacional: las
 definiciones de Dag tal y como se parsearon, cada Dag run, cada task instance con
 su estado y su número de intentos, XComs, Connections, Variables, pools, asset
 events, el audit log. En este stack es el contenedor `postgres` (Postgres 16).
@@ -136,14 +136,14 @@ Reinicia los contenedores y no se pierde nada, porque el estado está en el
 volumen de la metadata database, no en los contenedores — `scripts/reset.sh`
 borra ese volumen, y por eso es el último recurso.
 
-De ahí salen dos consecuencias. Es lo que hay que respaldar, y crece para siempre
-salvo que ejecutes `airflow db clean` (§15) — un año de runs, task instances y
+De ahí salen dos consecuencias. Es lo que hay que incluir en las copias de
+seguridad, y crece indefinidamente salvo que ejecutes `airflow db clean` (§15) — un año de runs, task instances y
 XComs no se borra solo.
 
 ### El ciclo de vida de una task
 
-El vocabulario es exacto, y confundirlo es lo que hace que los mensajes de error
-sean confusos. Un **Dag** es el grafo que escribiste. Un **Dag run** es una
+El vocabulario es preciso, y si mezclas los términos, los mensajes de error se
+vuelven confusos. Un **Dag** es el grafo que escribiste. Un **Dag run** es una
 ejecución de él, identificada por un `run_id`, y está `queued`, `running`,
 `success` o `failed` — esos cuatro, ninguno más. Una **task instance** es una
 task dentro de un Dag run, y tiene muchos más estados, porque le pueden pasar más
@@ -192,8 +192,8 @@ que coordinarse a mitad de camino, son dos tasks con una dependencia entre
 ellas.
 
 El resto los irás conociendo sobre la marcha: `up_for_retry` entre intentos (§4),
-`skipped` desde un branch (§10), `up_for_reschedule` desde un sensor que sale
-entre pokes y `deferred` desde uno suspendido en el triggerer (§11),
+`skipped` desde un branch (§10), `up_for_reschedule` desde un sensor que libera
+su slot entre pokes y `deferred` desde uno suspendido en el triggerer (§11),
 `awaiting_input` mientras decide una persona (§12), y `upstream_failed` en todo
 lo que hay aguas abajo de un fallo.
 

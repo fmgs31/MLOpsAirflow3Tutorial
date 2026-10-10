@@ -109,8 +109,8 @@ primeras tasks:
 run, indexados por asset, cada uno con el `extra` que adjuntó el productor. En un
 run que arranques a mano está vacío. `validate_training_data` vuelve a leer la
 tabla en vez de recibirla de `prepare_data`: los XComs son para metadatos, no
-para payloads (§6). La segunda mitad de su comprobación es una que una suite a nivel de
-tabla no puede hacer en absoluto — mira el **split**:
+para payloads (§6). La segunda mitad de su comprobación es algo que una suite a nivel de
+tabla no puede hacer — mira el **split**:
 
 ```python
 # src/tagifai/validate.py — check_split()
@@ -122,7 +122,7 @@ tabla no puede hacer en absoluto — mira el **split**:
 ```
 
 Cada problema de esos comentarios — una clase solo en train, tres filas de una
-clase, el mismo proyecto en los dos splits — pasa una suite a nivel de columna
+clase, el mismo proyecto en los dos splits — supera una suite a nivel de columna
 sin ningún aviso, y aun así produce un modelo cuyo f1 sobre el conjunto de test
 no significa nada. Ese f1 es exactamente lo que el promotion gate compara contra producción.
 
@@ -151,11 +151,11 @@ Tres tasks:
         return best
 ```
 
-`candidates` devuelve una lista; en el cableado de abajo,
+`candidates` devuelve una lista; en las conexiones de abajo,
 `train_candidate.expand(hparams=candidates())` crea una task instance por
 elemento cuando corre el Dag — cuatro aquí, una por conjunto de
-hiperparámetros — y cada una se reintenta, se loguea y se inspecciona por su
-cuenta. `context['ti'].map_index` le dice a la task cuál de las cuatro es
+hiperparámetros — y cada una se reintenta, tiene su propio log y se inspecciona
+por separado. `context['ti'].map_index` le dice a la task cuál de las cuatro es
 (0 a 3). La task que reúne los resultados, `select_best`, simplemente recibe
 una `list` con los cuatro valores devueltos. Fíjate en el valor de retorno de
 `train_candidate`: un run id, un f1 y los hparams — pequeño y serializable a
@@ -164,8 +164,8 @@ JSON. El modelo en sí se queda en el registry.
 **Cuántas de las cuatro entrenan a la vez es una decisión, y está escrita en el
 decorador de `train_candidate`.** Nada en `.expand()` dice "en paralelo"; dice "estas son cuatro task
 instances separadas". Que se solapen o no es asunto del executor, acotado por el
-más estrecho de los límites de la §3 — y `max_active_tis_per_dag=2` en esa task es
-deliberadamente el más estrecho aquí. Así que el fan-out corre **de dos en dos,
+más restrictivo de los límites de la §3 — y `max_active_tis_per_dag=2` en esa task es
+deliberadamente el más restrictivo aquí. Así que el fan-out corre **de dos en dos,
 en dos oleadas**. Sube el tope y las cuatro se solapan; quítalo y `[core]
 max_active_tasks_per_dag` (16) es el siguiente límite. Un tope en una task de
 entrenamiento no es un ajuste de juguete: cuatro modelos ajustándose a la vez son
@@ -227,8 +227,8 @@ normal — el run tiene éxito y producción se queda como estaba. `promote_mode
 emite el segundo asset, `production_model`, que todavía no consume nadie; apunta
 el `schedule` de un Dag hacia él y la arista aparece en el grafo de Assets.
 
-Las **trigger rules** son cómo una task declara qué tienen que haber hecho sus
-tasks aguas arriba antes de que ella corra, y el
+Las **trigger rules** son la forma en que una task declara qué tienen que haber
+hecho sus tasks aguas arriba antes de que ella corra, y el
 branching es donde necesitas una por primera vez. El join, `done`, necesita
 `none_failed_min_one_success`, porque el `all_success` por defecto lo saltaría en
 cuanto cualquiera de las ramas quedara skipped. Las útiles: `all_success` (por
@@ -237,7 +237,7 @@ limpieza), `none_failed_min_one_success` (joins después de un branch),
 `none_failed` (permite skips pero no fallos), `one_success`, `one_failed`
 (caminos de alerta), `all_skipped` y `always`.
 
-Termina el archivo con el cableado:
+Termina el archivo conectando las tasks:
 
 ```python dags/04_mlops.py
     snapshot = validate_training_data(prepare_data())
@@ -254,11 +254,11 @@ Termina el archivo con el cableado:
 mlops()
 ```
 
-`snapshot >> results` cablea el gate de validación aguas arriba de *todas* las
+`snapshot >> results` coloca el gate de validación aguas arriba de *todas* las
 instancias mapeadas, sin llevar datos: solo fija el orden. Las dos líneas `>>`
 del gate le dan al branch sus dos ramas y las unen en `done`.
 
-### Mira el cableado
+### Comprueba las conexiones
 
 Guárdalo. Ya has escrito las dos mitades del pipeline, y antes de ejecutar nada
 puedes preguntarle a Airflow qué sabe:
@@ -289,10 +289,10 @@ a **Graph** y ve cambiando **Options → Dependencies** (§5):
   con los dos assets que produce, luego `mlops` con sus tasks dentro, y luego
   `production_model`.
 
-### Mira cómo dispara la cadena entera
+### Mira cómo se dispara la cadena entera
 
 Esta es la recompensa de la §8. Quita la pausa primero al consumidor, para que esté
-escuchando, y después al productor:
+a la escucha, y después al productor:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause mlops
@@ -303,7 +303,7 @@ Con la primera línea no pasa nada: el schedule de `mlops` es un asset, y no ha
 llegado ningún evento. La segunda línea basta para arrancarlo todo, y no has disparado
 nada — es la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025,
 así que en el momento en que se le quita la pausa el scheduler crea el run de
-las 03:00 UTC más recientes que se perdió, y lo arranca. Dale como medio minuto,
+las 03:00 UTC más recientes que se perdió, y lo arranca. Espera más o menos medio minuto,
 y luego:
 
 ```bash
@@ -321,7 +321,7 @@ una `logical_date` **vacía** — los runs disparados por asset no tienen logica
 date, igual que un run disparado desde la CLI sin ella (§7). En la UI, abre **Assets** y verás
 la arista que lo causó.
 
-Ten claro de dónde viene la espera. Casi toda es `dataops` corriendo sus cinco tasks
+Ten claro de dónde viene la espera. Casi toda es `dataops` ejecutando sus cinco tasks
 — `extract` descarga el archivo de origen, así que esa parte depende de tu
 conexión. La parte de Airflow es pequeña: un bucle del scheduler para crear el
 run de `dataops` tras quitar la pausa, y uno más para encolar `mlops` cuando
@@ -354,13 +354,13 @@ modelo en producción al que batir.
 > docker compose exec airflow-scheduler airflow dags trigger dataops
 > ```
 >
-> Esta vez, un run `manual__`. Cuando tenga éxito, un evento más, un run
+> Esta vez, un run `manual__`. Cuando tenga éxito, habrá un evento más y un run
 > `asset_triggered__` más de `mlops`. Cada éxito del productor emite un evento,
-> se haya arrancado el productor como se haya arrancado — y el consumidor corre
-> con él (los eventos que llegan mientras `mlops` está ocupado comparten su
+> sin importar cómo se arrancó el productor — y el consumidor se ejecuta con
+> él (los eventos que llegan mientras `mlops` está ocupado comparten su
 > siguiente run, §8).
 
-> **Pruébalo, la otra rama.** Pon el listón imposiblemente alto y mira cómo el
+> **Pruébalo: la otra rama.** Pon el listón imposiblemente alto y mira cómo el
 > gate elige la otra rama. El umbral se lee de una variable de entorno dentro
 > del proceso de la propia task, y `airflow dags test` ejecuta las tasks en su
 > propio proceso, así que pásale la variable a ese comando con `-e`:
@@ -369,7 +369,7 @@ modelo en producción al que batir.
 > docker compose exec -e TAGIFAI_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
 > ```
 >
-> `promotion_gate` loguea `below threshold 0.99 - not promoting`, `promote_model`
+> `promotion_gate` escribe en el log `below threshold 0.99 - not promoting`, `promote_model`
 > queda skipped, `keep_current_model` corre, y el Dag run termina en success
 > igualmente.
 

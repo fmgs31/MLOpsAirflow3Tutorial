@@ -10,7 +10,7 @@ La navegación es **Home · Dags · Assets · Browse · Admin** arriba y, abajo,
 
 **Home** — salud del scheduler, el triggerer y el Dag processor, errores de
 import, runs y tasks fallidos, asset events recientes, deadlines y slots de
-pools. Ábrela primero cuando algo no corre.
+pools. Ábrela primero cuando algo no arranca.
 
 **Dags** — la lista, como tarjetas o como tabla, filtrable por tag, owner o
 estado, con el toggle de pausa y un botón **Trigger** en cada fila. La tuya
@@ -43,8 +43,8 @@ conviene conocer:
   tipo de operator — así que en `hello_airflow3` la ves en cuanto abres un run.
   Filtra por estado, task group, duración y **Min. map index** — "shows mapped tasks
   expanded to at least this index". Una mapped task como `train_candidate`
-  (§10) es un único nodo colapsado hasta que lo subes; súbelo y cada conjunto
-  de hiperparámetros tiene el suyo.
+  (§10) es un único nodo colapsado hasta que subes ese valor; súbelo y cada
+  conjunto de hiperparámetros tiene su propio nodo.
 - **Download graph image**, la flecha abajo a la derecha del Graph.
 
 Las pestañas de la derecha dependen de lo que selecciones:
@@ -71,7 +71,7 @@ resultados de ambas a `report`.
 con la que corrió: cada vez que guardas un cambio en un archivo de Dag, Airflow
 crea una versión nueva — `v1`, `v2`, … El selector, en **Options** del Graph y
 en la pestaña **Code**, muestra cada versión con la fecha en que se creó, y te
-deja mirar un run a través del código que de verdad lo produjo: el run de la
+permite ver un run con el código que realmente lo produjo: el run de la
 semana pasada sigue mostrando el grafo de la semana pasada. **Code** enseña
 además cuándo se parseó el archivo y, en cuanto hay dos versiones, un botón para
 compararlas.
@@ -96,8 +96,8 @@ POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
 
 Un param string se convierte en un campo de texto, un number en uno numérico, un
 enum en un desplegable, y los valores se validan contra el tipo y los límites
-de cada `Param` antes de crear el run. Bajo **Advanced Options** lo mismo es editable como **Configuration JSON**
-en crudo, y el formulario ofrece además un run id, una logical date y un data
+de cada `Param` antes de crear el run. En **Advanced Options** puedes editar lo
+mismo directamente como **Configuration JSON**, y el formulario ofrece además un run id, una logical date y un data
 interval manual. Si el Dag está en pausa aparece también una casilla *"Unpause
 … on trigger"*, marcada por defecto, que le quita la pausa al disparar.
 Desmárcala y el run se crea igual, pero se queda **queued** hasta que quites la
@@ -108,11 +108,11 @@ y envía. Es el mismo `Param` llegando a la misma task por una tercera
 vía: un valor por defecto en el archivo, `--conf` en la línea de comandos, un
 formulario en el navegador.
 
-Ahora mira lo que hizo. Abre la pestaña **Runs**, haz clic en el run nuevo, haz
+Ahora mira el resultado. Abre la pestaña **Runs**, haz clic en el run nuevo, haz
 clic en `report` en el grafo y abre **Logs**: tu palabra en mayúsculas y
 `(7 words)`, la línea que `airflow dags test` imprimió en tu terminal en la §4.
 Haz clic en `make_greeting`, abre **Storage** y luego **XCom**: el string del
-saludo, guardada bajo la clave `return_value` — el valor que recibieron `shout`
+saludo, guardado bajo la clave `return_value` — el valor que recibieron `shout`
 y `count_words`.
 
 > El run que hizo `airflow dags test` no tiene logs aquí. Ese comando imprime
@@ -135,7 +135,7 @@ te dice *"N runs will be triggered"* antes de confirmar. `mlops` (§10) lo tiene
 deshabilitado por la misma razón: corre cuando se actualiza un asset, no según
 fechas.
 
-**Assets** — la página para la que se construyó este tutorial, y vacía hasta la
+**Assets** — la página en torno a la que gira este tutorial, y vacía hasta la
 §9. En cuanto existan los Dags que los usan, lista cada asset con sus tasks
 productoras, los Dags consumidores y el histórico de eventos, y dibuja el grafo
 entre Dags: `dataops` → `labeled_projects` → `mlops` → `production_model`. La
@@ -156,19 +156,19 @@ renderizada de Airflow. Connections y Variables son las dos que vas a usar:
 nunca metas una credencial en un archivo de Dag.
 
 **Docs** — la documentación de Airflow, el repo de GitHub, la referencia de la
-REST API que sirve este api-server, y la versión de Airflow que estás corriendo,
+REST API que sirve este api-server, y la versión de Airflow que estás usando,
 enlazada a su propia documentación.
 
 **El reloj** — su etiqueta es el desfase UTC de la zona horaria en la que se
 muestran todas las fechas de la UI. Pasa el ratón por encima para ver la hora
-actual allí; haz clic para elegir otra zona horaria.
+actual en esa zona; haz clic para elegir otra zona horaria.
 
 **User** — idioma, modo claro/oscuro, si un Dag se abre en Grid o en Graph, un
 generador de tokens de la API y el logout.
 
 > Hay dos menús que pueden aparecer y que este stack no muestra. **Security**
 > viene con un auth manager que tiene usuarios y roles que gestionar; el stack de
-> este tutorial corre el Simple auth manager con todo el mundo como admin. **Plugins** aparece cuando
+> este tutorial usa el Simple auth manager con todo el mundo como admin. **Plugins** aparece cuando
 > un plugin instalado añade páginas a la navegación; el único plugin instalado
 > en el stack, OpenLineage, no añade ninguna.
 

@@ -1,11 +1,11 @@
 ## 8. Assets: programar por datos, no por tiempo
 
-Un **Asset** es un trozo de datos con nombre. Una task declara que lo produce con
+Un **Asset** es un conjunto de datos con nombre. Una task declara que lo produce con
 `outlets=`, y cada vez que esa task tiene éxito Airflow registra un **asset
-event**; un Dag declara que lo consume poniéndolo en `schedule=`, y los eventos
-nuevos arrancan un run suyo. Ese es todo
-el mecanismo, y sustituye a cada cron del tipo "corre 30 minutos después del otro
-Dag, y reza" que hayas visto en tu vida.
+event**; un Dag declara que lo consume poniéndolo en `schedule=`, y cada evento
+nuevo arranca un run de ese Dag. Ese es todo
+el mecanismo, y sustituye a cualquier cron del tipo "corre 30 minutos después del
+otro Dag, y cruza los dedos" que hayas visto en tu vida.
 
 Los assets que usa este tutorial ya están definidos, en
 [`src/tagifai/assets.py`](../../src/tagifai/assets.py), para que `dataops` y `mlops`
@@ -72,16 +72,16 @@ Más maquinaria de assets que conviene conocer:
 | `@asset` / `@asset.multi` | define asset + Dag + task en un solo decorador |
 | `Metadata(asset, {...})` | otra forma de poner el `extra` de un evento: la task hace `yield Metadata(...)` en vez de usar `outlet_events` |
 | `AssetWatcher` + `BaseEventTrigger` | runs **event-driven** (§11) |
-| `CronPartitionTimetable` | un cron que crea runs por partición: cada run lleva una clave (por ejemplo, una fecha) que dice qué trozo de los datos le toca |
+| `CronPartitionTimetable` | un cron que crea runs por partición: cada run lleva una clave (por ejemplo, una fecha) que indica qué parte de los datos le corresponde |
 
-Aquí los assets son **solo nombre**. Un asset también puede tener una **URI**,
+Aquí los assets **solo tienen nombre**. Un asset también puede tener una **URI**,
 la dirección de sus datos reales (`s3://bucket/labeled_projects.csv`, por
 ejemplo). Este tutorial no le pone ninguna porque la ruta de `data/` no es la
 misma dentro del contenedor que en la instalación nativa de la §2. En
 producción dale a cada asset la URI de sus datos, para que la UI diga dónde
 están.
 
-Un asset existe a ojos de Airflow solo cuando un Dag parseado se refiere a él —
+Para Airflow, un asset solo existe cuando un Dag parseado se refiere a él —
 como outlet o como schedule. Ahora mismo `airflow assets list` imprime `No data
 found`, y la página Assets está vacía; la §9 cambia eso en cuanto el Dag
 processor parsee el primer archivo que guardes allí.
@@ -100,8 +100,8 @@ El scheduler hace entonces la segunda mitad. En su siguiente bucle lee los asset
 events nuevos y encola un Dag run por **cada Dag sin pausa** programado con ese
 asset.
 
-Los eventos que llegan más rápido de lo que el consumidor puede correr no se
-pierden ni se ejecutan de uno en uno. `mlops` permite un único run activo
+Los eventos que llegan más rápido de lo que el consumidor puede procesarlos no
+se pierden ni se procesan de uno en uno. `mlops` permite un único run activo
 (`max_active_runs=1`), así que si terminan tres runs de `dataops` mientras está
 ocupado, el *siguiente* run de `mlops` se lleva los tres eventos, y
 `triggering_asset_events` en `prepare_data` los lista todos. Un consumidor se
@@ -111,7 +111,7 @@ pone al día en un run, no en tres.
 > pausa* de arriba importan. Si `mlops` está en pausa cuando
 > `dataops` emite, el asset event se escribe igualmente — lo verás en la página
 > de Assets — pero no se encola ningún run para `mlops`, y **quitar
-> la pausa después no lo reproduce**. Airflow filtra los Dags en pausa en el
+> la pausa después no lo recupera**. Airflow filtra los Dags en pausa en el
 > momento en que decide qué encolar, así que después ya no queda nada que
 > encontrar. Lo mismo vale para un consumidor que todavía no existía cuando se
 > escribió el evento: el run de `dataops` que harás en la §9 emitirá un evento

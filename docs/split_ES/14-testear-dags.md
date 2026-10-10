@@ -4,9 +4,9 @@ Cuatro niveles — y el primero de ellos comprueba los siete archivos que
 escribiste.
 
 **Tests de integridad de Dags** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
-Detectan, antes de que el archivo llegue a Airflow, los fallos que si no verías
-como un error de import en la UI, y son lo de mayor valor que puedes meter en
-CI:
+Detectan, antes de que el archivo llegue a Airflow, los fallos que de otro modo
+verías como un error de import en la UI, y son lo más valioso que puedes meter
+en CI:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -27,7 +27,7 @@ validando antes de entrenar; sin ciclos. La suite también hace grep en el códi
 construcciones de versiones anteriores de Airflow — `schedule_interval=`,
 `days_ago(`, `airflow.operators.`, `execution_date`, `SubDagOperator`, `sla=`.
 La mayoría del código de Airflow que hay en internet es anterior a Airflow 3, así
-que un snippet copiado y pegado puede colar una de estas. Algunas impiden que el
+que un fragmento copiado y pegado puede colar una de estas. Algunas impiden que el
 archivo se importe (`schedule_interval=`, `days_ago(`, `SubDagOperator`); el
 resto pasan sin avisar: `airflow.operators.` sigue importando a través de un
 shim de deprecación, `sla=` se acepta y no hace nada, y `execution_date` solo
@@ -43,7 +43,7 @@ dentro del propio comando (§4), y `airflow tasks test <dag_id> <task_id>`
 ejecuta una sola task sin guardar su estado en la metadata database.
 
 **Tests sobre la documentación** — dos, porque un tutorial que cita código solo
-es útil mientras las citas son verdad.
+es útil mientras las citas sean correctas.
 [`tests/test_readme_listings.py`](../../tests/test_readme_listings.py): el
 [apéndice](../appendix-dags_ES.md) muestra cada solución completa, inyectada
 desde `solutions/` con [`scripts/sync_readme.py`](../../scripts/sync_readme.py) en vez
@@ -74,15 +74,15 @@ un minuto:
 36 passed in 7.51s
 ```
 
-No intervino ningún scheduler y no corrió ningún Dag. Ese es el objetivo: cada
-uno de esos 36 es lo bastante rápido para correr en cada commit, que es
+No intervino ningún scheduler y no corrió ningún Dag. De eso se trata: cada
+uno de esos 36 es lo bastante rápido para ejecutarse en cada commit, y eso es
 lo que hace que merezca la pena tenerlos.
 
 Cuando uno falla, el mensaje dice qué archivo y qué falta — `mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`, a
 `dataops` le falta un outlet — y el arreglo está en la sección que construyó ese
-archivo, o en `solutions/`. Para ver la suite pasar contra las versiones
-terminadas, apúntala ahí:
+archivo, o en `solutions/`. Para ver la suite pasar con las versiones
+terminadas, apúntala a esa carpeta:
 
 ```bash
 docker compose run --rm -e DAGS_DIR=solutions --entrypoint pytest airflow-cli /opt/airflow/tests -q
@@ -105,7 +105,7 @@ Ninguno de esos niveles habría detectado los fallos del recuadro de la "trampa"
 de la §7 (el `KeyError` y el `UndefinedError` de un run sin logical date):
 `airflow dags test` siempre aporta una logical date, así que un Dag que
 se rompe en un run sin ella pasa todos los tests de arriba. **Dispara cada Dag
-una vez de verdad** — por el scheduler, con `airflow dags trigger` y sin `-l`,
+una vez de verdad** — a través del scheduler, con `airflow dags trigger` y sin `-l`,
 para que el run no tenga logical date, igual que uno disparado por asset — antes
 de darlo por bueno.
 

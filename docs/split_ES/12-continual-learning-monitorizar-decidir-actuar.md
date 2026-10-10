@@ -23,7 +23,7 @@ Un evento de monitorización tiene cuatro respuestas sensatas, y
 
 | Respuesta | Cuándo | Qué pasa |
 |---|---|---|
-| **continue** | drift y rendimiento dentro de los límites | nada; seguimos sirviendo |
+| **continue** | drift y rendimiento dentro de los límites | nada; el modelo actual sigue en producción |
 | **improve** | el f1 bajó, o se movió la distribución de entrada o la de etiquetas | preguntar a una persona, y luego disparar `mlops` |
 | **inspect** | apareció una etiqueta no vista | parar y avisar a alguien — el espacio de etiquetas cambió |
 | **rollback** | el rendimiento se desplomó | volver a apuntar producción al modelo anterior |
@@ -131,9 +131,9 @@ Medir, y luego decidir:
 dado a este run. Cada condición de reentrenamiento vigila uno de los tres tipos
 de drift de la tabla. `mean_length_shift` es el cambio relativo de la longitud
 media del texto (`+0.10` = un 10 % más largo), y va con `abs()` porque un texto
-que se acorta es tanto drift como uno que se alarga. Fíjate en el orden: **una etiqueta nueva enruta a `inspect`, no
+que se acorta es tanto drift como uno que se alarga. Fíjate en el orden: **una etiqueta nueva lleva a `inspect`, no
 a `request_retraining`.** Reentrenar con datos cuyo espacio de etiquetas todavía no has
-entendido es la forma de publicar un modelo peor con plena confianza.
+entendido es la receta para publicar un modelo peor convencido de que es mejor.
 
 Ahora las cuatro ramas. Tres son simples; la cuarta es un gate
 **human-in-the-loop** (una task que espera a que una persona responda),
@@ -183,7 +183,7 @@ termine; dale horas en producción. `TriggerDagRunOperator` arranca otro
 Dag: crea un run `manual__` de `mlops` con el `conf` dado, y con
 `wait_for_completion=False` no se queda a mirarlo.
 
-Termina con el cableado:
+Termina conectando las tasks:
 
 ```python dags/06_monitoring_and_retraining.py
     report = measure()
@@ -200,13 +200,13 @@ monitoring_dag()
 
 Cuatro ramas a partir de un branch; `decide` devuelve el `task_id` de la rama
 que hay que ejecutar. No hay join al final, porque nada tiene que correr después de
-todos ellos.
+todas ellas.
 
 ### Ejecútalo
 
 Forzar a cero el límite de label drift hace que `decide()` elija la rama de
-reentrenamiento, así que ves el camino interesante en vez del que toque con tus
-datos actuales. (Solo `rollback` o `inspect` pasarían antes, y ninguno de los
+reentrenamiento, así que ves el camino interesante en vez del que corresponda a
+tus datos actuales. (Solo `rollback` o `inspect` pasarían antes, y ninguno de los
 dos se da con los datos del tutorial: no hay etiquetas nuevas ni una caída de
 f1 de 0.25.)
 
@@ -218,8 +218,8 @@ docker compose exec airflow-scheduler \
 > **Este comando tarda unos 70 segundos y parece congelado durante 60 de ellos.**
 > No es un cuelgue. `request_retraining` es el gate human-in-the-loop: entra en
 > `awaiting_input` y agota su `response_timeout` completo de 60 segundos antes
-> de resolverse por defecto a Approve, porque nadie va a pulsar el botón. Déjalo
-> estar.
+> de resolverse por defecto con Approve, porque nadie va a pulsar el botón.
+> Déjalo terminar.
 
 **Comprobación.** Por orden, con la espera de un minuto entre la segunda y la
 tercera línea:
@@ -249,9 +249,9 @@ decisión que se tomó, cuándo, y *quién*. Un run que agotó el timeout y apli
 `defaults` guarda la decisión con el "quién" vacío, que es cómo distingues "una persona
 aprobó esto" de "no había nadie mirando".
 
-> **Sin el override de `--conf`** el desenlace depende del estado, que es el
-> sentido de un monitor. Si la §10 promocionó un modelo y los datos no se han
-> movido, `decide()` devuelve `continue_serving`, la rama de reentrenamiento
+> **Sin sobrescribir el valor con `--conf`**, el desenlace depende del estado,
+> que es justo para lo que sirve un monitor. Si la §10 promocionó un modelo y
+> los datos no han cambiado, `decide()` devuelve `continue_serving`, la rama de reentrenamiento
 > queda skipped, y el run termina en segundos. Si todavía no hay modelo en
 > producción, `decide()` lo dice — `No production model yet - train one.` — y
 > elige la rama de reentrenamiento igualmente, timeout incluido. Ambas son
@@ -261,7 +261,7 @@ Referencia: [`solutions/06_monitoring_and_retraining.py`](../../solutions/06_mon
 
 ### Lo que "reentrenar" deja fuera
 
-`trigger_retraining` dispara `mlops`, que ajusta sobre lo que haya en el
+`trigger_retraining` dispara `mlops`, que entrena con lo que haya en el
 warehouse. Eso es la orquestación; no es el problema completo del
 reentrenamiento. Cada uno de estos sería una task más en una versión real de
 este Dag:
@@ -275,16 +275,15 @@ este Dag:
 | **sampling** | sube/baja muestreo para arreglar el desbalanceo que introdujo el drift |
 | **evaluation** | construye el conjunto de test para que se parezca a los datos que verá el modelo en producción |
 
-La otra restricción es el **catastrophic forgetting**: ajustar solo sobre la ventana
+La otra restricción es el **catastrophic forgetting**: entrenar solo con la ventana
 nueva hace que el modelo olvide patrones que antes acertaba, así que corrige los
-errores de hoy y recupera los de antes. El Dag de aquí lo esquiva
-entrenando siempre con la tabla etiquetada completa — vale a este tamaño, y es lo
-primero que revisar cuando la tabla deje de caber en una task.
+errores de hoy y vuelve a cometer los de antes. El Dag de este tutorial lo evita
+entrenando siempre con la tabla etiquetada completa — vale con este tamaño, y es lo
+primero que hay que revisar cuando la tabla deje de caber en una task.
 
-Que es también por lo que el promotion gate de la §10 compara contra el modelo en
-producción actual en vez de solo contra un umbral fijo: un modelo reentrenado que
-es peor que el que está sirviendo no debería publicarse solo porque disparó un
-monitor.
+Por eso también el promotion gate de la §10 compara con el modelo que está en
+producción en vez de solo con un umbral fijo: un modelo reentrenado que es peor
+que el actual no debería publicarse solo porque saltó un monitor.
 
 ---
 

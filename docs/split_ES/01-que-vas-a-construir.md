@@ -1,7 +1,7 @@
 ## 1. Qué vas a construir
 
 La orquestación convierte un montón de scripts que lanzas a mano en un sistema:
-el trabajo se declara como un grafo de tasks, otra cosa decide cuándo ejecutarlo,
+el trabajo se declara como un grafo de tasks, un componente aparte decide cuándo ejecutarlo,
 reintenta las partes que fallan y registra qué pasó.
 
 Un workflow en Airflow es un **Dag** — un grafo dirigido acíclico. *Dirigido*:
@@ -45,13 +45,14 @@ avisen cuando un run va demasiado lento).
 Los siete Dags los escribes tú. La carpeta que lee Airflow, `dags/`, está
 **vacía** cuando clonas este repo. Cada sección explica una pieza de Airflow y
 después te hace construir el Dag que la usa — unas pocas líneas cada vez, con el
-porqué de cada trozo al lado — y luego ejecutarlo y comprobar qué ha pasado. El
-código te lo damos; tu trabajo es teclearlo, ver que parsea y verlo correr.
+porqué de cada fragmento al lado — y luego ejecutarlo y comprobar qué ha pasado.
+El código te lo damos; tu trabajo es teclearlo, comprobar que Airflow lo parsea
+y verlo ejecutarse.
 
 Dos redes de seguridad:
 
 - **[`solutions/`](../../solutions/)** tiene una copia terminada de cada archivo, con
-  los comentarios didácticos dentro. Compara cuando algo no parsee, o sáltate
+  los comentarios didácticos dentro. Compara cuando algo no se parsee, o sáltate
   una lección copiando su archivo: `cp solutions/03_dataops.py dags/`. El
   [apéndice](../appendix-dags_ES.md) imprime cada solución completa.
 - **Los tests de la §14** leen *tu* carpeta `dags/`. Cuando los siete estén
@@ -66,16 +67,16 @@ anteriores.
 
 Airflow no es el único orquestador — Prefect, Dagster, Luigi, Metaflow, Flyte,
 Kubeflow Pipelines y Vertex AI Pipelines cubren el mismo terreno. Airflow merece
-la pena como primero porque:
+la pena como primer orquestador porque:
 
-- **Adopción.** Es el estándar en la mayoría de plataformas de datos, así que los
-  conceptos se transfieren y todos los vendors traen integración.
+- **Adopción.** Es el estándar en la mayoría de plataformas de datos, así que lo
+  que aprendas te sirve en otros sitios y todos los vendors ofrecen integración.
 - **Apache governance**, un ecosistema grande de providers, y ningún vendor
   único.
 
 Y tiene lo que se espera de un orquestador moderno, como Prefect o Dagster:
 workflows escritos en Python normal, testeables con pytest (§14), y el mismo
-código corriendo en tu portátil y en un clúster — cambias el executor, no el
+código ejecutándose en tu portátil y en un clúster — cambias el executor, no el
 Dag.
 
 ### El proyecto de ML que orquesta

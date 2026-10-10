@@ -14,7 +14,7 @@ EMR, Dataproc) con Airflow disparándolo y siguiéndolo — Airflow es un
 orquestador, no un motor de cómputo.
 
 **Dag bundles.** El Dag processor lee *bundles*; el de por defecto es un
-`LocalDagBundle` llamado `dags-folder`, que lee el setting `dags_folder`.
+`LocalDagBundle` llamado `dags-folder`, que lee el ajuste `dags_folder`.
 Cambiar a `GitDagBundle` te da versionado: cada Dag run registra el commit con el
 que corrió, así que un re-run usa el mismo código.
 
@@ -28,7 +28,7 @@ dag_bundle_config_list = [
 ```
 
 **Intervalos de parseo.** Este stack escanea archivos cada 5 segundos para que
-lo que guardas aparezca al momento. Devuelve los valores por defecto
+lo que guardas aparezca al momento. Vuelve a los valores por defecto
 (`refresh_interval` 300, `min_file_process_interval` 30) en cualquier cosa con
 cientos de archivos de Dag: con intervalos de 5 segundos, el Dag processor
 vuelve a parsear archivos que no cambiaron y gasta CPU para nada.
@@ -50,14 +50,14 @@ gente se salta hasta que hay un incidente. Tres capas:
   como **tags**; `[metrics] legacy_names_on` (por defecto `True`) también exporta
   la forma antigua con el nombre como sufijo.
 - **Traces** — `[traces] otel_on = True` envía spans de los bucles del scheduler
-  y de los runs de task, que es como encuentras *qué* task de un Dag lento se
+  y de los runs de task, y así encuentras *qué* task de un Dag lento se
   volvió más lenta.
 - **Health** — `GET /api/v2/monitor/health` informa del estado de la metadata
   database, el scheduler, el triggerer y el Dag processor; la página Home de la UI muestra lo mismo.
 
-Y luego la higiene de siempre: `airflow db clean` programado (si no, la metadata
-database crece para siempre), deadline alerts en los Dags que importan (§13), y
-Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — cableados a
+Y luego el mantenimiento de siempre: `airflow db clean` programado (si no, la metadata
+database crece indefinidamente), deadline alerts en los Dags que importan (§13), y
+Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — conectados a
 `on_failure_callback` o a un `AsyncCallback`.
 
 ---

@@ -1,7 +1,7 @@
 ## 13. Deadline alerts
 
 Un **deadline** responde a "avísame si este run está tardando demasiado". Se
-adjunta al Dag, se aplica al run entero, y se evalúa *mientras el run sigue en
+define en el Dag, se aplica al run entero, y se evalúa *mientras el run sigue en
 marcha* — así que te enteras de un pipeline atascado durante el incidente, no en
 el informe de la mañana.
 
@@ -82,8 +82,8 @@ docker compose logs airflow-scheduler | grep "DEADLINE MISSED"
 ```
 
 **Comprobación.** Una línea `DEADLINE MISSED`, unos 30 segundos después del
-trigger, con el contexto del run — y `slow_step` sigue corriendo cuando dispara,
-porque esa task duerme 75 segundos. Ese es el objetivo: te enteraste del run
+trigger, con el contexto del run — y `slow_step` sigue corriendo cuando salta la
+alerta, porque esa task duerme 75 segundos. De eso se trata: te enteraste del run
 lento antes de que terminara. Los deadlines perdidos y pendientes también se
 listan bajo Browse → **Deadlines**.
 
@@ -91,8 +91,8 @@ listan bajo Browse → **Deadlines**.
 > `airflow dags test` revienta con cualquier Dag que defina `deadline=`
 > (`psycopg2.ProgrammingError: can't adapt type 'dict'`
 > saliendo de `DagRun.update_state`). Las tasks corren bien; lo único que falla
-> es la actualización final de estado de la CLI. Dispara esos Dags por el
-> scheduler en su lugar — que es por lo que `mlops` no lleva deadline, ya que
+> es la actualización final de estado de la CLI. Dispara esos Dags a través del
+> scheduler en su lugar — por eso `mlops` no lleva deadline, ya que
 > rompería el paso `airflow dags test mlops` de la §10.
 > [Detalles.](../troubleshooting.md)
 

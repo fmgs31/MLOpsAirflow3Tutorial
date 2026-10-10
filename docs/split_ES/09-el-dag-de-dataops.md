@@ -1,7 +1,7 @@
 ## 9. El Dag de DataOps
 
 `dags/03_dataops.py` — extract → validate → transform → validate. El primer Dag
-de aquí que hace trabajo de verdad, y cada task es una pieza que puedes
+del tutorial que hace trabajo real, y cada task es una pieza que puedes
 sustituir por la herramienta de un vendor real:
 
 | Task aquí | Opción en producción |
@@ -10,10 +10,11 @@ sustituir por la herramienta de un vendor real:
 | `validate_raw`, `validate_transformed` | Great Expectations / Soda / tests de dbt |
 | `transform` | dbt Cloud / dbt Core dentro de Airflow con astronomer-cosmos |
 
-Es también el primer Dag de aquí con un cron de verdad — `schedule="0 3 * * *"`,
-el ejemplo de la §7 — así que en cuanto le quites la pausa en la §10 correrá solo:
-una vez inmediatamente, para el último trozo que su cron ya ha dejado atrás,
-y luego a las 03:00 UTC cada día, disparando cada run a su vez `mlops`.
+Es también el primer Dag del tutorial con un cron real — `schedule="0 3 * * *"`,
+el ejemplo de la §7 — así que en cuanto le quites la pausa en la §10 se ejecutará
+solo: una vez inmediatamente, para la última franja que su cron ya ha dejado
+atrás, y luego a las 03:00 UTC cada día, y cada uno de esos runs disparará a su
+vez `mlops`.
 (`monitoring`, §12, es el otro programado, a las 06:00.) Deja el stack levantado
 toda la noche y los runs `scheduled__` que encuentres por la mañana son eso, no
 un bug.
@@ -133,7 +134,7 @@ detalles en los que es fácil equivocarse:
 - **`AirflowFailException`, no `AirflowException`.** Un fallo de calidad de datos
   no es transitorio; con `retries=2` en los defaults, una excepción normal
   ejecutaría la misma comprobación tres veces y retrasaría la alerta dos
-  minutos. `AirflowFailException` falla la task al momento, con o sin
+  minutos. `AirflowFailException` hace fallar la task al momento, con o sin
   reintentos.
 - **Las expectations son no-críticas cuando significan "mira esto", no "para".**
   Que aparezca un tag inesperado es una señal para inspeccionar el espacio de
@@ -167,7 +168,7 @@ los Dags aguas abajo se programan con "llegaron datos buenos".
 
 Una task más, dentro de un **task group** — `@task_group` anida tasks bajo un
 único nodo plegable en la vista Graph, algo a lo que recurrir en cuanto un Dag
-pasa de una docena de tasks — y después el cableado:
+pasa de una docena de tasks — y después las conexiones entre tasks:
 
 ```python dags/03_dataops.py
     @task_group(group_id="quality_report")
@@ -194,14 +195,14 @@ pasa de una docena de tasks — y después el cableado:
 dataops()
 ```
 
-Lee el cableado dos veces. `transform` recibe `raw_fp`, así que el flujo de
-datos le dibuja su arista desde `extract_projects` — pero nada de lo que consume
+Lee las conexiones dos veces. `transform` recibe `raw_fp`, así que el flujo de
+datos le crea su arista desde `extract_projects` — pero nada de lo que consume
 viene de `validate_raw`, así que `raw_report >> curated_fp` añade la arista a
 mano: el transform debe esperar al gate aunque no use su salida. Son las formas
 1 y 2 de la §6: aristas implícitas cuando fluyen datos, `>>` cuando solo importa
 el orden.
 
-### Mira aparecer los assets
+### Comprueba que aparecen los assets
 
 Guarda el archivo. A los pocos segundos `airflow dags list` tiene una tercera
 fila — y algo más ha cambiado:
@@ -238,12 +239,12 @@ Si una task falla, compara con [`solutions/03_dataops.py`](../../solutions/03_da
 > genuino en la metadata database — abre la página Assets y ahí está, con el
 > `extra` que le adjuntaste. Todavía no hay nada programado con ese asset, así
 > que no pasa nada más. Y según la §8, no pasará: cuando `mlops` aparezca en la
-> §10 este evento ya será historia, y Airflow no reproduce la historia.
+> §10 este evento ya será historia, y Airflow no recupera eventos pasados.
 
 ### Backfills
 
 Ahora que tienes un Dag con schedule, los backfills tienen sentido. Un backfill
-crea los runs de cada trozo de un rango de fechas, a posteriori. En Airflow un
+crea a posteriori los runs de cada franja de un rango de fechas. En Airflow un
 backfill es un objeto propio, con su API, su formulario en la UI y su política
 de reprocesado (más abajo). **Haz un dry-run primero** — un backfill con el rango de fechas equivocado es
 la forma más fácil de crear treinta runs por accidente:
@@ -255,7 +256,7 @@ docker compose exec airflow-scheduler airflow backfill create \
 
 **Comprobación.** Una tabla encabezada `Runs to be attempted:` con tres filas —
 2026-02-01, 02 y 03, cada una a las 03:00 — y nada creado. `--to-date` es
-exclusivo, y cada fila es un trozo del cron diario de `dataops`.
+exclusivo, y cada fila es una franja del cron diario de `dataops`.
 
 Quita `--dry-run` y el mismo comando crea esos tres runs, con run ids que empiezan
 por `backfill__`. Ten claro qué viene después antes de hacerlo:
@@ -274,12 +275,12 @@ por `backfill__`. Ten claro qué viene después antes de hacerlo:
   admin. Cancelarlo marca como `failed` los runs del backfill aún en cola. Pausar el Dag es el freno de emergencia: un Dag en pausa no arranca
   nada.
 
-`--reprocess-behavior` decide qué hacer con los trozos que ya tienen un run —
+`--reprocess-behavior` decide qué hacer con las franjas que ya tienen un run —
 `none`, `failed` o `completed` — que es la diferencia entre "rellena los huecos"
 y "rehaz el mes". En la UI: Dag → **Trigger** → **Backfill**, que hace un dry-run
-del rango y te dice cuántos runs va a crear antes de confirmar. Esto es también
-por lo que a un Dag programado con assets no se le puede hacer backfill (§5): no
-tiene trozos, solo eventos.
+del rango y te dice cuántos runs va a crear antes de confirmar. Por esto mismo
+no se puede hacer backfill de un Dag programado con assets (§5): no tiene
+franjas, solo eventos.
 
 ### Cambiar a los vendors reales
 

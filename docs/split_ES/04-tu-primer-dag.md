@@ -9,8 +9,8 @@ from airflow.sdk import dag, task, DAG, Param, Asset, chain, Label
 
 Vas a escribir `dags/01_hello_airflow3.py`: cuatro tasks que construyen un
 saludo, lo gritan, cuentan sus palabras e imprimen el resultado. Lo bastante
-pequeño para tenerlo en la cabeza, y cada idea que contiene vuelve en todos los
-Dags posteriores.
+pequeño para abarcarlo de un vistazo, y cada idea que contiene reaparece en todos
+los Dags posteriores.
 
 ### Constrúyelo
 
@@ -64,7 +64,7 @@ Las otras dos deciden qué pasa cuando una task falla:
 
 **El valor por defecto es `retries=0`** (`[core] default_task_retries`), lo que
 significa que una task que sufre un corte de red puntual simplemente falla y se lleva el
-run por delante. Reintentar es opt-in, y por eso los tests de integridad de este
+run por delante. Los reintentos hay que activarlos explícitamente, y por eso los tests de integridad de este
 repo (§14) insisten en que todo Dag que no sea una demo lo fije.
 
 Los reintentos solo ayudan con fallos que podrían no repetirse — un timeout, una
@@ -149,11 +149,11 @@ imprima acaba en el log de la task, visible en la UI.
 `macros`. Lee `logical_date` con `.get()`, nunca con `context["logical_date"]`:
 un run disparado por asset, o desde la CLI sin logical date, no tiene ninguna, y
 entonces la clave
-falta del contexto por completo — indexarla lanza `KeyError` en tiempo de
+no existe en el contexto — indexarla lanza `KeyError` en tiempo de
 ejecución, mientras `airflow dags test` (que siempre aporta una) sigue en verde.
 La §7 explica el porqué. `run_id` siempre está; prefiérelo para nombrar cosas.
 
-Termina el archivo cableando las tasks entre sí y registrando el Dag:
+Termina el archivo conectando las tasks entre sí y registrando el Dag:
 
 ```python dags/01_hello_airflow3.py
     message = make_greeting()
@@ -163,11 +163,11 @@ Termina el archivo cableando las tasks entre sí y registrando el Dag:
 hello_airflow3()
 ```
 
-**Pasar la salida de una task a otra dibuja la arista.** `shout(message)` es lo
+**Pasar la salida de una task a otra crea la arista.** `shout(message)` es lo
 que hace que `shout` corra después de `make_greeting`. El grafo se construye
 cuando se parsea el archivo; el código corre después, posiblemente en otra
-máquina. Nada hace que `shout` y `count_words` se esperen entre sí, así que un
-run dirigido por el scheduler es libre de ejecutarlas a la vez (la §3 dice qué lo
+máquina. Nada hace que `shout` y `count_words` se esperen entre sí, así que en
+un run dirigido por el scheduler pueden ejecutarse a la vez (la §3 dice qué lo
 decide):
 
 ```
@@ -177,14 +177,14 @@ make_greeting ─┬─► shout ──────┬─► report
 
 Y la última línea: **el decorador solo define el Dag; llamar a la función lo
 registra.** Un archivo de Dag que define un Dag y nunca lo llama no produce nada
-— importa limpiamente y no aparece en ningún sitio. Es el error de principiante
+— se importa sin errores y no aparece en ningún sitio. Es el error de principiante
 más común y el más difícil de ver, porque no hay ningún error que leer.
 
 Guarda el archivo. Compáralo con
 [`solutions/01_hello_airflow3.py`](../../solutions/01_hello_airflow3.py) si quieres —
 es el mismo código con los comentarios dentro.
 
-### Míralo parsear
+### Comprueba que se parsea
 
 El Dag processor (§3) escanea `dags/` cada cinco segundos en este stack,
 importa cada archivo `.py` que parece un archivo de Dag (qué significa eso
@@ -209,7 +209,7 @@ comando:
 docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
 ```
 
-**Comprobación.** `No data found` — tu archivo importa. Mira cómo se ve el otro
+**Comprobación.** `No data found` — tu archivo se importa sin errores. Mira cómo se ve el otro
 caso provocándolo: guarda esto como `dags/zz_broken_on_purpose.py`,
 
 ```python
@@ -244,9 +244,9 @@ ningún Dag dentro, que es justo lo correcto, o un experimento desechable como e
 archivo roto de arriba. Así que cuando un archivo simplemente no está, esto es
 lo segundo que hay que comprobar.
 
-La tercera forma de no obtener nada es el error de principiante nombrado bajo el título
-"Constrúyelo" en ésta sección — un archivo que define un Dag y nunca lo llama. Importa
-limpiamente, así que `list-import-errors` también está vacío, y el único síntoma
+La tercera forma de no obtener nada es el error de principiante descrito bajo el título
+"Constrúyelo" en esta sección — un archivo que define un Dag y nunca lo llama. Se
+importa sin errores, así que `list-import-errors` también está vacío, y el único síntoma
 es un Dag que no está. Mira primero `list-import-errors`, y después el final del
 archivo.
 
@@ -266,8 +266,8 @@ impresa lleva un espacio en medio:
 HELLO FROM RUN MANUAL__2026-09-15T12:18:32.454459+00:00 AT 2026-09-15 12:18:33.500053+00:00  (7 words)
 ```
 
-y, al final, `DagRun Finished: ... state=success`. Ese es el bucle de autoría más
-rápido que existe: un run completo con logs reales y sin UI. Lo vas a usar
+y, al final, `DagRun Finished: ... state=success`. Es la forma más rápida de
+probar un Dag mientras lo escribes: un run completo con logs reales y sin UI. Lo vas a usar
 después de cada Dag que escribas.
 
 > **Qué es `airflow dags test`, y qué no.** Ejecuta el Dag entero dentro de este
@@ -277,8 +277,8 @@ después de cada Dag que escribas.
 > - Las tasks corren **de una en una**, en un orden que el grafo permita. En la
 >   salida de ese run, una de `shout`/`count_words` terminó antes de que empezara la
 >   otra; cuál va primero varía de un run a otro.
-> - **Siempre aporta una logical date.** Un trigger desde la CLI no (§7), que
->   es la forma en la que un Dag puede pasar aquí y fallar en producción.
+> - **Siempre aporta una logical date.** Un trigger desde la CLI no (§7), y por
+>   eso un Dag puede pasar aquí y fallar en producción.
 > - Una task **deferrable** (§11), cuando tiene que esperar, normalmente se
 >   suspende y deja la espera en manos de otro servicio, el triggerer. Aquí no
 >   hay triggerer, así que la espera la hace el propio `airflow dags test`, y el
@@ -313,7 +313,7 @@ with DAG(
     BashOperator(task_id="hello", bash_command="echo hi")
 ```
 
-Cualquier cosa creada dentro del bloque `with` se engancha a ese Dag
+Cualquier cosa creada dentro del bloque `with` se asocia a ese Dag
 automáticamente. Ambas formas producen el mismo objeto, y un archivo puede tener
 varios Dags.
 
