@@ -45,10 +45,10 @@ El stack es deliberadamente más pequeño que el [docker-compose.yaml
 oficial](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
 `LocalExecutor` en vez de Celery + Redis (la §3 explica qué es un executor), y el
 Simple auth manager en vez de FAB — Flask-AppBuilder, el provider que da a
-Airflow usuarios, roles y una página de login. Menos piezas móviles mientras
-estás aprendiendo.
+Airflow usuarios, roles y una página de login. Menos piezas en juego mientras
+aprendes.
 
-> **Auth:** está puesto `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true`, así
+> **Auth:** está activado `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true`, así
 > que la UI no tiene login, y el puerto 8080 se publica solo en `127.0.0.1` — la
 > dirección de loopback — así que nada de fuera de tu máquina puede llegar a él.
 > No despliegues esta configuración en ningún otro sitio.
@@ -133,10 +133,10 @@ logs/           task logs, one directory per dag_id / run_id / task_id
 > "should NEVER be used for production". Vale para seguir este tutorial —
 > `LocalExecutor` ejecuta tasks en paralelo contra ella, y necesita SQLite ≥ 3.15
 > — pero pásate a Postgres o MySQL para cualquier cosa real. El stack de Docker
-> de este repo ya corre Postgres 16, y por eso el camino con Docker es el
+> de este repo ya usa Postgres 16, y por eso el camino con Docker es el
 > recomendado.
 
-Cualquier ajuste de `airflow.cfg` también se puede dar como variable de entorno
+Cualquier ajuste de `airflow.cfg` también se puede definir como variable de entorno
 `AIRFLOW__SECTION__KEY`. `SECTION` es la `[cabecera]` bajo la que está el ajuste
 y `KEY` es el nombre del propio ajuste, ambos en mayúsculas y unidos por **doble**
 guion bajo — un guion bajo *dentro* de cualquiera de los dos nombres sigue siendo
@@ -167,7 +167,7 @@ Y después, o bien el proceso todo-en-uno:
 airflow standalone
 ```
 
-…o los componentes por separado, que es a lo que se parece un deployment real:
+…o los componentes por separado, que es como se ve un despliegue real:
 
 ```bash
 airflow api-server --port 8080

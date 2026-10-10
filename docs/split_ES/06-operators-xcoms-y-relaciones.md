@@ -15,10 +15,10 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.sensors.filesystem import FileSensor
 ```
 
-Más allá de los estándar hay un provider para casi cualquier sistema con el que
+Aparte de estos hay un provider para casi cualquier sistema con el que
 quieras hablar — S3, Snowflake, BigQuery, Postgres, Kubernetes, Databricks,
 Slack, HTTP, Docker, dbt Cloud, Airbyte — y cada uno trae operators, hooks (los
-clientes que hay debajo de ellos, *Hooks, Connections y Variables* de la §6) y
+clientes sobre los que se apoyan, *Hooks, Connections y Variables* de la §6) y
 sensors (tasks que esperan, §11), se instala como `apache-airflow-providers-<nombre>` y aparece en la UI
 bajo Admin → Providers. Usa uno antes de escribir llamadas HTTP a mano: el
 operator de un provider ya gestiona connections, reintentos y búsqueda de
@@ -32,8 +32,8 @@ de cuatro clases — `EmptyOperator`, `PythonOperator`, `BashOperator` y `@task`
 de TaskFlow — y les pasa un número de una a otra. Lo que enseña es cómo las tasks
 se pasan valores entre sí.
 
-Los **XComs** ("cross-communications") son cómo las tasks se pasan valores
-pequeños. Se guardan en la metadata database, pero una task nunca accede a la
+Los **XComs** ("cross-communications") son el mecanismo con el que las tasks se
+pasan valores pequeños. Se guardan en la metadata database, pero una task nunca accede a la
 metadata database directamente: lee y escribe los XComs pidiéndoselo al API
 server, a través de la Task Execution API (§3).
 Las funciones `@task` de la §4 ya los usaban sin que se viera: cada `return` era un push de XCom,
@@ -262,7 +262,7 @@ código usa las cuatro últimas:
 1. **Implícitamente, pasando la salida de una task a otra.** El Dag de la §4
    estaba hecho de eso: un `@task` llamado con el valor que devolvió otra task.
    La salida de un operator también sirve — pasar `describe.output` como
-   argumento dibujaría la misma arista. Aquí `taskflow_reader` no recibe ningún
+   argumento crearía la misma arista. Aquí `taskflow_reader` no recibe ningún
    argumento, así que su arista con `describe` hay que declararla con la forma
    2.
 2. **Los operadores de desplazamiento**, cuando no fluyen datos —
@@ -433,15 +433,14 @@ train(experiment_name="tagifai_{{ run_id }}", min_f1=0.65)
 ```
 
 Con `min_f1=65` este Dag carga sin errores, y el fallo solo aparece cuando un
-run llega a `train`. Esa diferencia es toda la razón de la clase. Un paso sin
+run llega a `train`. Esa diferencia es la única razón para usar la clase. Un paso sin
 esa necesidad queda mejor como `@task`, que es lo que usa este repo de
 principio a fin.
 
 > Esto vale para un valor escrito en el archivo del Dag. Si el valor llega al
 > disparar el run, como un param (§4), al parsear todavía no existe, y ni la
 > clase ni el `@task` pueden comprobarlo al parsear, solo cuando corre la task.
-> Para el caso de que haga falta
-> validarlo, pon el límite en el propio `Param`:
+> Si hace falta validarlo, pon el límite en el propio `Param`:
 > `Param(0.65, type="number", exclusiveMinimum=0, maximum=1)` hace que Airflow
 > rechace un trigger con `min_f1=65` antes de crear el run.
 
@@ -467,7 +466,7 @@ tendría que recibir `python_callable`, que es obligatorio.
 
 Un operator es una task entera que hace una cosa fija: `SQLExecuteQueryOperator`
 ejecuta una consulta, `SqlToS3Operator` copia el resultado de una consulta a un
-archivo en S3. Un **hook** es el cliente que hay debajo de un operator. Recibe un
+archivo en S3. Un **hook** es el cliente sobre el que se apoya un operator. Recibe un
 `conn_id` — el nombre de una **Connection**, las credenciales de un servicio
 que Airflow guarda con ese nombre (se explican más abajo) —, construye el
 cliente autenticado y te da métodos a los que llamar — `PostgresHook.get_df`
