@@ -223,7 +223,7 @@ a slot for the whole time doing nothing, and that is exactly why the other two
 modes exist.
 
 **Rule of thumb:** seconds → a poking sensor is fine. Minutes or hours →
-deferrable, or you are paying a worker slot to sleep. A service that announces
+`mode="reschedule"` or deferrable, or you are paying a worker slot to sleep. A service that announces
 changes itself, by sending a message to a queue → an `AssetWatcher`, and no
 task waits at all.
 

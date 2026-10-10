@@ -50,9 +50,9 @@ mucho un segundo, y no lo vas a notar. Lo que *sí* vas a notar es lo que tarden
 las propias tasks de aguas arriba, y eso no tiene nada que ver con el scheduler.
 
 El parseo se hace con otro reloj distinto, y es del que vas a depender enseguida. El Dag
-processor vuelve a leer un archivo cambiado como mucho cada `[dag_processor]
-min_file_process_interval` segundos y re-escanea la carpeta buscando archivos
-nuevos cada `refresh_interval`. Este stack pone ambos a **5**, así que un
+processor vuelve a parsear cada archivo, haya cambiado o no, cada
+`[dag_processor] min_file_process_interval` segundos, y re-escanea la carpeta
+buscando archivos nuevos cada `refresh_interval`. Este stack pone ambos a **5**, así que un
 archivo que guardas aparece en la UI en unos segundos. Los valores por defecto
 son 30 y 300: en un stack que los conserve, un archivo recién creado puede
 tardar cinco minutos en aparecer, lo que se ve exactamente igual que un Dag roto
@@ -69,14 +69,15 @@ docker compose exec airflow-scheduler airflow config get-value dag_processor ref
 ### El executor, y qué significa "a la vez"
 
 El executor es la respuesta a "dónde corre de verdad el Python de esta task". El
-scheduler nunca ejecuta tu código; solo decide *que* ese código debería
+bucle del scheduler no ejecuta tu código; solo decide *que* ese código debería
 ejecutarse y entrega la task al executor, que la arranca en algún sitio e informa
-de vuelta.
+de vuelta. (Con `LocalExecutor`, ese "algún sitio" es un subproceso del propio
+proceso del scheduler, como explica el párrafo siguiente.)
 
 `LocalExecutor` — el de este stack — arranca cada task como **su propio
 subproceso en la máquina que corre el scheduler**, usando `multiprocessing` de
 Python. Paralelismo real, del tamaño de una máquina. `CeleryExecutor` en cambio
-deja la task en una cola para un pool de máquinas worker de larga vida, y
+deja la task en una cola para un conjunto de máquinas worker de larga vida, y
 `KubernetesExecutor` le pide a Kubernetes un pod nuevo por task. Cambiar entre
 ellos no cambia ni una línea del código del Dag — esa es la afirmación de la §1, y
 este es el mecanismo que hay detrás.
@@ -93,8 +94,11 @@ subproceso forkeado, allí un proceso worker de Celery, allá un pod en Kubernet
 Lo constante es que el worker recibe la task, la ejecuta y responde por la Task
 Execution API.
 
-Cuántas corren a la vez lo decide el **más estrecho** de cuatro límites, todos
-ellos valores por defecto en este stack:
+Cuántas corren a la vez lo decide el **más estrecho** de varios límites. Estos
+cuatro son los de tasks que usa este tutorial, todos con su valor por defecto en
+este stack (hay más: `max_active_tis_per_dagrun` en una task, `max_active_tasks`
+en un Dag, y `max_active_runs`, que limita runs en vez de tasks y usan la §9 y
+la §10):
 
 | Límite | Valor aquí | Alcance |
 |---|---|---|

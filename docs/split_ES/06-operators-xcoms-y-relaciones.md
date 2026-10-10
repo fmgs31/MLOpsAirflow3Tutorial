@@ -4,7 +4,8 @@ El Dag de la §4 usó funciones decoradas con `@task`. Este usa **operators**, l
 tipos de task prefabricados, y enseña cómo los dos estilos se mezclan sin problema
 en un mismo Dag. Los dos estilos producen **tasks**: una task es cualquier paso de
 un Dag, y una *task de TaskFlow* es una escrita como función `@task` en lugar de
-como operator. Los operators más comunes vienen en
+instanciando un operator a mano (por debajo, Airflow la convierte igualmente en
+un operator; lo explica *¿De qué clase heredar?*, más abajo). Los operators más comunes vienen en
 `apache-airflow-providers-standard`, que ya está instalado:
 
 ```python
@@ -215,7 +216,12 @@ Ahora una task de TaskFlow en el mismo Dag, leyendo el XCom de un operator:
 
 Las tasks de TaskFlow y los operators se mezclan sin problema: un `@task` puede
 leer el XCom de un operator y viceversa, y el mismo `ti.xcom_pull` funciona
-desde cualquiera de los dos lados.
+desde cualquiera de los dos lados. Para llamar a una función Python, `@task` y
+`PythonOperator` son equivalentes — la documentación de Airflow presenta
+`@task` como el equivalente de `PythonOperator` en TaskFlow, sin recomendar
+uno sobre el otro —, y elegir es cuestión de estilo: `PythonOperator` recibe la
+función y sus argumentos por separado (`python_callable`, `op_kwargs`, como
+`push_seed` y `multiply`); con `@task`, llamar a la función es crear la task.
 
 ### Relaciones
 
@@ -439,15 +445,23 @@ principio a fin.
 > `Param(0.65, type="number", exclusiveMinimum=0, maximum=1)` hace que Airflow
 > rechace un trigger con `min_f1=65` antes de crear el run.
 
-**¿Por qué `BaseOperator` y no `PythonOperator`?** `BaseOperator` es la clase de
-la que deriva todo operator: contiene lo que comparten todas las tasks
-(`task_id`, reintentos, plantillas) y deja `execute` para que lo escribas tú.
-`PythonOperator` es una de sus subclases, y todo su trabajo es llamar a la
-función que le pasas como `python_callable`. Una subclase suya cargaría con esa
-maquinaria sin usarla — y cuando llamar a una función Python es todo lo que
-quieres, `@task` ya es eso: por debajo un `@task` es una subclase de
-`PythonOperator`, y por eso los logs llaman a `taskflow_reader`
-`_PythonDecoratedOperator`.
+**¿De qué clase heredar?** De la clase cuyo comportamiento quieras conservar.
+La guía de Airflow para operators propios parte de `BaseOperator`, que trae lo
+que comparten todas las tasks (`task_id`, reintentos, plantillas) y deja
+`execute` para ti: es el punto de partida cuando tu operator hace algo nuevo,
+como `TagifaiTrainOperator`. Pero heredar de un operator ya hecho es lo
+habitual cuando quieres lo que hace más algo: la misma guía lo usa para añadir
+`template_fields` a un operator existente, y la mayoría de los operators de los
+providers derivan de otro operator, no de `BaseOperator` directamente.
+
+`PythonOperator`, por ejemplo, es el padre adecuado cuando el trabajo es llamar
+a una función más algo extra: así están hechos `BranchPythonOperator`,
+`ShortCircuitOperator`, `PythonVirtualenvOperator` y la clase que crea `@task`,
+`_PythonDecoratedOperator` — por eso los logs muestran
+`<Task(_PythonDecoratedOperator): taskflow_reader>`, aunque la UI la etiquete
+como `@task`. Para `TagifaiTrainOperator` no lo es: escribe su propio
+`execute`, así que reemplazaría lo único que hace `PythonOperator`, y aun así
+tendría que recibir `python_callable`, que es obligatorio.
 
 ### Hooks, Connections y Variables
 
@@ -494,13 +508,27 @@ tiene `BaseHook.get_connection("warehouse")`, que devuelve la Connection en sí 
 host, login, password, extra — para que se la pases a cualquier librería
 cliente.
 
-Las **Connections** guardan credenciales (`conn_type`, host, login, password,
-extra); las **Variables** guardan configuración, y una task lee una con
-`Variable.get("min_rows", default=500)`. Ambas son editables bajo Admin,
-se pueden fijar desde la CLI y se pueden sobrescribir con una variable de
-entorno `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` — que es como el archivo de compose
-de este repo define `fs_default`, la Connection que usa el `FileSensor` de la §11. Las plantillas acceden a ellas con
-`{{ conn.warehouse.host }}` y `{{ var.value.min_rows }}`.
+Una **Connection** es un conjunto de credenciales con nombre para un servicio
+(`conn_type`, host, login, password, extra). Una **Variable** es un par
+clave-valor global a toda la instalación: cualquier task de cualquier Dag la
+lee con `Variable.get("min_rows", default=500)`, y sirve para configuración que
+no quieres escribir en el código, como un límite o el nombre de un bucket.
+Las dos se definen de tres maneras:
+
+- **En la UI** (Admin → Connections / Variables) **o con la CLI**
+  (`airflow connections add`, `airflow variables set`). Se guardan en la
+  metadata database, en las tablas `connection` y `variable`. Airflow cifra la
+  contraseña, el extra y el valor de cada Variable con la clave de
+  `[core] fernet_key`; sin clave, los guarda en texto plano, y es lo que pasa en
+  este stack, que no define ninguna.
+- **Como variable de entorno** `AIRFLOW_CONN_<ID>` / `AIRFLOW_VAR_<CLAVE>`. No
+  pasan por la base de datos ni aparecen en la UI. Así define el archivo de
+  compose `fs_default`, la Connection que usa el `FileSensor` de la §11.
+- **En un secrets backend** (Vault, AWS Secrets Manager…), lo habitual en
+  producción (§15).
+
+Las plantillas acceden a ellas con `{{ conn.warehouse.host }}` y
+`{{ var.value.min_rows }}`.
 
 > Una task que consulta cualquiera de las dos no toca la metadata database.
 > Primero mira las variables de entorno `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` — así

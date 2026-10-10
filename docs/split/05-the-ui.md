@@ -1,6 +1,7 @@
 ## 5. The UI
 
-The UI is a React application on top of the REST API, served by the api-server
+The UI is a React application on top of the api-server's API — the public
+REST API plus some endpoints of its own under `/ui/` —, served
 at <http://localhost:8080>. Half of what this tutorial teaches is easier to see
 than to read about, so take the tour now that there is a Dag to look at.
 
@@ -89,7 +90,8 @@ POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
 ```
 
 A string param becomes a text field, a number a numeric one, an enum a dropdown,
-and required fields are validated before the run is created. Under **Advanced
+and the values are validated against each `Param`'s type and limits before
+the run is created. Under **Advanced
 Options** the same thing is editable as raw **Configuration JSON**, and the form
 also offers a run id, a logical date and a manual data interval. If the Dag is
 paused there is also an *"Unpause … on trigger"* checkbox, ticked by default,
@@ -128,9 +130,10 @@ updated, not on dates.
 **Assets** — the page this tutorial was built for, and empty until §9. Once the
 Dags that use them exist, it lists every asset with its producing tasks,
 consuming Dags and event history, and draws the cross-Dag graph: `dataops` →
-`labeled_projects` → `mlops` → `production_model`. That graph is the one picture
-of the whole pipeline; the Dags list cannot show it, because the connection is
-not a dependency between Dags, it is an asset between them. **Create Event** on
+`labeled_projects` → `mlops` → `production_model`. The Dags list cannot show
+it, because the connection is not a dependency between Dags, it is an asset
+between them; besides this page, only a Dag's Graph with **Options →
+Dependencies → All Dag Dependencies** draws it (§10). **Create Event** on
 an asset either materializes it (runs the Dag upstream, which produces the data
 for real) or records a manual event, which triggers the downstream Dags without
 running the producer at all.

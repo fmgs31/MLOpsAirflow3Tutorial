@@ -157,8 +157,9 @@ The final gate — the one that emits the asset `mlops` will be scheduled on:
 ```
 
 Placing the outlet on the *validation* task, not the transform task, is the
-whole trick: the event is written only when this task succeeds, so downstream
-Dags are scheduled on "good data arrived", never on "a task finished".
+whole trick: the event is written only when this task succeeds, so the
+success that starts `mlops` is the validation's, not that of any task in the
+Dag: downstream Dags are scheduled on "good data arrived".
 
 One more task, inside a **task group** — `@task_group` nests tasks under one
 collapsible node in the Graph view, useful once a Dag has more than a

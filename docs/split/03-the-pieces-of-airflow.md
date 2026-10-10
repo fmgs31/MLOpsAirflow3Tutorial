@@ -51,7 +51,7 @@ the upstream tasks themselves take, and that has nothing to do with the
 scheduler.
 
 Parsing is a separate clock, and it is the one you are about to depend on. The
-Dag processor re-reads a changed file at most every `[dag_processor]
+Dag processor re-parses every file, changed or not, every `[dag_processor]
 min_file_process_interval` seconds and re-scans the folder for new files every
 `refresh_interval`. This stack sets both to **5**, so a file you save shows up
 in the UI within a few seconds. The defaults are 30 and 300: on a stack that
@@ -69,13 +69,15 @@ docker compose exec airflow-scheduler airflow config get-value dag_processor ref
 ### The executor, and what "at the same time" means
 
 The executor is the answer to "where does this task's Python actually run". The
-scheduler never runs your code; it only decides *that* code should run and hands
-the task to the executor, which starts it somewhere and reports back.
+scheduler loop does not run your code; it only decides *that* code should run
+and hands the task to the executor, which starts it somewhere and reports back.
+(With `LocalExecutor`, that "somewhere" is a subprocess of the scheduler's own
+process, as the next paragraph explains.)
 
 `LocalExecutor` — the one in this stack — starts each task as its **own
 subprocess on the machine running the scheduler**, using Python's
 `multiprocessing`. Real parallelism, one machine's worth of it.
-`CeleryExecutor` instead drops the task on a queue for a pool of long-running
+`CeleryExecutor` instead drops the task on a queue for a set of long-running
 worker machines, and `KubernetesExecutor` asks Kubernetes for a fresh pod per
 task. Swapping between them changes no Dag code at all — that is the claim in
 §1, and this is the mechanism behind it.
@@ -92,8 +94,11 @@ subprocess here, a Celery worker process there, a pod in Kubernetes. What is
 constant is that the worker gets the task, runs it, and talks back over the Task
 Execution API.
 
-How many run at once is decided by the **narrowest** of four limits, all of them
-defaults on this stack:
+How many run at once is decided by the **narrowest** of several limits. These
+four are the task limits this tutorial uses, all at their defaults on this
+stack (there are more: `max_active_tis_per_dagrun` on a task, `max_active_tasks`
+on a Dag, and `max_active_runs`, which limits runs rather than tasks and is used
+in §9 and §10):
 
 | Limit | Default here | Scope |
 |---|---|---|

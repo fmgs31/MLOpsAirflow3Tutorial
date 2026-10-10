@@ -30,8 +30,8 @@ dag_bundle_config_list = [
 **Intervalos de parseo.** Este stack escanea archivos cada 5 segundos para que
 lo que guardas aparezca al momento. Devuelve los valores por defecto
 (`refresh_interval` 300, `min_file_process_interval` 30) en cualquier cosa con
-cientos de archivos de Dag — el trabajo del processor es parsear, no hacer
-polling.
+cientos de archivos de Dag: con intervalos de 5 segundos, el Dag processor
+vuelve a parsear archivos que no cambiaron y gasta CPU para nada.
 
 **Secretos.** Nunca en el código del Dag, nunca en los `kwargs` de un bundle,
 nunca en la `uri` o el `extra` de un asset — los extras de asset se guardan en

@@ -1,6 +1,7 @@
 ## 5. La UI
 
-La UI es una aplicación React encima de la REST API, servida por el api-server en
+La UI es una aplicación React encima de la API del api-server — la REST API
+pública más unos endpoints propios bajo `/ui/` —, servida en
 <http://localhost:8080>. La mitad de lo que enseña este tutorial se entiende mejor
 viéndolo que leyéndolo, así que haz el recorrido ahora que hay un Dag que mirar.
 
@@ -94,8 +95,8 @@ POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
 ```
 
 Un param string se convierte en un campo de texto, un number en uno numérico, un
-enum en un desplegable, y los campos obligatorios se validan antes de crear el
-run. Bajo **Advanced Options** lo mismo es editable como **Configuration JSON**
+enum en un desplegable, y los valores se validan contra el tipo y los límites
+de cada `Param` antes de crear el run. Bajo **Advanced Options** lo mismo es editable como **Configuration JSON**
 en crudo, y el formulario ofrece además un run id, una logical date y un data
 interval manual. Si el Dag está en pausa aparece también una casilla *"Unpause
 … on trigger"*, marcada por defecto, que le quita la pausa al disparar.
@@ -137,10 +138,10 @@ fechas.
 **Assets** — la página para la que se construyó este tutorial, y vacía hasta la
 §9. En cuanto existan los Dags que los usan, lista cada asset con sus tasks
 productoras, los Dags consumidores y el histórico de eventos, y dibuja el grafo
-entre Dags: `dataops` → `labeled_projects` → `mlops` → `production_model`. Ese
-grafo es la única imagen del pipeline completo; la lista de Dags no puede
-enseñarlo, porque la conexión no es una dependencia entre Dags, es un asset entre
-ellos. **Create Event** sobre un asset o bien lo materializa (ejecuta el Dag
+entre Dags: `dataops` → `labeled_projects` → `mlops` → `production_model`. La
+lista de Dags no puede enseñarlo, porque la conexión no es una dependencia entre
+Dags, es un asset entre ellos; aparte de esta página, solo lo dibuja el Graph de
+un Dag con **Options → Dependencies → All Dag Dependencies** (§10). **Create Event** sobre un asset o bien lo materializa (ejecuta el Dag
 aguas arriba, que produce los datos de verdad) o registra un evento manual, que
 dispara los Dags aguas abajo sin ejecutar el productor.
 
