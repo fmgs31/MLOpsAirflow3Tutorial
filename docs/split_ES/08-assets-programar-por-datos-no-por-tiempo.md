@@ -2,8 +2,8 @@
 
 Un **Asset** es un trozo de datos con nombre. Una task declara que lo produce con
 `outlets=`, y cada vez que esa task tiene éxito Airflow registra un **asset
-event**; un Dag declara que lo consume poniéndolo en `schedule=`, y cada evento
-arranca un run suyo. Ese es todo
+event**; un Dag declara que lo consume poniéndolo en `schedule=`, y los eventos
+nuevos arrancan un run suyo. Ese es todo
 el mecanismo, y sustituye a cada cron del tipo "corre 30 minutos después del otro
 Dag, y reza" que hayas visto en tu vida.
 

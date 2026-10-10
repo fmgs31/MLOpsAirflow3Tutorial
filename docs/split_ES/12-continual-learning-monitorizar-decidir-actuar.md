@@ -165,8 +165,8 @@ UI, en la pestaña **Required Actions** de la task instance y bajo Browse →
 **Required Actions**. Con **Reject**, todo lo de
 aguas abajo queda skipped. `defaults` es la respuesta que se aplica si nadie
 responde antes de `response_timeout` — sesenta segundos aquí para que la lección
-termine; dale horas en producción. `TriggerDagRunOperator` es el verbo entre
-Dags: crea un run `manual__` de `mlops` con el `conf` dado, y con
+termine; dale horas en producción. `TriggerDagRunOperator` arranca otro
+Dag: crea un run `manual__` de `mlops` con el `conf` dado, y con
 `wait_for_completion=False` no se queda a mirarlo.
 
 Termina con el cableado:
@@ -205,7 +205,8 @@ docker compose exec airflow-scheduler \
 > de resolverse por defecto a Approve, porque nadie va a pulsar el botón. Déjalo
 > estar.
 
-**Comprobación.** Por orden, con aproximadamente un minuto de diferencia:
+**Comprobación.** Por orden, con la espera de un minuto entre la segunda y la
+tercera línea:
 
 ```
 Branch into request_retraining

@@ -79,17 +79,23 @@ the body prints back to you:
 - §7's data-interval shapes, read off the timetables themselves: a cron string
   is a `CronTriggerTimetable` here (`create_cron_data_intervals=False`) and
   gives `run_after == data_interval_start == data_interval_end`;
-  `timedelta(days=1)` is a `DeltaDataIntervalTimetable` and gives `run_after`
-  2026-09-11 00:00 with `logical_date == data_interval_start` 2026-09-10 00:00.
+  `timedelta(days=1)` is a `DeltaTriggerTimetable` here
+  (`create_delta_data_intervals=False`) and gives the same zero-length shape;
+  `CronDataIntervalTimetable("0 0 * * *", timezone="UTC")` from a 2026-09-10
+  `start_date` gives `run_after` 2026-09-11 00:00 with `logical_date ==
+  data_interval_start` 2026-09-10 00:00 and `data_interval_end` 2026-09-11
+  00:00.
 - §4/§7's `start_date`: a Dag file with none parses with **no import error**
   under `DagBag`, for `schedule=None` and `@daily` alike.
 - §4's `dags test` box: `hello_airflow3` ran `make_greeting → shout →
   count_words → report`, each finishing before the next started.
 - §13, unpause then trigger: `DEADLINE MISSED` at +31s, `slow_step` still
   running.
-- §10's Try-it in its explicit form (`bash -c 'export TAGIFAI_MIN_F1=0.99;
-  airflow dags test mlops'`): `promote_model` skipped, `keep_current_model`
-  success.
+- §10's Try-it with the variable exported in the container (`bash -c 'export
+  TAGIFAI_MIN_F1=0.99; airflow dags test mlops'`): `promote_model` skipped,
+  `keep_current_model` success. The form §10 now uses, `docker compose exec -e
+  TAGIFAI_MIN_F1=0.99 …`, sets the same variable: `config.MIN_F1_TO_PROMOTE`
+  reads `0.99` in that process.
 - §3's `curl` note: on a Windows machine PowerShell resolves `curl` to
   `Invoke-WebRequest`; `curl.exe` is in `System32`.
 - §11's `enough_rows` reads the table with pandas and reports **764** rows, the

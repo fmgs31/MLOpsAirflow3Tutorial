@@ -53,8 +53,8 @@ skip until an incident. Three layers:
 - **Health** — `GET /api/v2/monitor/health` reports metadata database,
   scheduler, triggerer and Dag processor status; the UI Home page renders the same thing.
 
-Then the ordinary hygiene: `airflow db clean` on a schedule (the metadata DB
-grows forever otherwise), deadline alerts on the Dags that matter (§13), and
+Then the ordinary hygiene: `airflow db clean` on a schedule (the metadata
+database grows forever otherwise), deadline alerts on the Dags that matter (§13), and
 Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — wired to
 `on_failure_callback` or an `AsyncCallback`.
 

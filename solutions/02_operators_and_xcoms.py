@@ -102,7 +102,7 @@ def operators_and_xcoms():
 
     # --- Relationships ------------------------------------------------------
     # `chain` is the readable form of `a >> b >> c`; `Label` annotates the edge
-    # in the graph view. Only `chain` can carry a Label - `>>` cannot.
+    # between its neighbours in the graph view (`a >> Label("x") >> b` works too).
     chain(start, push_seed, Label("seed -> product"), multiply, describe)
 
     # `>>` between single tasks. TaskFlow would have drawn this edge implicitly
@@ -111,11 +111,20 @@ def operators_and_xcoms():
     product = taskflow_reader()
     describe >> product
 
-    check_parity = BashOperator(task_id="check_parity", bash_command='echo "parity checked"')
-    check_range = BashOperator(task_id="check_range", bash_command='echo "range checked"')
+    # `>>` passes no data: the checks pull the reader's return value from XCom.
+    # `test` exits non-zero when the condition is false, failing the task.
+    check_parity = BashOperator(
+        task_id="check_parity",
+        bash_command="test $(( {{ ti.xcom_pull(task_ids='taskflow_reader') }} % 2 )) -eq 0 && echo even",
+    )
+    check_range = BashOperator(
+        task_id="check_range",
+        bash_command="test {{ ti.xcom_pull(task_ids='taskflow_reader') }} -lt 100 && echo 'under 100'",
+    )
 
     # Fan-out and fan-in on one line: a list on either side of `>>` broadcasts
-    # the edge, so this is four dependencies, not two.
+    # the edge, so this is four dependencies, not two - product->check_parity,
+    # product->check_range, check_parity->checks_done, check_range->checks_done.
     product >> [check_parity, check_range] >> EmptyOperator(task_id="checks_done")
 
     publish = EmptyOperator(task_id="publish")

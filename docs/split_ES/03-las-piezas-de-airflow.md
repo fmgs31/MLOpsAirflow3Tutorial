@@ -11,13 +11,13 @@ eso cuesta unos segundos por task. No es nada para trabajo que se mide en
 minutos, y es demasiado lento para trabajo que debe terminar en milisegundos.
 Airflow puede *arrancar* un run cuando llega un evento (§11), pero un run por
 cada mensaje, clic o petición, a miles por segundo, saturaría el scheduler y la
-base de datos; para eso están un consumidor de colas o un procesador de streams
+metadata database; para eso están un consumidor de colas o un procesador de streams
 (Kafka, Flink…). Airflow también encaja mal con cualquier cosa que necesite un
 ciclo o un bucle `while` entre runs, y con cómputo pesado dentro del worker —
 lanza un job de Spark/Ray/Kubernetes y haz seguimiento de él. Si tu pipeline son
 tres scripts que corren una vez por semana, cron sigue estando permitido.
 
-Cuatro procesos, una base de datos y un executor — que, como explica "El executor"
+Cuatro procesos, la metadata database y un executor — que, como explica "El executor"
 más abajo, no siempre es un proceso propio. Todo eso está corriendo en tu stack
 ahora mismo:
 
@@ -25,7 +25,7 @@ ahora mismo:
 |---|---|
 | **API server** | Sirve la REST API, la UI de React y la **Task Execution API** que llaman los workers |
 | **Scheduler** | Decide qué ejecutar y entrega el trabajo al executor |
-| **Dag processor** | Parsea tus archivos de Dag a la base de datos — su propio proceso |
+| **Dag processor** | Parsea tus archivos de Dag a la metadata database — su propio proceso |
 | **Triggerer** | Ejecuta triggers async para tasks deferred (§11) y callbacks async |
 | **Executor** | Donde corren de verdad las tasks. `LocalExecutor` aquí; Celery o Kubernetes en producción |
 | **Metadata DB** | El estado de todo: runs, task instances, XComs, connections |
@@ -122,10 +122,15 @@ entrenamiento que corren de dos en dos en vez de todas a la vez.
 Cada hecho que Airflow conoce vive en una base de datos relacional: las
 definiciones de Dag tal y como se parsearon, cada Dag run, cada task instance con
 su estado y su número de intentos, XComs, Connections, Variables, pools, asset
-events, el audit log. La UI es una vista de eso. El bucle del scheduler es una
-consulta contra eso. Reinicia los contenedores y no se pierde nada, porque el
-estado está en el volumen de la base de datos, no en los contenedores —
-`scripts/reset.sh` borra ese volumen, y por eso es el último recurso.
+events, el audit log. En este stack es el contenedor `postgres` (Postgres 16).
+Es la base de datos propia de Airflow, y no hay que confundirla con las bases de
+datos que usan tus tasks. Si una task lee de un warehouse o del Postgres de una
+aplicación, esa es otra base de datos, y la task llega a ella con una
+Connection y un hook (§6). La UI es una vista de
+la metadata database. El bucle del scheduler es una consulta contra ella.
+Reinicia los contenedores y no se pierde nada, porque el estado está en el
+volumen de la metadata database, no en los contenedores — `scripts/reset.sh`
+borra ese volumen, y por eso es el último recurso.
 
 De ahí salen dos consecuencias. Es lo que hay que respaldar, y crece para siempre
 salvo que ejecutes `airflow db clean` (§15) — un año de runs, task instances y
@@ -157,7 +162,7 @@ sin estado ──► scheduled ──► queued ──► running ──┼─�
 La primera distinción en la que tropieza todo el mundo es **`queued` vs `running`**:
 
 - **sin estado** — al crear un Dag run, el scheduler crea de una vez una task
-  instance por cada task del Dag, todas sin estado: en la base de datos su
+  instance por cada task del Dag, todas sin estado: en la metadata database su
   `state` es `null`, y la UI la muestra como "no status", una casilla sin color.
   Una task sigue así mientras sus tasks aguas arriba no han terminado. Así se ve
   "esperar a otra task": no hay ningún estado con ese nombre.
@@ -188,13 +193,13 @@ entre pokes y `deferred` desde uno suspendido en el triggerer (§11),
 `awaiting_input` mientras decide una persona (§12), y `upstream_failed` en todo
 lo que hay aguas abajo de un fallo.
 
-### El código de una task nunca toca la base de datos
+### El código de una task nunca toca la metadata database
 
 El punto arquitectónico que merece la pena interiorizar: **el código de una task
 nunca toca la metadata database.** Una task habla con la Task Execution API por
 HTTP, que es lo que hace posibles los workers remotos y el Edge executor — y por
-lo que una task no puede abrir una sesión de base de datos y consultar `DagRun`
-por su cuenta.
+lo que una task no puede abrir una sesión contra ella y consultar `DagRun` por
+su cuenta.
 
 ```bash
 curl -s localhost:8080/api/v2/monitor/health

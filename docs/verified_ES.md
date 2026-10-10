@@ -29,7 +29,7 @@ api-server + scheduler + dag-processor + triggerer), el 2026-09-09:
   `-c '{"greeting": "hola"}'` llegó a la task como override de `params`.
 - El recorrido por la UI de la §5 se comprobó contra el api-server de este stack:
   navegación, pestañas, campos del formulario de trigger/backfill y el selector
-  de versión salen de las cadenas de la UI publicada, y los endpoints que hay
+  de versión salen de los strings de la UI publicada, y los endpoints que hay
   detrás (`/api/v2/assets`, `/backfills`, `/dags/{id}/dagVersions`,
   `/hitlDetails`) de su especificación OpenAPI.
 - `pytest`: **30 passed**.
@@ -81,12 +81,15 @@ afirmaciones que el cuerpo te devuelve impresos:
   `max_active_tasks_per_dag=16`, `default_pool=128` slots,
   `scheduler_idle_sleep_time=1`, `min_file_process_interval=30`,
   `default_task_retries=0`.
-- Las formas de data interval de la §7, leídas de los propios timetables: una
-  cadena cron es aquí un `CronTriggerTimetable`
+- Las formas de data interval de la §7, leídas de los propios timetables: un
+  string cron es aquí un `CronTriggerTimetable`
   (`create_cron_data_intervals=False`) y da `run_after == data_interval_start ==
-  data_interval_end`; `timedelta(days=1)` es un `DeltaDataIntervalTimetable` y da
-  `run_after` 2026-09-11 00:00 con `logical_date == data_interval_start`
-  2026-09-10 00:00.
+  data_interval_end`; `timedelta(days=1)` es aquí un `DeltaTriggerTimetable`
+  (`create_delta_data_intervals=False`) y da la misma forma de longitud cero;
+  `CronDataIntervalTimetable("0 0 * * *", timezone="UTC")` con un `start_date`
+  de 2026-09-10 da `run_after` 2026-09-11 00:00 con `logical_date ==
+  data_interval_start` 2026-09-10 00:00 y `data_interval_end` 2026-09-11
+  00:00.
 - El `start_date` de la §4/§7: un archivo de Dag sin él parsea **sin error de
   import** bajo `DagBag`, tanto con `schedule=None` como con `@daily`.
 - El recuadro de `dags test` de la §4: `hello_airflow3` ejecutó `make_greeting →
@@ -94,9 +97,11 @@ afirmaciones que el cuerpo te devuelve impresos:
   siguiente.
 - La §13, unpause y luego trigger: `DEADLINE MISSED` a +31s, con `slow_step`
   todavía corriendo.
-- El "pruébalo" de la §10 en su forma explícita (`bash -c 'export
-  TAGIFAI_MIN_F1=0.99; airflow dags test mlops'`): `promote_model` skipped,
-  `keep_current_model` success.
+- El "pruébalo" de la §10 con la variable exportada en el contenedor (`bash -c
+  'export TAGIFAI_MIN_F1=0.99; airflow dags test mlops'`): `promote_model`
+  skipped, `keep_current_model` success. La forma que usa ahora la §10,
+  `docker compose exec -e TAGIFAI_MIN_F1=0.99 …`, fija la misma variable:
+  `config.MIN_F1_TO_PROMOTE` lee `0.99` en ese proceso.
 - La nota de `curl` de la §3: en una máquina Windows, PowerShell resuelve `curl` a
   `Invoke-WebRequest`; `curl.exe` está en `System32`.
 - El `enough_rows` de la §11 lee la tabla con pandas e informa de **764** filas,
@@ -210,7 +215,7 @@ escritos.
   los bloques de "Constrúyelo" de ambos READMEs se ensamblan en archivos que
   importan; **36 passed** en total.
 - Los dos pasos "Hazlo ahora" de la §5 y el recorrido por la UI se apoyan en las
-  cadenas de la UI publicada y en los endpoints que hay detrás, como antes —
+  strings de la UI publicada y en los endpoints que hay detrás, como antes —
   nadie hizo clic en ellos en esta ejecución.
 
 Se encontraron seis defectos reales mientras se construía esto, todos

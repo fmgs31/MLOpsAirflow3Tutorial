@@ -110,6 +110,10 @@ sensors_and_events()
 a value downstream — `proceed` receives the row count. The table is read with
 pandas rather than counted by lines, because descriptions contain newlines.
 
+Read the wiring: `enough_rows` has no upstream task, so it starts at once,
+alongside `settle`, and `proceed` waits for both `wait_for_curated_data` and
+`enough_rows`.
+
 One more option removes the wait altogether: **event-driven scheduling**. It
 does not go in the file, because it needs a queue you do not have. Attach a
 watcher to an asset and an external event starts the run; nothing polls,
@@ -155,18 +159,17 @@ Data is ready (764 rows). Downstream work can start.
 `wait_for_curated_data` pokes once, finds the file and exits; `enough_rows`
 counts the rows and clears its threshold on the first poke. And `settle`, the
 deferrable one, returns at once without deferring at all: its five-second target
-is measured from the run's logical date, which `airflow dags test` fixed before
-the task started, so by the time the task ran the moment had already passed.
+is measured from the run's `data_interval_end`, which `airflow dags test` fixed
+before the task started, so by the time the task ran the moment had already
+passed.
 Nothing in this run touched the triggerer.
 
 **To watch a task actually defer**, send the run through the scheduler instead,
 then read the task states a few times over the next ten seconds:
 
 ```bash
-docker compose exec airflow-scheduler bash -c '
-  airflow dags unpause sensors_and_events
-  airflow dags trigger sensors_and_events -r defer-demo'   # pick a new id if you rerun
-
+docker compose exec airflow-scheduler airflow dags unpause sensors_and_events
+docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r defer-demo   # pick a new id if you rerun
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events defer-demo -o plain
 ```
 
@@ -174,7 +177,7 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_a
 has exited and the triggerer is holding the timer — then `success`, with an
 `end_date` just over five seconds after its `start_date`. That `deferred` is the
 state from §3, and it is what "frees the worker slot" looks like from outside.
-Be quick with the second command; a `docker compose exec` takes a second or
+Be quick with the last command; a `docker compose exec` takes a second or
 two of its own.
 
 **Now see the interesting case** — a sensor that actually has to wait. Move the
@@ -190,7 +193,7 @@ docker compose exec airflow-scheduler airflow dags test sensors_and_events
 
 This one does not return. Both sensors are in `mode="reschedule"`, so their task
 instances **exit between pokes** instead of holding a slot, and go into
-`up_for_reschedule` — the state from §3 that only sensors produce. The run
+`up_for_reschedule` — the state §3 gives for a sensor between pokes. The run
 announces it every second:
 
 ```
@@ -207,8 +210,8 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
 
 The next poke finds it and the run completes. Leave it moved instead and each
 sensor eventually fails on its declared `timeout`: 120 seconds for
-`enough_rows`, 300 for `wait_for_curated_data`, so the run is over after two
-minutes.
+`enough_rows`, 300 for `wait_for_curated_data`. The run fails only once both
+have given up, after about five minutes.
 
 The point is what was *not* happening during the wait: the task instance was
 not running between pokes — it was in `up_for_reschedule`, as you saw — so

@@ -113,6 +113,10 @@ un valor aguas abajo — `proceed` recibe el recuento de filas. La tabla se lee 
 pandas en vez de contar líneas, porque las descripciones contienen saltos de
 línea.
 
+Lee el cableado: `enough_rows` no tiene ninguna task aguas arriba, así que
+arranca enseguida, a la vez que `settle`, y `proceed` espera tanto a
+`wait_for_curated_data` como a `enough_rows`.
+
 Una opción más elimina la espera del todo: el **event-driven scheduling**. No va
 en el archivo, porque necesita una cola que no tienes. Engancha un watcher a un
 asset y un evento externo arranca el run; nada hace polling, nada ocupa un slot:
@@ -158,8 +162,8 @@ Data is ready (764 rows). Downstream work can start.
 `wait_for_curated_data` hace un poke, encuentra el archivo y sale; `enough_rows`
 cuenta las filas y supera su umbral en el primer poke. Y `settle`, el deferrable,
 vuelve de inmediato sin diferirse en absoluto: su objetivo de cinco segundos se
-mide desde la logical date del run, que `airflow dags test` fijó antes de que la
-task arrancara, así que para cuando la task corrió el momento ya había pasado.
+mide desde el `data_interval_end` del run, que `airflow dags test` fijó antes de
+que la task arrancara, así que para cuando la task corrió el momento ya había pasado.
 Nada de este run tocó el triggerer.
 
 **Para ver una task diferirse de verdad**, manda el run por el scheduler, y luego
@@ -167,10 +171,8 @@ lee los estados de las tasks unas cuantas veces a lo largo de los siguientes die
 segundos:
 
 ```bash
-docker compose exec airflow-scheduler bash -c '
-  airflow dags unpause sensors_and_events
-  airflow dags trigger sensors_and_events -r defer-demo'   # pick a new id if you rerun
-
+docker compose exec airflow-scheduler airflow dags unpause sensors_and_events
+docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r defer-demo   # pick a new id if you rerun
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events defer-demo -o plain
 ```
 
@@ -178,7 +180,7 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_a
 proceso ha salido y el triggerer sostiene el temporizador — y luego `success`,
 con un `end_date` algo más de cinco segundos después de su `start_date`. Ese
 `deferred` es el estado de la §3, y es el aspecto que tiene, visto desde fuera,
-"liberar el worker slot". Sé rápido con el segundo comando; un `docker compose exec`
+"liberar el worker slot". Sé rápido con el último comando; un `docker compose exec`
 se lleva uno o dos segundos por su cuenta.
 
 **Ahora mira el caso interesante** — un sensor que sí tiene que esperar. Aparta
@@ -194,7 +196,7 @@ docker compose exec airflow-scheduler airflow dags test sensors_and_events
 
 Este no vuelve. Ambos sensors están en `mode="reschedule"`, así que sus task
 instances **salen entre pokes** en vez de retener un slot, y pasan a
-`up_for_reschedule` — el estado de la §3 que solo producen los sensors. El run lo
+`up_for_reschedule` — el estado que la §3 da para un sensor entre pokes. El run lo
 anuncia cada segundo:
 
 ```
@@ -211,7 +213,8 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
 
 El siguiente poke lo encuentra y el run se completa. Déjalo movido y cada sensor
 acabará fallando por su `timeout` declarado: 120 segundos para `enough_rows`,
-300 para `wait_for_curated_data`, así que el run se acaba a los dos minutos.
+300 para `wait_for_curated_data`. El run solo falla cuando los dos se han
+rendido, a los cinco minutos más o menos.
 
 Lo importante es lo que *no* estaba pasando durante la espera: la task instance
 no estaba corriendo entre pokes — estaba en `up_for_reschedule`, como has

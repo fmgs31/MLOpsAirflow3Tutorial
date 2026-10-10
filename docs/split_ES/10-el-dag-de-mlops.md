@@ -1,11 +1,12 @@
 ## 10. El Dag de MLOps
 
-`dags/04_mlops.py` — sin schedule, disparado por el asset.
+`dags/04_mlops.py` — sin schedule de tiempo: lo dispara el asset.
 
 ```
-prepare_data ─► validate_training_data ─► train_candidate×N ─► select_best
-             ─► evaluate_best ─► promotion_gate ─► promote_model ──► done
-                                               └─► keep_current_model ─┘
+prepare_data ─► validate_training_data ─┐
+                            candidates ─┴─► train_candidate×N ─► select_best
+─► evaluate_best ─► promotion_gate ─► promote_model ──────► done
+                                  └─► keep_current_model ─┘
 ```
 
 | Task | Opción en producción |
@@ -291,8 +292,8 @@ docker compose exec airflow-scheduler airflow dags unpause mlops
 docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
-Con la primera línea no pasa nada: `mlops` no tiene schedule y no ha llegado
-ningún evento. La segunda línea basta para arrancarlo todo, y no has disparado
+Con la primera línea no pasa nada: `mlops` solo corre con un asset event, y no
+ha llegado ninguno. La segunda línea basta para arrancarlo todo, y no has disparado
 nada — es la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025,
 así que en el momento en que se le quita la pausa el scheduler crea el run de
 las 03:00 UTC más recientes que se perdió, y lo arranca. Dale como medio minuto,
@@ -310,10 +311,10 @@ termina en `T03:00:00+00:00` — la fecha de hoy, o la de ayer si aún no son la
 un run que nadie disparó: id que empieza por `asset_triggered__`, `running` si
 has sido rápido, `success` en cuanto sus cuatro candidatos hayan entrenado, con
 una `logical_date` **vacía** — los runs disparados por asset no tienen logical
-date, exactamente igual que los manuales (§7). En la UI, abre **Assets** y verás
+date, igual que un run disparado desde la CLI sin ella (§7). En la UI, abre **Assets** y verás
 la arista que lo causó.
 
-Ten claro de dónde viene la espera. Casi toda es `dataops` corriendo sus cuatro tasks
+Ten claro de dónde viene la espera. Casi toda es `dataops` corriendo sus cinco tasks
 — `extract` descarga el archivo de origen, así que esa parte depende de tu
 conexión. La parte de Airflow es pequeña: un bucle del scheduler para crear el
 run de `dataops` tras quitar la pausa, y uno más para encolar `mlops` cuando
@@ -323,10 +324,10 @@ que ambos Dags están sin pausa y que el run de `dataops` tuvo éxito — un
 
 Ahora las dos oleadas. Abre ese run de `mlops` en la UI, haz clic en
 `train_candidate` y lee su pestaña **Task Instances** — cuatro filas, map index
-del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan juntas; las
-otras dos arrancan solo después de que el primer par haya terminado. La vista *Show
+del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan juntas; cada una de
+las otras dos arranca solo cuando ha terminado una del primer par. La vista *Show
 Gantt* (§5), disponible ahora que hay un run seleccionado, dibuja lo mismo como
-dos pares de barras. En el **Graph**, las cuatro
+dos oleadas de barras. En el **Graph**, las cuatro
 son un único nodo colapsado hasta que subes el filtro **Min. map index** (§5). O
 léelo desde la CLI:
 
@@ -334,8 +335,8 @@ léelo desde la CLI:
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain
 ```
 
-Cuatro filas de `train_candidate` con `map_index` de 0 a 3; las horas de inicio
-de la 2 y la 3 son posteriores a las de fin de la 0 y la 1. Y
+Cuatro filas de `train_candidate` con `map_index` de 0 a 3; la 2 y la 3 arrancan
+cada una después de que haya terminado una de la 0 y la 1. Y
 `keep_current_model` está `skipped` mientras `promote_model` está `success`: el
 gate eligió la rama de promoción, porque no había modelo en producción al que
 batir.
@@ -354,11 +355,11 @@ batir.
 
 > **Pruébalo, la otra rama.** Pon el listón imposiblemente alto y mira cómo el
 > gate elige la otra rama. El umbral se lee de una variable de entorno dentro
-> del proceso de la propia task, así que ponla en la misma shell que ejecuta el
-> comando:
+> del proceso de la propia task, y `airflow dags test` ejecuta las tasks en su
+> propio proceso, así que pásale la variable a ese comando con `-e`:
 >
 > ```bash
-> docker compose exec airflow-scheduler bash -c 'export TAGIFAI_MIN_F1=0.99; airflow dags test mlops'
+> docker compose exec -e TAGIFAI_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
 > ```
 >
 > `promotion_gate` loguea `below threshold 0.99 - not promoting`, `promote_model`

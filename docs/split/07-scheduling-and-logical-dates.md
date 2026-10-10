@@ -5,7 +5,7 @@ Both Dags so far have `schedule=None`. The other values:
 ```python
 schedule=None                       # manual / API only
 schedule="0 3 * * *"                # cron
-schedule=timedelta(days=1)          # interval
+schedule=timedelta(days=1)          # every 24 hours
 schedule=[some_asset]               # data-aware (§8)
 schedule=CronTriggerTimetable(...)  # a Timetable, named directly
 ```
@@ -18,17 +18,19 @@ The two decisions: *when* to create a run, and which slice of time that run is
 *for* — its **data interval**, exposed to every task as `data_interval_start`
 and `data_interval_end`, and labelled by the run's `logical_date`. None of
 those is "when it ran"; `run_after` is that. How the slice is cut depends on
-what kind of value you pass to `schedule=`, and the two common kinds differ:
+the timetable, and there are two kinds:
 
-- **A cron string** — `"0 3 * * *"`, which is the schedule you will give
-  `dataops` in §9 — fires at the moment it names, and the slice *is* that
-  moment: `logical_date`, `data_interval_start` and `data_interval_end` are
-  all 03:00.
-- **A `timedelta`** — `timedelta(days=1)` — is a span. The run *for* 2026-09-10
-  is created once that day is over, at 2026-09-11 00:00, and its `logical_date`
-  is 2026-09-10 00:00: the start of the span, a day before the run happens.
-  Use this kind when a task must process "yesterday's data", because the
-  interval tells it exactly which day that is.
+- **A cron string or a `timedelta`** — `"0 3 * * *"`, the schedule you will
+  give `dataops` in §9, or `timedelta(days=1)` — fires at a moment, and the
+  slice *is* that moment: `logical_date`, `data_interval_start` and
+  `data_interval_end` are all the same instant, 03:00 for the cron string.
+- **A data-interval timetable** — `CronDataIntervalTimetable("0 0 * * *",
+  timezone="UTC")`, imported from `airflow.sdk` — cuts real spans. The run
+  *for* 2026-09-10 is created once that day is over, at 2026-09-11 00:00; its
+  data interval runs from 2026-09-10 00:00 to 2026-09-11 00:00, and its
+  `logical_date` is 2026-09-10 00:00: the start of the span, a day before the
+  run happens. Use this kind when a task must process "yesterday's data",
+  because the interval tells it exactly which day that is.
 
 `start_date` is where the slices begin: no run is ever scheduled before it. It
 is optional — without one, a scheduled Dag starts from the moment you un-pause
@@ -49,16 +51,21 @@ watch this happen in §10: un-pausing `dataops` is enough to start it. If you
 you need (§9).
 
 **A cron string fires at the time it says.** `schedule="0 3 * * *"` runs at
-03:00 and the run's `logical_date` is 03:00. Other timetables can set the run time
-and the `logical_date` differently, which is why the Dag's **Calendar** tab and
-the **Next Run** column of the Dags list are worth checking after you write one.
+03:00 and the run's `logical_date` is 03:00. A data-interval timetable puts the
+`logical_date` a whole span before the run, which is why the Dag's **Calendar**
+tab and the **Next Run** column of the Dags list are worth checking after you
+write one.
 
-**`logical_date` can be empty.** It labels the slice a scheduled run is for —
-and manual and asset-triggered runs, which are for no slice, simply have none.
-This is what `mlops`'s run list will look like in §10, one run of each kind:
+**`logical_date` can be empty.** It labels the slice a scheduled run is for.
+An asset-triggered run is for no slice and has none, and neither does a run
+triggered from the CLI or the REST API without one. The UI's Trigger form is
+the exception: it pre-fills the logical date with the current time, so a run
+triggered from the form has one unless you clear the field. This is what
+`mlops`'s run list will look like in §10, one run of each kind — the manual one
+triggered from the form — trimmed to the columns that matter here:
 
 ```bash
-$ airflow dags list-runs mlops -o plain
+$ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 dag_id  run_id                                      state    run_after             logical_date
 mlops   asset_triggered__2026-09-09T08:23:16+00:00  success  2026-09-09T08:23:16              ← none
 mlops   manual__2026-09-09T08:22:31+00:00           success  2026-09-09T08:22:32   2026-09-09T08:22:31
@@ -69,13 +76,13 @@ available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
 `data_interval_end`, `run_id`, `dag_run`, `ti`, `params`, `var`, `conn`,
 `macros`, `inlets`/`outlets`, `triggering_asset_events`.
 
-> **The trap worth knowing before you trigger anything:** a manual run has **no
-> logical date**, so `logical_date` is missing from the task context and `ds`,
+> **The trap worth knowing before you trigger anything:** a run triggered from
+> the CLI or the REST API has **no logical date** unless you give it one, so `logical_date` is missing from the task context and `ds`,
 > `ts` and friends are *undefined* in templates. Both fail at runtime, and
 > neither fails under `airflow dags test`, which always supplies a logical date:
 >
 > ```python
-> context["logical_date"]          # KeyError on a manual run
+> context["logical_date"]          # KeyError when the run has none
 > context.get("logical_date")      # None — fine
 > "{{ ds }}"                       # UndefinedError: 'ds' is undefined
 > "{{ ds | default('none') }}"     # fine
@@ -118,8 +125,8 @@ docker compose exec airflow-scheduler airflow dags list-runs hello_airflow3 -o p
 ```
 
 ```
-dag_id          run_id  state   run_after                         logical_date
-hello_airflow3  demo    queued  2026-09-09T12:19:29.483234+00:00             ← stuck
+dag_id          run_id  state   run_after                         logical_date  start_date  end_date
+hello_airflow3  demo    queued  2026-09-09T12:19:29.483234+00:00                                       ← stuck
 ```
 
 ```bash
@@ -128,8 +135,9 @@ docker compose exec airflow-scheduler airflow dags unpause hello_airflow3     # 
 
 **Checkpoint.** Run those four commands yourself against `hello_airflow3`. While
 the Dag is paused the run is `queued` and stays there however long you wait —
-the scheduler sees it every loop and deliberately passes over it. Shortly after
-the `unpause`, `list-runs` shows the same `run_id` as `success`, and its
+the scheduler sees it every loop and deliberately passes over it. Run
+`list-runs` again shortly after the `unpause`: it shows the same `run_id` as
+`success`, and its
 `start_date` — the run's, the moment it actually began, not the Dag's
 `start_date` from earlier in §7 — is later than its `run_after`: it started when
 you un-paused, not when you triggered. Nothing was lost and nothing warned you;
