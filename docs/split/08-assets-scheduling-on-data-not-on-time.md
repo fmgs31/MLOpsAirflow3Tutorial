@@ -56,8 +56,10 @@ def mlops():
                 print(f"triggered by {asset} extra={event.extra}")
 ```
 
-That is the idea in one line: **downstream Dags are scheduled on "good data
-arrived", never on "a task finished" and never on a cron guess.** The event even
+That is the idea in one line: **the downstream Dag is scheduled on "good data
+arrived", not on a cron that guesses when the other Dag will have finished.**
+The event is emitted by the task that validated the data, so "finished
+successfully" means exactly that. The event even
 carries the number of rows the task validated.
 
 More asset machinery worth knowing:
@@ -86,7 +88,8 @@ parses the first file you save there.
 
 It is a row. When a task with `outlets=[…]` **succeeds**, Airflow records an
 asset event — which asset, which Dag run produced it, when, and whatever you put
-in `outlet_events[…].extra`. That is all a "trigger" is. A task that fails
+in `outlet_events[…].extra`. That row is all it takes to start the consumer.
+A task that fails
 writes no event, which is the entire safety property: `mlops` cannot be started
 by data that did not pass validation, because the task that would have announced
 it never finished.

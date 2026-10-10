@@ -1,6 +1,7 @@
 ## 4. Your first Dag
 
-Everything a Dag author needs is in `airflow.sdk`, the Task SDK:
+What a Dag author needs to define Dags, tasks and assets is in `airflow.sdk`,
+the Task SDK (operators come from the providers, §6):
 
 ```python
 from airflow.sdk import dag, task, DAG, Param, Asset, chain, Label
@@ -182,7 +183,8 @@ Save the file. Compare with
 ### See it parse
 
 The Dag processor (§3) scans `dags/` every five seconds on this stack, imports
-each `.py` file it finds, and writes what it parsed into the metadata database.
+each `.py` file that looks like a Dag file (what that means comes further down),
+and writes what it parsed into the metadata database.
 Within a few seconds of saving:
 
 ```bash
@@ -193,7 +195,7 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 `is_paused True`, `bundle_name dags-folder`. Reload the UI and the Dag is on
 the **Dags** page, paused. (Every Dag starts paused — §7.)
 
-If the row is not there, three things can be wrong, and in `airflow dags list`
+If the row is not there after those few seconds, three things can be wrong, and in `airflow dags list`
 they look identical. The first is a file that raises on import — a typo, a
 missing package, a `@dag` function that throws. That is not a broken Dag in the
 list, it is **no Dag at all**: absent from the UI, absent from `airflow dags
@@ -291,7 +293,7 @@ after every Dag you write.
 > The `report` line now starts with `HOLA`. That `--conf` reached the task through
 > `context["params"]` — the `Param` you declared, overridden for one run.
 
-**The other way to declare a Dag** is the context manager, which is fully
+**Another way to declare a Dag** is the context manager, which is fully
 supported and reads better when the tasks are operators (§6) rather than
 functions. Not for this file — just so you recognise it:
 

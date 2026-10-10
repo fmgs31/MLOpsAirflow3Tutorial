@@ -5,8 +5,8 @@ el trabajo se declara como un grafo de tasks, otra cosa decide cuándo ejecutarl
 reintenta las partes que fallan y registra qué pasó.
 
 Un workflow en Airflow es un **Dag** — un grafo dirigido acíclico. *Dirigido*:
-las aristas tienen dirección. *Acíclico*: sin bucles, así que una task terminada
-nunca se vuelve a ejecutar por algo que hay aguas abajo. Cada nodo es una
+las aristas tienen dirección. *Acíclico*: sin bucles, así que ningún camino de
+aristas vuelve a una task por la que ya pasó. Cada nodo es una
 **task**, y una ejecución del grafo entero es un **Dag run**.
 
 Merece la pena distinguir ya dos palabras, *task* y *task instance*, porque cada
@@ -30,7 +30,8 @@ mlops:                  prepare ─► validate ─► train×N ─► select �
 monitoring:  measure ─► decide ─► {continue | inspect | rollback | approve ─► retrain}
 ```
 
-`mlops` **no tiene schedule**. Se ejecuta cuando `dataops` publica datos buenos.
+`mlops` **no tiene un schedule de tiempo**: su schedule es un asset, y se ejecuta
+cuando `dataops` publica datos buenos.
 Eso es scheduling data-aware, y es la idea sobre la que está construido todo este
 tutorial.
 
@@ -69,17 +70,18 @@ la pena como primero porque:
 
 - **Adopción.** Es el estándar en la mayoría de plataformas de datos, así que los
   conceptos se transfieren y todos los vendors traen integración.
-- **Python puro, sin DSL.** Los workflows son funciones normales, testeables con
-  pytest (§14).
-- **El mismo código corre en tu portátil y en un clúster** — cambias el executor,
-  no el Dag.
 - **Apache governance**, un ecosistema grande de providers, y ningún vendor
   único.
+
+Y tiene lo que se espera de un orquestador moderno, como Prefect o Dagster:
+workflows escritos en Python normal, testeables con pytest (§14), y el mismo
+código corriendo en tu portátil y en un clúster — cambias el executor, no el
+Dag.
 
 ### El proyecto de ML que orquesta
 
 Airflow orquesta código; no lo contiene. El código orquestado vive en
-`src/tagifai/` y no importa Airflow en absoluto — un pequeño clasificador de
+`src/tagifai/` y, salvo `assets.py`, no importa Airflow — un pequeño clasificador de
 texto que etiqueta proyectos de ML. Esta parte no la escribes tú; los Dags la
 llaman:
 

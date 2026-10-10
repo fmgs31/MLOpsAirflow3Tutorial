@@ -108,8 +108,8 @@ Add the first two tasks:
 `triggering_asset_events` is injected by name — the events that caused this
 run, keyed by asset, each carrying the `extra` the producer attached. On a run
 you start by hand it is empty. `validate_training_data` re-reads the table
-rather than receiving it from `prepare_data`: XComs carry metadata, never
-payloads. The second half of its check is one a table-level suite cannot do at
+rather than receiving it from `prepare_data`: XComs are for metadata, not
+payloads (§6). The second half of its check is one a table-level suite cannot do at
 all — it looks at the **split**:
 
 ```python
@@ -298,8 +298,8 @@ docker compose exec airflow-scheduler airflow dags unpause mlops
 docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
-Nothing happens on the first line: `mlops` runs only on an asset event, and
-none has arrived. The second line is enough to start everything, and you did not
+Nothing happens on the first line: `mlops`'s schedule is an asset, and no
+event has arrived. The second line is enough to start everything, and you did not
 trigger anything — that is the §7 rule: `dataops` has a cron and a 2025
 `start_date`, so the moment it is un-paused the scheduler creates the run for
 the most recent 03:00 UTC it missed, and starts it. Give it about half a

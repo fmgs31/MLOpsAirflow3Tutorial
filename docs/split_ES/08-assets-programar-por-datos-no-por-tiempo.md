@@ -57,8 +57,10 @@ def mlops():
                 print(f"triggered by {asset} extra={event.extra}")
 ```
 
-Esa es la idea en una línea: **los Dags aguas abajo se programan con "llegaron
-datos buenos", nunca con "terminó una task" y nunca con una adivinanza de cron.**
+Esa es la idea en una línea: **el Dag aguas abajo se programa con "llegaron
+datos buenos", no con un cron que adivina cuándo habrá terminado el otro Dag.**
+El evento lo emite la task que validó los datos, así que "terminó con éxito"
+significa justo eso.
 El evento incluso lleva el número de filas que validó la task.
 
 Más maquinaria de assets que conviene conocer:
@@ -88,7 +90,8 @@ processor parsee el primer archivo que guardes allí.
 
 Es una fila. Cuando una task con `outlets=[…]` **tiene éxito**, Airflow registra
 un asset event — qué asset, qué Dag run lo produjo, cuándo, y lo que hayas puesto
-en `outlet_events[…].extra`. Eso es todo lo que es un "trigger". Una task que
+en `outlet_events[…].extra`. Esa fila es todo lo que hace falta para arrancar
+al consumidor. Una task que
 falla no escribe evento, y en eso consiste toda la garantía de seguridad: a `mlops` no lo
 puede arrancar un dato que no pasó la validación, porque la task que lo habría
 anunciado nunca terminó.

@@ -5,8 +5,8 @@ declared as a graph of tasks, something else decides when to run it, retries the
 parts that fail, and records what happened.
 
 A workflow in Airflow is a **Dag** — a directed acyclic graph. *Directed*: edges
-have a direction. *Acyclic*: no loops, so a finished task never re-runs because
-of something downstream. Each node is a **task**, and one execution of the whole
+have a direction. *Acyclic*: no loops, so no path of edges leads back to a
+task it already passed through. Each node is a **task**, and one execution of the whole
 graph is a **Dag run**.
 
 Two words are worth separating now, *task* and *task instance*, because every
@@ -29,7 +29,8 @@ mlops:                  prepare ─► validate ─► train×N ─► select �
 monitoring:  measure ─► decide ─► {continue | inspect | rollback | approve ─► retrain}
 ```
 
-`mlops` has **no schedule**. It runs when `dataops` publishes good data. That is
+`mlops` has **no time schedule**: its schedule is an asset, and it runs when
+`dataops` publishes good data. That is
 data-aware scheduling, and it is the idea this whole tutorial is built around.
 
 Four more Dags exist to teach one thing each: `hello_airflow3` (a first Dag),
@@ -66,16 +67,17 @@ worth learning first because:
 
 - **Adoption.** It is the default in most data platforms, so the concepts
   transfer and every vendor ships an integration.
-- **Pure Python, no DSL.** Workflows are ordinary functions, testable with
-  pytest (§14).
-- **The same code runs on your laptop and on a cluster** — swap the executor,
-  not the Dag.
 - **Apache governance**, a large provider ecosystem, and no single vendor.
+
+And it has what you expect from a modern orchestrator, as Prefect or Dagster
+do: workflows written in ordinary Python, testable with pytest (§14), and the
+same code running on your laptop and on a cluster — swap the executor, not the
+Dag.
 
 ### The ML project it orchestrates
 
 Airflow orchestrates code; it does not contain it. The code being orchestrated
-lives in `src/tagifai/` and imports no Airflow at all — a small text classifier
+lives in `src/tagifai/` and, except for `assets.py`, imports no Airflow — a small text classifier
 that tags ML projects. You do not write this part; the Dags call it:
 
 | Module | Role |

@@ -108,8 +108,8 @@ primeras tasks:
 `triggering_asset_events` se inyecta por nombre — los eventos que causaron este
 run, indexados por asset, cada uno con el `extra` que adjuntó el productor. En un
 run que arranques a mano está vacío. `validate_training_data` vuelve a leer la
-tabla en vez de recibirla de `prepare_data`: los XComs llevan metadatos, nunca
-payloads. La segunda mitad de su comprobación es una que una suite a nivel de
+tabla en vez de recibirla de `prepare_data`: los XComs son para metadatos, no
+para payloads (§6). La segunda mitad de su comprobación es una que una suite a nivel de
 tabla no puede hacer en absoluto — mira el **split**:
 
 ```python
@@ -299,8 +299,8 @@ docker compose exec airflow-scheduler airflow dags unpause mlops
 docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
-Con la primera línea no pasa nada: `mlops` solo corre con un asset event, y no
-ha llegado ninguno. La segunda línea basta para arrancarlo todo, y no has disparado
+Con la primera línea no pasa nada: el schedule de `mlops` es un asset, y no ha
+llegado ningún evento. La segunda línea basta para arrancarlo todo, y no has disparado
 nada — es la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025,
 así que en el momento en que se le quita la pausa el scheduler crea el run de
 las 03:00 UTC más recientes que se perdió, y lo arranca. Dale como medio minuto,

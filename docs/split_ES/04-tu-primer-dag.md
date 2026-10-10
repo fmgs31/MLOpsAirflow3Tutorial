@@ -1,6 +1,7 @@
 ## 4. Tu primer Dag
 
-Todo lo que necesita el autor de un Dag está en `airflow.sdk`, el Task SDK:
+Lo que necesita el autor de un Dag para definir Dags, tasks y assets está en
+`airflow.sdk`, el Task SDK (los operators vienen de los providers, §6):
 
 ```python
 from airflow.sdk import dag, task, DAG, Param, Asset, chain, Label
@@ -186,8 +187,8 @@ es el mismo código con los comentarios dentro.
 ### Míralo parsear
 
 El Dag processor (§3) escanea `dags/` cada cinco segundos en este stack,
-importa cada archivo `.py` que encuentra, y escribe lo que parseó en la metadata
-database. A los pocos segundos de guardar:
+importa cada archivo `.py` que parece un archivo de Dag (qué significa eso
+viene más abajo), y escribe lo que parseó en la metadata database. A los pocos segundos de guardar:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list -o plain
@@ -197,8 +198,8 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 `is_paused True`, `bundle_name dags-folder`. Recarga la UI y el Dag está en la
 página **Dags**, en pausa. (Todos los Dags empiezan en pausa — §7.)
 
-Si la fila no está, pueden estar pasando tres cosas, y en `airflow dags list`
-parecen idénticas. La primera es un archivo que lanza una excepción al importarse — una
+Si la fila no está y ya pasaron esos segundos, pueden estar pasando tres cosas,
+y en `airflow dags list` parecen idénticas. La primera es un archivo que lanza una excepción al importarse — una
 errata, un paquete que falta, una función `@dag` que revienta. Eso no es un Dag
 roto en la lista, es **ningún Dag**: ausente de la UI, ausente de `airflow dags
 list`. Aparece como error de import en las páginas Home y Dags (§5) y con este
@@ -296,7 +297,7 @@ después de cada Dag que escribas.
 > La línea de `report` empieza ahora por `HOLA`. Ese `--conf` llegó a la task a través de
 > `context["params"]` — el `Param` que declaraste, sobrescrito para un run.
 
-**La otra forma de declarar un Dag** es el context manager, que está plenamente
+**Otra forma de declarar un Dag** es el context manager, que está plenamente
 soportado y se lee mejor cuando las tasks son operators (§6) en vez de funciones.
 No para este archivo — solo para que lo reconozcas:
 

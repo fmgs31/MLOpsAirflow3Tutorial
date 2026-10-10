@@ -29,8 +29,9 @@ dag_bundle_config_list = [
 
 **Parsing intervals.** This stack scans for files every 5 seconds so that
 what you save appears at once. Put the defaults back (`refresh_interval` 300,
-`min_file_process_interval` 30) on anything with hundreds of Dag files — the
-processor's job is to parse, not to poll.
+`min_file_process_interval` 30) on anything with hundreds of Dag files: with
+5-second intervals the Dag processor keeps re-parsing files that did not change
+and burns CPU for nothing.
 
 **Secrets.** Never in Dag code, never in bundle `kwargs`, never in an asset's
 `uri` or `extra` — asset extras are stored in cleartext. Use Connections,

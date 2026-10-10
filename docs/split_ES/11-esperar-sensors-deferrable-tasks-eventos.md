@@ -227,7 +227,7 @@ defecto habría ocupado un slot todo ese tiempo sin hacer nada, y esa es
 precisamente la razón por la que existen los otros dos modos.
 
 **Regla práctica:** segundos → un poking sensor vale. Minutos u horas →
-deferrable, o estás pagando un worker slot para dormir. Un servicio que avisa
+`mode="reschedule"` o deferrable, o estás pagando un worker slot para dormir. Un servicio que avisa
 por sí mismo, enviando un mensaje a una cola → un `AssetWatcher`, y ninguna
 task espera.
 

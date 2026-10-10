@@ -161,9 +161,9 @@ El gate final — el que emite el asset con el que se programará `mlops`:
 ```
 
 Poner el outlet en la task de *validación*, no en la de transform, es todo el
-truco: el evento se escribe solo cuando esta task tiene éxito, así que los Dags
-aguas abajo se programan con "llegaron datos buenos", nunca con "terminó una
-task".
+truco: el evento se escribe solo cuando esta task tiene éxito, así que el éxito
+que arranca a `mlops` es el de la validación, no el de cualquier task del Dag:
+los Dags aguas abajo se programan con "llegaron datos buenos".
 
 Una task más, dentro de un **task group** — `@task_group` anida tasks bajo un
 único nodo plegable en la vista Graph, algo a lo que recurrir en cuanto un Dag
