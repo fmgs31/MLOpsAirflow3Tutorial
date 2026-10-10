@@ -55,7 +55,7 @@ gente se salta hasta que hay un incidente. Tres capas:
   database, el scheduler, el triggerer y el Dag processor; la página Home de la UI muestra lo mismo.
 
 Y luego la higiene de siempre: `airflow db clean` programado (si no, la metadata
-DB crece para siempre), deadline alerts en los Dags que importan (§13), y
+database crece para siempre), deadline alerts en los Dags que importan (§13), y
 Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — cableados a
 `on_failure_callback` o a un `AsyncCallback`.
 

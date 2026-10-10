@@ -49,17 +49,19 @@ That path works correctly — `solutions/07_deadline_alerts.py` fires its callba
 exactly +30s. This is why the `mlops` Dag has no `deadline=`: it would make the
 lesson's own "run it with `airflow dags test`" instruction fail.
 
-## `KeyError: 'logical_date'` — but only on a manually triggered run
+## `KeyError: 'logical_date'` — but only on some runs
 
 ```
 KeyError: 'logical_date'
   File "/opt/airflow/dags/01_hello_airflow3.py", line 54, in make_greeting
 ```
 
-A manual or asset-triggered run in Airflow 3 has **no logical date**, and the
-key is then absent from the task context entirely — not present-and-`None`. The
-Dag runs green under `airflow dags test`, which always supplies a logical date,
-and fails the first time someone presses **Trigger**.
+An asset-triggered run, or one triggered from the CLI or the REST API without
+a logical date, has **no logical date**, and the key is then absent from the
+task context entirely — not present-and-`None`. The Dag runs green under
+`airflow dags test`, which always supplies a logical date, and fails the first
+time such a run happens. The UI's **Trigger** form pre-fills a logical date, so
+a run started there does not show the bug.
 
 ```python
 context["logical_date"]        # KeyError
@@ -82,8 +84,8 @@ in templates and the task fails while rendering, before it executes.
 {{ run_id }}                    renders
 ```
 
-`airflow dags test` supplies a logical date, so this too only shows up under a
-real trigger. Both of these were live bugs in this tutorial's own §4 and §6
+`airflow dags test` supplies a logical date, so this too only shows up on a
+real run that has none. Both of these were live bugs in this tutorial's own §4 and §6
 Dags until a manual trigger found them.
 
 ## `DagBag.__init__() got an unexpected keyword argument 'include_examples'`

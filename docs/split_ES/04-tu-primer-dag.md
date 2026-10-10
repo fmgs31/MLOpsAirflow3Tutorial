@@ -146,7 +146,8 @@ imprima acaba en el log de la task, visible en la UI.
 `**context` es cómo una task ve el run al que pertenece: `run_id`, `params`, `ti`
 (la task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`, `conn`,
 `macros`. Lee `logical_date` con `.get()`, nunca con `context["logical_date"]`:
-un run manual o disparado por asset no tiene logical date, y entonces la clave
+un run disparado por asset, o desde la CLI sin logical date, no tiene ninguna, y
+entonces la clave
 falta del contexto por completo — indexarla lanza `KeyError` en tiempo de
 ejecución, mientras `airflow dags test` (que siempre aporta una) sigue en verde.
 La §7 explica el porqué. `run_id` siempre está; prefiérelo para nombrar cosas.
@@ -275,7 +276,7 @@ después de cada Dag que escribas.
 > - Las tasks corren **de una en una**, en un orden que el grafo permita. En la
 >   salida de ese run, una de `shout`/`count_words` terminó antes de que empezara la
 >   otra; cuál va primero varía de un run a otro.
-> - **Siempre aporta una logical date.** Un trigger manual de verdad no (§7), que
+> - **Siempre aporta una logical date.** Un trigger desde la CLI no (§7), que
 >   es la forma en la que un Dag puede pasar aquí y fallar en producción.
 > - Una task **deferrable** (§11), cuando tiene que esperar, normalmente se
 >   suspende y deja la espera en manos de otro servicio, el triggerer. Aquí no

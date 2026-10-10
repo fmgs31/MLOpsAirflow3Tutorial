@@ -1,7 +1,6 @@
 ## 14. Testing Dags
 
-Four levels, cheapest first — and the first of them is the grader for the seven
-files you wrote.
+Four levels — and the first of them checks the seven files you wrote.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
 These catch the failures that otherwise surface as an import error in the UI
@@ -22,16 +21,19 @@ They load **your `dags/` folder**, and they encode what this tutorial expects:
 seven specific `dag_id`s; every Dag with tags, a `doc_md` and an owner that is
 not `airflow`; `retries` of at least one on every Dag that does real work;
 `dataops` producing both assets; `mlops` scheduled on `labeled_projects` and
-validating before it trains; no cycles. It also greps the sources for
-constructs that do not exist in this version of Airflow — `schedule_interval=`,
-`days_ago(`, `airflow.operators.`, `execution_date`, `SubDagOperator`, `sla=`.
-Most Airflow code on the internet predates Airflow 3, so a copy-pasted snippet
-can bring one of these in, and several of them still *import* and fail only
-once the task runs.
+validating before it trains; no cycles. The suite also greps the sources for
+constructs from older Airflow versions — `schedule_interval=`, `days_ago(`,
+`airflow.operators.`, `execution_date`, `SubDagOperator`, `sla=`. Most Airflow
+code on the internet predates Airflow 3, so a copy-pasted snippet can bring one
+of these in. Some stop the file from importing (`schedule_interval=`,
+`days_ago(`, `SubDagOperator`); the rest get through silently:
+`airflow.operators.` still imports through a deprecation shim, `sla=` is
+accepted and does nothing, and `execution_date` fails only once the task runs.
 
 **Unit tests on the workload** — [`tests/test_tagifai.py`](../../tests/test_tagifai.py).
-Nothing in `src/tagifai/` imports Airflow, so the ML code is testable without a
-scheduler in the loop. That separation is deliberate: Airflow orchestrates the
+Apart from `assets.py`, which defines the Asset objects, nothing in
+`src/tagifai/` imports Airflow, so the ML code is testable without a scheduler
+in the loop. That separation is deliberate: Airflow orchestrates the
 code, it does not contain it.
 
 **Whole-run tests** — `airflow dags test <dag_id>` executes a real Dag run
@@ -50,7 +52,7 @@ result differs.
 concatenates them in order, loads the result with `DagBag`, and fails if what
 you were told to type does not produce a Dag that imports cleanly.
 
-Run all of it:
+The integrity, unit and documentation tests are one `pytest` run:
 
 ```bash
 docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
@@ -95,8 +97,9 @@ python scripts/sync_readme.py             # fix it
 
 None of those levels would have caught the two bugs in §7's "trap" box:
 `airflow dags test` always supplies a logical date, so a Dag that breaks on a
-manual trigger passes every test above. **Trigger each Dag once for real** —
-through the scheduler, the way it will actually run — before you trust it.
+run without one passes every test above. **Trigger each Dag once for real** —
+through the scheduler, with `airflow dags trigger` and no `-l`, so the run has
+no logical date, just like an asset-triggered one — before you trust it.
 
 ---
 

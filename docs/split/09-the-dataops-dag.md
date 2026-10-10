@@ -273,19 +273,20 @@ has no slices, only events.
 
 ### Swapping in the real vendors
 
-Each swap is one operator plus one **Connection** — the credential never appears
-in the Dag file. Add it under Admin → Connections, from the CLI, or as an
-`AIRFLOW_CONN_*` environment variable; the Dag only ever names it:
+Each swap is one operator, and the credentials for a remote service go in a
+**Connection** — they never appear in the Dag file. Add it under Admin →
+Connections, from the CLI, or as an `AIRFLOW_CONN_*` environment variable; the
+Dag only ever names it:
 
 ```bash
-airflow connections add airbyte \
-    --conn-type http --conn-host localhost --conn-port 8000
+docker compose exec airflow-scheduler airflow connections add airbyte     --conn-type airbyte --conn-host https://airbyte.example.com/api/public/v1/     --conn-login <client-id> --conn-password <client-secret>
 ```
 
 ```python
+import great_expectations as gx
 from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
 from airflow.providers.dbt.cloud.operators.dbt import DbtCloudRunJobOperator
-from great_expectations_provider.operators.great_expectations import GreatExpectationsOperator
+from great_expectations_provider.operators.validate_dataframe import GXValidateDataFrameOperator
 
 extract_projects = AirbyteTriggerSyncOperator(
     task_id="extract_projects",
@@ -294,11 +295,20 @@ extract_projects = AirbyteTriggerSyncOperator(
     asynchronous=False, timeout=3600, wait_seconds=3,
 )
 
-validate_raw = GreatExpectationsOperator(
+validate_raw = GXValidateDataFrameOperator(   # the gate: a failed suite fails the task
     task_id="validate_raw",
-    checkpoint_name="projects",
-    data_context_root_dir=GE_ROOT_DIR,
-    fail_task_on_validation_failure=True,  # the gate: a failed suite fails the task
+    configure_dataframe=lambda: data.load_raw(config.RAW_PROJECTS_FP),
+    configure_expectations=lambda context: gx.ExpectationSuite(
+        name="raw_projects",
+        expectations=[
+            gx.expectations.ExpectTableColumnsToMatchSet(
+                column_set=["id", "created_on", "title", "description", "tag"]
+            ),
+            gx.expectations.ExpectColumnValuesToBeUnique(column="id"),
+            gx.expectations.ExpectColumnValuesToNotBeNull(column="title"),
+            gx.expectations.ExpectTableRowCountToBeBetween(min_value=500),
+        ],
+    ),
 )
 
 transform = DbtCloudRunJobOperator(
@@ -308,23 +318,14 @@ transform = DbtCloudRunJobOperator(
 # ...or dbt Core in-process: BashOperator(bash_command=f"cd {DBT_DIR} && dbt run && dbt test")
 ```
 
-Where those names come from — each tool is set up **outside** Airflow, and the
-Dag only references the artefact:
-
-```bash
-great_expectations init                        # creates the context directory
-great_expectations datasource new              # point it at your warehouse
-great_expectations suite new                   # the expectations ("projects")
-great_expectations checkpoint new projects     # ← this name is `checkpoint_name=`
-
-dbt init dbt_transforms                        # then models/<name>/<name>.sql + schema.yml
-```
-
-The expectations inside that suite are Great Expectations' own vocabulary, and
-they map one-to-one onto the checks in `validate.py`:
-`expect_column_values_to_be_unique`, `expect_column_values_to_not_be_null`,
-`expect_column_values_to_be_of_type`, `expect_compound_columns_to_be_unique`,
-`expect_table_row_count_to_be_between`.
+Where those names come from: the Airbyte `connection_id` and the dbt Cloud
+`job_id` are created in those tools, **outside** Airflow, and the Dag only
+references them. For dbt Core, `dbt init dbt_transforms` creates the project,
+and your models go in `models/<name>/<name>.sql` plus `schema.yml`. Great
+Expectations needs nothing set up outside the Dag: `GXValidateDataFrameOperator`
+builds a throwaway GX context inside the task, and the suite is the Python list
+above — the four checks of the `raw_projects` suite in `validate.py`, one GX
+expectation each.
 
 The Dag's structure does not change: `outlets=[LABELED_PROJECTS]` still goes on the
 last validation task, and everything downstream still schedules on the asset.

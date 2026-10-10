@@ -10,14 +10,14 @@ is scheduled, written to the metadata database and started as a process, which
 costs a few seconds per task. That is nothing for work measured in minutes, and
 far too slow for work that must finish in milliseconds. Airflow can *start* a
 run when an event arrives (§11), but one run per message, click or request, at
-thousands per second, would swamp the scheduler and the database; a queue
+thousands per second, would swamp the scheduler and the metadata database; a queue
 consumer or a stream processor (Kafka, Flink…) is built for that. Airflow is
 also a poor fit for anything needing a cycle or a `while` loop across runs, and
 for heavy compute inside the worker — trigger a Spark/Ray/Kubernetes job and
 track it instead. If your pipeline is three scripts run once a week, cron is
 still allowed.
 
-Four processes, a database, and an executor — which, as "The executor" below
+Four processes, the metadata database, and an executor — which, as "The executor" below
 explains, is not always a process of its own. All of it is running in your stack
 right now:
 
@@ -25,7 +25,7 @@ right now:
 |---|---|
 | **API server** | Serves the REST API, the React UI, and the **Task Execution API** that workers call |
 | **Scheduler** | Decides what to run and hands work to the executor |
-| **Dag processor** | Parses your Dag files into the database — its own process |
+| **Dag processor** | Parses your Dag files into the metadata database — its own process |
 | **Triggerer** | Runs async triggers for deferred tasks (§11) and async callbacks |
 | **Executor** | Where tasks actually run. `LocalExecutor` here; Celery or Kubernetes in production |
 | **Metadata DB** | State of everything: runs, task instances, XComs, connections |
@@ -120,11 +120,14 @@ tasks that run two at a time instead of all at once.
 
 Every fact Airflow knows lives in one relational database: Dag definitions as
 parsed, every Dag run, every task instance and its state and try count, XComs,
-Connections, Variables, pools, asset events, the audit log. The UI is a view of
-it. The scheduler's loop is a query against it. Restart the containers and
-nothing is lost, because the state is in the database volume, not in the
-containers — `scripts/reset.sh` deletes that volume, which is why it is the
-last resort.
+Connections, Variables, pools, asset events, the audit log. In this stack it is
+the `postgres` container (Postgres 16). It is Airflow's own database, not to
+be confused with the databases your tasks use. If a task reads from a warehouse
+or an application's Postgres, that is a different database, and the task
+reaches it through a Connection and a hook (§6). The UI is a view of the metadata database. The scheduler's loop is a query against
+it. Restart the containers and nothing is lost, because the state is in the
+metadata database's volume, not in the containers — `scripts/reset.sh` deletes
+that volume, which is why it is the last resort.
 
 Two consequences follow. It is the thing to back up, and it grows forever
 unless you run `airflow db clean` (§15) — a year of runs, task instances and
@@ -156,7 +159,7 @@ The distinction that catches everyone first is **`queued` vs `running`**:
 
 - **no status** — when a Dag run is created, the scheduler creates one task
   instance for every task in the Dag at once, all without a state: in the
-  database their `state` is `null`, and the UI shows it as "no status", an
+  metadata database their `state` is `null`, and the UI shows it as "no status", an
   uncoloured box. A task stays like that while its upstream tasks have not
   finished. This is what "waiting for another task" looks like: there is no
   state with that name.
@@ -184,12 +187,12 @@ between pokes and `deferred` from one suspended onto the triggerer (§11),
 `awaiting_input` while a human decides (§12), and `upstream_failed` on
 everything downstream of a failure.
 
-### Task code never touches the database
+### Task code never touches the metadata database
 
 The architectural point worth internalising: **task code never touches the
 metadata database.** A task talks to the Task Execution API over HTTP, which is
 what makes remote workers and the Edge executor possible — and why a task cannot
-open a database session and query `DagRun` itself.
+open a session on it and query `DagRun` itself.
 
 ```bash
 curl -s localhost:8080/api/v2/monitor/health

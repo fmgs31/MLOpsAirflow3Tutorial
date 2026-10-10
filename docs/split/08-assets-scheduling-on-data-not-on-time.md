@@ -2,8 +2,8 @@
 
 An **Asset** is a named piece of data. A task declares it produces one with
 `outlets=`, and each time that task succeeds Airflow records an **asset event**;
-a Dag declares it consumes one by putting it in `schedule=`, and an event starts
-a run of it. That is the whole mechanism, and it replaces every "run 30 minutes after the other Dag,
+a Dag declares it consumes one by putting it in `schedule=`, and new events
+start a run of it. That is the whole mechanism, and it replaces every "run 30 minutes after the other Dag,
 and hope" cron you have ever seen.
 
 The assets this tutorial uses are already defined, in

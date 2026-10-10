@@ -278,19 +278,20 @@ tiene trozos, solo eventos.
 
 ### Cambiar a los vendors reales
 
-Cada cambio es un operator más una **Connection** — la credencial nunca aparece
-en el archivo del Dag. Añádela bajo Admin → Connections, desde la CLI, o como
-variable de entorno `AIRFLOW_CONN_*`; el Dag solo la nombra:
+Cada cambio es un operator, y las credenciales de un servicio remoto van en una
+**Connection** — nunca aparecen en el archivo del Dag. Añádela bajo Admin →
+Connections, desde la CLI, o como variable de entorno `AIRFLOW_CONN_*`; el Dag
+solo la nombra:
 
 ```bash
-airflow connections add airbyte \
-    --conn-type http --conn-host localhost --conn-port 8000
+docker compose exec airflow-scheduler airflow connections add airbyte     --conn-type airbyte --conn-host https://airbyte.example.com/api/public/v1/     --conn-login <client-id> --conn-password <client-secret>
 ```
 
 ```python
+import great_expectations as gx
 from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
 from airflow.providers.dbt.cloud.operators.dbt import DbtCloudRunJobOperator
-from great_expectations_provider.operators.great_expectations import GreatExpectationsOperator
+from great_expectations_provider.operators.validate_dataframe import GXValidateDataFrameOperator
 
 extract_projects = AirbyteTriggerSyncOperator(
     task_id="extract_projects",
@@ -299,11 +300,20 @@ extract_projects = AirbyteTriggerSyncOperator(
     asynchronous=False, timeout=3600, wait_seconds=3,
 )
 
-validate_raw = GreatExpectationsOperator(
+validate_raw = GXValidateDataFrameOperator(   # the gate: a failed suite fails the task
     task_id="validate_raw",
-    checkpoint_name="projects",
-    data_context_root_dir=GE_ROOT_DIR,
-    fail_task_on_validation_failure=True,  # the gate: a failed suite fails the task
+    configure_dataframe=lambda: data.load_raw(config.RAW_PROJECTS_FP),
+    configure_expectations=lambda context: gx.ExpectationSuite(
+        name="raw_projects",
+        expectations=[
+            gx.expectations.ExpectTableColumnsToMatchSet(
+                column_set=["id", "created_on", "title", "description", "tag"]
+            ),
+            gx.expectations.ExpectColumnValuesToBeUnique(column="id"),
+            gx.expectations.ExpectColumnValuesToNotBeNull(column="title"),
+            gx.expectations.ExpectTableRowCountToBeBetween(min_value=500),
+        ],
+    ),
 )
 
 transform = DbtCloudRunJobOperator(
@@ -313,23 +323,14 @@ transform = DbtCloudRunJobOperator(
 # ...or dbt Core in-process: BashOperator(bash_command=f"cd {DBT_DIR} && dbt run && dbt test")
 ```
 
-De dónde salen esos nombres — cada herramienta se configura **fuera** de Airflow,
-y el Dag solo referencia el artefacto:
-
-```bash
-great_expectations init                        # creates the context directory
-great_expectations datasource new              # point it at your warehouse
-great_expectations suite new                   # the expectations ("projects")
-great_expectations checkpoint new projects     # ← this name is `checkpoint_name=`
-
-dbt init dbt_transforms                        # then models/<name>/<name>.sql + schema.yml
-```
-
-Las expectations dentro de esa suite son el vocabulario propio de Great
-Expectations, y se corresponden una a una con las comprobaciones de
-`validate.py`: `expect_column_values_to_be_unique`,
-`expect_column_values_to_not_be_null`, `expect_column_values_to_be_of_type`,
-`expect_compound_columns_to_be_unique`, `expect_table_row_count_to_be_between`.
+De dónde salen esos nombres: el `connection_id` de Airbyte y el `job_id` de dbt
+Cloud se crean en esas herramientas, **fuera** de Airflow, y el Dag solo los
+referencia. Para dbt Core, `dbt init dbt_transforms` crea el proyecto, y tus
+modelos van en `models/<nombre>/<nombre>.sql` más `schema.yml`. Great
+Expectations no necesita configurar nada fuera del Dag:
+`GXValidateDataFrameOperator` construye un contexto de GX desechable dentro de
+la task, y la suite es la lista de Python de arriba — las cuatro comprobaciones
+de la suite `raw_projects` de `validate.py`, una expectation de GX cada una.
 
 La estructura del Dag no cambia: `outlets=[LABELED_PROJECTS]` sigue yendo en la última
 task de validación, y todo lo de aguas abajo sigue programándose con el asset.
