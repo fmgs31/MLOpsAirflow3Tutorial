@@ -96,9 +96,9 @@ falla no escribe evento, y en eso consiste toda la garantía de seguridad: a `ml
 puede arrancar un dato que no pasó la validación, porque la task que lo habría
 anunciado nunca terminó.
 
-El scheduler hace entonces la segunda mitad. En su siguiente bucle lee los asset
-events nuevos y encola un Dag run por **cada Dag sin pausa** programado con ese
-asset.
+En ese mismo paso, Airflow añade una entrada a una cola por **cada Dag sin
+pausa** programado con ese asset. El scheduler hace entonces la segunda mitad:
+en su siguiente bucle convierte esas entradas en Dag runs.
 
 Los eventos que llegan más rápido de lo que el consumidor puede procesarlos no
 se pierden ni se procesan de uno en uno. `mlops` permite un único run activo

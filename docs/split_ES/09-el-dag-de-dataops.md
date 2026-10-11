@@ -255,8 +255,10 @@ docker compose exec airflow-scheduler airflow backfill create \
 ```
 
 **Comprobación.** Una tabla encabezada `Runs to be attempted:` con tres filas —
-2026-02-01, 02 y 03, cada una a las 03:00 — y nada creado. `--to-date` es
-exclusivo, y cada fila es una franja del cron diario de `dataops`.
+2026-02-01, 02 y 03, cada una a las 03:00 — y nada creado. Cada fila es una
+franja del cron diario de `dataops`. El rango incluye sus dos extremos, pero
+`--to-date 2026-02-04` significa las 00:00 de ese día, antes de que el cron se
+dispare a las 03:00, así que el 02-04 queda fuera.
 
 Quita `--dry-run` y el mismo comando crea esos tres runs, con run ids que empiezan
 por `backfill__`. Ten claro qué viene después antes de hacerlo:

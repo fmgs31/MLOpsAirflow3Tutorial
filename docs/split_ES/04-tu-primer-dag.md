@@ -60,7 +60,8 @@ Las otras dos deciden qué pasa cuando una task falla:
   corren las tasks de aguas abajo.
 - **`retry_delay`** — cuánto espera antes del siguiente intento. Treinta segundos
   es generoso para una demo y corto para trabajo real; una API inestable suele
-  necesitar minutos, y `retry_exponential_backoff=True` los separa progresivamente.
+  necesitar minutos, y `retry_exponential_backoff=2.0` duplica la espera tras
+  cada intento.
 
 **El valor por defecto es `retries=0`** (`[core] default_task_retries`), lo que
 significa que una task que sufre un corte de red puntual simplemente falla y se lleva el
@@ -100,8 +101,8 @@ Línea a línea:
   cuenta; nunca programa uno antes. No te impide lanzar un run tú mismo — un
   trigger manual funciona aunque el `start_date` esté en el futuro —, así que en
   este Dag con `schedule=None` todavía no cambia nada; está puesto para que el
-  Dag esté listo el día que tenga un schedule. Es opcional: un Dag con schedule
-  que no lo tiene empieza a partir del momento en que le quitas la pausa.
+  Dag esté listo el día que tenga un schedule. Es opcional; la §7 explica
+  cuándo arranca un Dag con schedule que no lo tiene.
 - **`catchup=False`** — decide qué pasa cuando quitas la pausa a un Dag con
   schedule cuyo `start_date` ya pasó. Con `False`, el valor por defecto, el
   scheduler ignora el pasado perdido y crea un solo run, para la vez más
@@ -146,7 +147,8 @@ imprima acaba en el log de la task, visible en la UI.
 
 `**context` es cómo una task ve el run al que pertenece: `run_id`, `params`, `ti`
 (la task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`, `conn`,
-`macros`. Lee `logical_date` con `.get()`, nunca con `context["logical_date"]`:
+`macros`. Lee `logical_date` — la fecha que da nombre a un run, como en "el
+run del 10 de septiembre" (§7) — con `.get()`, nunca con `context["logical_date"]`:
 un run disparado por asset, o desde la CLI sin logical date, no tiene ninguna, y
 entonces la clave
 no existe en el contexto — indexarla lanza `KeyError` en tiempo de

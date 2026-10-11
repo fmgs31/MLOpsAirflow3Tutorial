@@ -324,8 +324,8 @@ la arista que lo causó.
 Ten claro de dónde viene la espera. Casi toda es `dataops` ejecutando sus cinco tasks
 — `extract` descarga el archivo de origen, así que esa parte depende de tu
 conexión. La parte de Airflow es pequeña: un bucle del scheduler para crear el
-run de `dataops` tras quitar la pausa, y uno más para encolar `mlops` cuando
-se registra el asset event (§3). Si tras un minuto no ha aparecido nada, comprueba
+run de `dataops` tras quitar la pausa, y uno más para crear el run de `mlops`
+cuando se registra el asset event (§3, §8). Si tras un minuto no ha aparecido nada, comprueba
 que ambos Dags están sin pausa y que el run de `dataops` tuvo éxito — un
 `validate_transformed` fallido no emite evento, por diseño.
 
