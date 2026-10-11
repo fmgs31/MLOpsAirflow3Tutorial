@@ -85,10 +85,44 @@ Dag.
 
 ### El proyecto de ML que orquesta
 
-Airflow orquesta código; no lo contiene. El código orquestado vive en
-`src/tagifai/` y, salvo `assets.py`, no importa Airflow — un pequeño clasificador de
-texto que etiqueta proyectos de ML. Esta parte no la escribes tú; los Dags la
-llaman:
+Airflow orquesta código; no lo contiene. El código que orquesta este tutorial
+es un pequeño proyecto de ML en `src/project_tagger/`. No lo escribes tú; los
+Dags lo llaman.
+
+**Los datos** son un [CSV público](https://github.com/GokuMohandas/Made-With-ML/blob/main/datasets/dataset.csv)
+con 764 proyectos de ML que recopiló Made With ML entre febrero y octubre de
+2020, una fila por proyecto. Cada fila tiene un título, una descripción, la
+fecha en que se añadió y un **tag** — la etiqueta que el modelo aprende a
+predecir —, que es uno de `natural-language-processing`, `computer-vision`,
+`mlops` u `other`. Una fila:
+
+| title | description | tag |
+|---|---|---|
+| Rethinking Batch Normalization in Transformers | We found that NLP batch statistics exhibit large variance throughout training, which leads to poor BN performance. | `natural-language-processing` |
+
+**El modelo** lee el título y la descripción de un proyecto y predice su tag.
+Es un clasificador de texto de scikit-learn (features TF-IDF y un clasificador
+lineal SGD) que entrena en segundos. `dataops` (§9) descarga y comprueba los
+datos; `mlops` (§10) entrena varias versiones del modelo y se queda con la
+mejor.
+
+**El modelo en producción** es el modelo entrenado que se usa ahora mismo para
+etiquetar texto nuevo. Aquí nada lo sirve por red: `registry.py` apunta qué
+modelo guardado está en producción, y `predict.py` lo carga y etiqueta el texto
+que le des:
+
+```
+"Transfer learning with BERT for text classification"  →  natural-language-processing
+"Real-time object detection on a webcam with YOLO"     →  computer-vision
+```
+
+**El drift** es que los datos cambien por debajo del modelo en producción. El
+Dag `monitoring` (§12) compara el cuarto más reciente de los proyectos, por
+fecha de alta, con los anteriores: si ha cambiado la proporción de cada tag, si
+ha aparecido un tag que los proyectos anteriores no tienen, si el modelo en
+producción sigue puntuando igual de bien.
+
+Los módulos, de los que solo `assets.py` importa Airflow:
 
 | Módulo | Papel |
 |---|---|

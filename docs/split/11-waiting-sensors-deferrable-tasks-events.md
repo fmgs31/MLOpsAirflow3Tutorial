@@ -51,7 +51,7 @@ from airflow.providers.standard.sensors.filesystem import FileSensor
 from airflow.providers.standard.sensors.time_delta import TimeDeltaSensor
 from airflow.sdk import PokeReturnValue, dag, task
 
-from tagifai import config, data
+from project_tagger import config, data
 
 DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
 

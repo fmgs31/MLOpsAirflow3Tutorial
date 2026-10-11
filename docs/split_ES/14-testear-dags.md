@@ -33,8 +33,8 @@ resto pasan sin avisar: `airflow.operators.` sigue importando a través de un
 shim de deprecación, `sla=` se acepta y no hace nada, y `execution_date` solo
 falla cuando corre la task.
 
-**Tests unitarios sobre la carga de trabajo** — [`tests/test_tagifai.py`](../../tests/test_tagifai.py).
-Salvo `assets.py`, que define los objetos Asset, nada en `src/tagifai/` importa
+**Tests unitarios sobre la carga de trabajo** — [`tests/test_project_tagger.py`](../../tests/test_project_tagger.py).
+Salvo `assets.py`, que define los objetos Asset, nada en `src/project_tagger/` importa
 Airflow, así que el código de ML es testeable sin un scheduler de por medio. Esa separación es deliberada: Airflow orquesta el
 código, no lo contiene.
 

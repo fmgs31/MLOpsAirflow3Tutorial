@@ -80,9 +80,41 @@ Dag.
 
 ### The ML project it orchestrates
 
-Airflow orchestrates code; it does not contain it. The code being orchestrated
-lives in `src/tagifai/` and, except for `assets.py`, imports no Airflow — a small text classifier
-that tags ML projects. You do not write this part; the Dags call it:
+Airflow orchestrates code; it does not contain it. The code this tutorial
+orchestrates is a small ML project in `src/project_tagger/`. You do not write
+it; the Dags call it.
+
+**The data** is a [public CSV](https://github.com/GokuMohandas/Made-With-ML/blob/main/datasets/dataset.csv)
+of 764 ML projects collected by Made With ML between February and October
+2020, one row per project. Each row has a title, a description, the date it was
+added, and a **tag** — the label the model learns to predict — which is one of
+`natural-language-processing`, `computer-vision`, `mlops` or `other`. One row:
+
+| title | description | tag |
+|---|---|---|
+| Rethinking Batch Normalization in Transformers | We found that NLP batch statistics exhibit large variance throughout training, which leads to poor BN performance. | `natural-language-processing` |
+
+**The model** reads a project's title and description and predicts its tag. It
+is a scikit-learn text classifier (TF-IDF features and a linear SGD
+classifier) that trains in seconds. `dataops` (§9) downloads and checks the
+data; `mlops` (§10) trains several versions of the model and keeps the best.
+
+**The production model** is the one trained model currently used to tag new
+text. Nothing serves it over the network here: `registry.py` records which
+saved model is in production, and `predict.py` loads it and tags whatever text
+it is given:
+
+```
+"Transfer learning with BERT for text classification"  →  natural-language-processing
+"Real-time object detection on a webcam with YOLO"     →  computer-vision
+```
+
+**Drift** is the data changing under the production model. The `monitoring`
+Dag (§12) compares the newest quarter of the projects, by date added, with the
+older ones: has the share of each tag moved, has a tag appeared that the older
+projects do not have, does the production model still score as well.
+
+The modules, of which only `assets.py` imports Airflow:
 
 | Module | Role |
 |---|---|

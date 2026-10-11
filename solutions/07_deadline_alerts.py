@@ -17,7 +17,7 @@ Three mandatory pieces: a **reference** (where the clock starts), an
                    (e.g. AsyncCallback(SlackWebhookNotifier, kwargs={...}))
 
 This Dag deliberately misses its own 30-second deadline, so the callback in
-`tagifai/callbacks.py` fires and you can find it in the scheduler/executor logs.
+`project_tagger/callbacks.py` fires and you can find it in the scheduler/executor logs.
 
     docker compose logs -f airflow-scheduler | grep "DEADLINE MISSED"
 
@@ -53,7 +53,7 @@ from airflow.sdk import DeadlineAlert, DeadlineReference, SyncCallback, dag, tas
         reference=DeadlineReference.DAGRUN_QUEUED_AT,
         interval=timedelta(seconds=30),
         callback=SyncCallback(
-            "tagifai.callbacks.deadline_missed",
+            "project_tagger.callbacks.deadline_missed",
             kwargs={"dag_id": "deadline_alerts", "budget": "30s"},
         ),
     ),

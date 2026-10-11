@@ -29,7 +29,7 @@ Funciones nuevas de la carga de trabajo: `data.split(df)` devuelve un par
 `get_production` son el *model registry* del repo, en sistema de archivos: guarda
 cada modelo entrenado con sus métricas y apunta cuál está en producción;
 `config.MIN_F1_TO_PROMOTE` es el f1 mínimo para pasar un modelo a producción
-(0.65, o el valor de `TAGIFAI_MIN_F1` si está definida).
+(0.65, o el valor de `PROJECT_TAGGER_MIN_F1` si está definida).
 
 Crea `dags/04_mlops.py`:
 
@@ -45,8 +45,8 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, registry, train as train_module, validate
-from tagifai.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger import config, data, registry, train as train_module, validate
+from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -114,7 +114,7 @@ para payloads (§6). La segunda mitad de su comprobación es algo que una suite 
 tabla no puede hacer — mira el **split**:
 
 ```python
-# src/tagifai/validate.py — check_split()
+# src/project_tagger/validate.py — check_split()
 ("split_is_non_empty",          ...,  critical)
 ("classes_in_both_splits",      ...,  critical)   # a class only in train
 ("min_rows_per_class:20",       ...,  critical)   # 3 rows of a class in train
@@ -369,7 +369,7 @@ modelo en producción al que batir.
 > propio proceso, así que pásale la variable a ese comando con `-e`:
 >
 > ```bash
-> docker compose exec -e TAGIFAI_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
+> docker compose exec -e PROJECT_TAGGER_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
 > ```
 >
 > `promotion_gate` escribe en el log `below threshold 0.99 - not promoting`, `promote_model`

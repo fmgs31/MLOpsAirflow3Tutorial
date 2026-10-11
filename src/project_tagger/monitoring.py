@@ -12,9 +12,9 @@ from typing import Any
 
 import pandas as pd
 
-from tagifai import data as data_module
-from tagifai import evaluate as evaluate_module
-from tagifai import registry
+from project_tagger import data as data_module
+from project_tagger import evaluate as evaluate_module
+from project_tagger import registry
 
 
 def label_distribution(df: pd.DataFrame) -> dict[str, float]:

@@ -34,7 +34,7 @@ un bug.
 
 ### Constrúyelo
 
-La carga de trabajo que llama este Dag, toda en `src/tagifai/`: `data.extract()`
+La carga de trabajo que llama este Dag, toda en `src/project_tagger/`: `data.extract()`
 descarga el CSV a la *landing zone* (la carpeta donde llegan los datos crudos)
 y devuelve su ruta; `data.load_raw(fp)` y `data.load_labeled(fp)` leen una
 tabla; `data.transform(df)` produce la tabla limpia y `data.save_labeled(df)` la
@@ -57,8 +57,8 @@ import pendulum
 from airflow.sdk import dag, task, task_group
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, validate
-from tagifai.assets import LABELED_PROJECTS, RAW_PROJECTS
+from project_tagger import config, data, validate
+from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -82,7 +82,7 @@ def dataops():
 
 Dos imports son nuevos. `AirflowFailException` viene de
 `airflow.sdk.exceptions`, parte del Task SDK (§4), igual que el resto de lo que
-este Dag importa de Airflow. Y `from tagifai import …` funciona solo porque el
+este Dag importa de Airflow. Y `from project_tagger import …` funciona solo porque el
 archivo de compose pone `/opt/airflow/src` en `PYTHONPATH` para todos los
 servicios: el Dag processor lo necesita para parsear el archivo, y los procesos
 que ejecutan las tasks, para correrlas.

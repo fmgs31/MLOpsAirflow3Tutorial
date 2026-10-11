@@ -361,10 +361,10 @@ cuanto el Dag processor parsea el archivo, no después de un entrenamiento:
 ```python
 from airflow.sdk import BaseOperator
 
-from tagifai import train as train_module
+from project_tagger import train as train_module
 
 
-class TagifaiTrainOperator(BaseOperator):
+class ProjectTaggerTrainOperator(BaseOperator):
     template_fields = ("experiment_name",)
 
     def __init__(self, *, experiment_name: str, min_f1: float, **kwargs) -> None:
@@ -385,9 +385,9 @@ class TagifaiTrainOperator(BaseOperator):
 Un Dag lo instancia como cualquier otro operator:
 
 ```python
-train = TagifaiTrainOperator(
+train = ProjectTaggerTrainOperator(
     task_id="train",
-    experiment_name="tagifai_{{ run_id }}",
+    experiment_name="project_tagger_{{ run_id }}",
     min_f1=0.65,
 )
 ```
@@ -397,7 +397,7 @@ guarda los argumentos. Con `min_f1=65` el Dag no llega a cargarse, y la UI
 muestra el error de import `ValueError: min_f1 must be between 0 and 1, got 65`.
 `execute` corre cuando corre la task instance, después de que
 Airflow haya renderizado cada atributo nombrado en `template_fields` — así que
-`self.experiment_name` contiene `tagifai_manual__…`, no las llaves. Lo que
+`self.experiment_name` contiene `project_tagger_manual__…`, no las llaves. Lo que
 devuelva `execute` se guarda como XCom, exactamente igual que el `return` de una
 función `@task`.
 
@@ -429,7 +429,7 @@ def train(experiment_name: str, min_f1: float) -> float:
         raise ValueError(f"f1={metrics['f1']:.4f} is below min_f1={min_f1}")
     return metrics["f1"]
 
-train(experiment_name="tagifai_{{ run_id }}", min_f1=0.65)
+train(experiment_name="project_tagger_{{ run_id }}", min_f1=0.65)
 ```
 
 Con `min_f1=65` este Dag carga sin errores, y el fallo solo aparece cuando un
@@ -448,7 +448,7 @@ principio a fin.
 La guía de Airflow para operators propios parte de `BaseOperator`, que trae lo
 que comparten todas las tasks (`task_id`, reintentos, plantillas) y deja
 `execute` para ti: es el punto de partida cuando tu operator hace algo nuevo,
-como `TagifaiTrainOperator`. Pero heredar de un operator ya hecho es lo
+como `ProjectTaggerTrainOperator`. Pero heredar de un operator ya hecho es lo
 habitual cuando quieres lo que hace más algo: la misma guía lo usa para añadir
 `template_fields` a un operator existente, y la mayoría de los operators de los
 providers derivan de otro operator, no de `BaseOperator` directamente.
@@ -458,7 +458,7 @@ a una función más algo extra: así están hechos `BranchPythonOperator`,
 `ShortCircuitOperator`, `PythonVirtualenvOperator` y la clase que crea `@task`,
 `_PythonDecoratedOperator` — por eso los logs muestran
 `<Task(_PythonDecoratedOperator): taskflow_reader>`, aunque la UI la etiquete
-como `@task`. Para `TagifaiTrainOperator` no lo es: escribe su propio
+como `@task`. Para `ProjectTaggerTrainOperator` no lo es: escribe su propio
 `execute`, así que reemplazaría lo único que hace `PythonOperator`, y aun así
 tendría que recibir `python_callable`, que es obligatorio.
 
@@ -493,7 +493,7 @@ def export_labeled_projects(day: str) -> str:
     df = df[df["tag"].notna()]                  # your own code, between the two calls
     key = f"exports/labeled_projects_{day}.csv"
     S3Hook(aws_conn_id="aws_default").load_string(
-        df.to_csv(index=False), key=key, bucket_name="tagifai-exports"
+        df.to_csv(index=False), key=key, bucket_name="project-tagger-exports"
     )
     return key
 ```

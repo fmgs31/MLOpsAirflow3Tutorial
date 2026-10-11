@@ -99,9 +99,9 @@ afirmaciones que el cuerpo te devuelve impresos:
 - La §13, unpause y luego trigger: `DEADLINE MISSED` a +31s, con `slow_step`
   todavía corriendo.
 - El "pruébalo" de la §10 con la variable exportada en el contenedor (`bash -c
-  'export TAGIFAI_MIN_F1=0.99; airflow dags test mlops'`): `promote_model`
+  'export PROJECT_TAGGER_MIN_F1=0.99; airflow dags test mlops'`): `promote_model`
   skipped, `keep_current_model` success. La forma que usa ahora la §10,
-  `docker compose exec -e TAGIFAI_MIN_F1=0.99 …`, fija la misma variable:
+  `docker compose exec -e PROJECT_TAGGER_MIN_F1=0.99 …`, fija la misma variable:
   `config.MIN_F1_TO_PROMOTE` lee `0.99` en ese proceso.
 - La nota de `curl` de la §3: en una máquina Windows, PowerShell resuelve `curl` a
   `Invoke-WebRequest`; `curl.exe` está en `System32`.
@@ -202,7 +202,7 @@ escritos.
   `dataops`; un run `asset_triggered__` de `mlops` encolado 1,5 s después de su
   evento, con `logical_date` vacía; los map index 2 y 3 de `train_candidate`
   arrancaron después de que terminaran el 0 y el 1; `promote_model` success,
-  `keep_current_model` skipped. El "pruébalo" con `TAGIFAI_MIN_F1=0.99`: `below
+  `keep_current_model` skipped. El "pruébalo" con `PROJECT_TAGGER_MIN_F1=0.99`: `below
   threshold 0.99 - not promoting`, `Branch into keep_current_model`.
 - §11 `dags test`: `curated table has 764 rows`, `Success criteria met`, `Data
   is ready (764 rows)`, 5,6 s. Por el scheduler, consultado cada medio segundo:
