@@ -125,7 +125,7 @@ Measure, then decide:
         return "continue_serving"
 ```
 
-`context["params"]` is the policy — the defaults above, or whatever this run
+`context["params"]` is the policy — the defaults in `POLICY_PARAMS`, or whatever this run
 was given. Each retraining condition watches one of the three kinds of drift
 in the table. `mean_length_shift` is the relative change in the text's mean
 length (`+0.10` = 10% longer), and it goes through `abs()` because text that
@@ -133,7 +133,7 @@ gets shorter is as much drift as text that gets longer. Note the ordering: **a n
 `request_retraining`.** Retraining on data whose label space you have not understood yet is
 how you ship a worse model with full confidence.
 
-Now the four arms. Three are simple; the fourth is a **human-in-the-loop**
+Now the four branches `decide` can pick. Three are simple; the fourth is a **human-in-the-loop**
 gate (a task that waits for a person to answer), `ApprovalOperator`, followed
 by the task that starts another Dag:
 
@@ -196,7 +196,7 @@ Finish with the wiring:
 monitoring_dag()
 ```
 
-Four arms out of one branch; `decide` returns the `task_id` of the arm to run.
+Four branches out of `decide`, which returns the `task_id` of the one to run.
 There is no join at the end, because nothing needs to run after all of them.
 
 ### Run it
@@ -246,7 +246,7 @@ you tell "a person approved this" from "nobody was looking".
 
 > **Without the `--conf` override** the outcome depends on state, which is the
 > point of a monitor. If §10 promoted a model and the data has not moved,
-> `decide()` returns `continue_serving`, the retraining arm is skipped, and the
+> `decide()` returns `continue_serving`, the retraining branch is skipped, and the
 > run is over in seconds. If there is no production model yet, `decide()` says
 > so — `No production model yet - train one.` — and takes the retraining
 > branch anyway, timeout included. Both are correct. Run it without `--conf`
@@ -275,7 +275,7 @@ today's errors and brings back old ones. The Dag here sidesteps it by always
 training on the full labelled table — fine at this size, and the first thing to
 revisit when the table stops fitting in a task.
 
-Which is also why the promotion gate in §10 compares against the current
+Which is also why `promotion_gate` in §10 compares against the current
 production model instead of a fixed threshold alone: a retrained model that is
 worse than what is serving should not ship just because a monitor fired.
 

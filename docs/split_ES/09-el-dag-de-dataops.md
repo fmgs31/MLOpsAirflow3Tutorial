@@ -109,7 +109,7 @@ tutorial se programa con `raw_projects`. La task devuelve una **ruta**, no el da
 a los datos, no los datos en sí.
 
 Ahora el *gate* sobre los datos crudos — una task que deja pasar el pipeline
-solo si los datos cumplen la suite, y si no lo detiene —, y el transform:
+solo si los datos cumplen la suite, y si no lo detiene —, y `transform`:
 
 ```python dags/03_dataops.py
     @task
@@ -128,7 +128,7 @@ solo si los datos cumplen la suite, y si no lo detiene —, y el transform:
         return str(out)
 ```
 
-El gate de validación es la parte que merece la pena copiar, y hay dos
+El gate, `validate_raw`, es la parte que merece la pena copiar, y hay dos
 detalles en los que es fácil equivocarse:
 
 - **`AirflowFailException`, no `AirflowException`.** Un fallo de calidad de datos
@@ -161,10 +161,10 @@ El gate final — el que emite el asset con el que se programará `mlops`:
         return {"suite": result.suite, "rows": len(df), "results": result.results}
 ```
 
-Poner el outlet en la task de *validación*, no en la de transform, es todo el
-truco: el evento se escribe solo cuando esta task tiene éxito, así que el éxito
-que arranca a `mlops` es el de la validación, no el de cualquier task del Dag:
-los Dags aguas abajo se programan con "llegaron datos buenos".
+Poner el outlet en `validate_transformed`, no en `transform`, es todo el truco:
+el evento se escribe solo cuando esta task tiene éxito, así que `mlops` solo
+arranca con datos que pasaron la suite `labeled_projects` — el consumidor se
+programa con "llegaron datos buenos".
 
 Una task más, dentro de un **task group** — `@task_group` anida tasks bajo un
 único nodo plegable en la vista Graph, algo a lo que recurrir en cuanto un Dag
@@ -198,7 +198,7 @@ dataops()
 Lee las conexiones dos veces. `transform` recibe `raw_fp`, así que el flujo de
 datos le crea su arista desde `extract_projects` — pero nada de lo que consume
 viene de `validate_raw`, así que `raw_report >> curated_fp` añade la arista a
-mano: el transform debe esperar al gate aunque no use su salida. Son las formas
+mano: `transform` debe esperar a `validate_raw` aunque no use su salida. Son las formas
 1 y 2 de la §6: aristas implícitas cuando fluyen datos, `>>` cuando solo importa
 el orden.
 
@@ -227,8 +227,8 @@ docker compose exec airflow-scheduler airflow dags test dataops
 /opt/airflow/data/warehouse/labeled_projects.csv`, `suite=labeled_projects
 passed=6/6`, y del task group, `raw_projects: 4 checks, failed=none` y
 `labeled_projects: 6 checks, failed=none`. El archivo
-`data/warehouse/labeled_projects.csv` ya existe en tu máquina. (`extract`
-descarga el CSV de origen por HTTPS — es la única task del pipeline que
+`data/warehouse/labeled_projects.csv` ya existe en tu máquina.
+(`extract_projects` descarga el CSV de origen por HTTPS — es la única task del pipeline que
 necesita conexión a internet, y el recuento de filas es el que tenga ese archivo
 cuando lo descargas.)
 
@@ -342,8 +342,8 @@ Expectations no necesita configurar nada fuera del Dag:
 la task, y la suite es la lista de Python de arriba — las cuatro comprobaciones
 de la suite `raw_projects` de `validate.py`, una expectation de GX cada una.
 
-La estructura del Dag no cambia: `outlets=[LABELED_PROJECTS]` sigue yendo en la última
-task de validación, y todo lo de aguas abajo sigue programándose con el asset.
+La estructura del Dag no cambia: `outlets=[LABELED_PROJECTS]` sigue yendo en
+`validate_transformed`, y todo lo de aguas abajo sigue programándose con el asset.
 Esos tres providers **no** están instalados aquí, y por eso este tutorial no
 necesita ninguna cuenta de vendor.
 

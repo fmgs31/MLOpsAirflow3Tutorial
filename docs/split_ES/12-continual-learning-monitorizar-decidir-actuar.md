@@ -127,7 +127,7 @@ Medir, y luego decidir:
         return "continue_serving"
 ```
 
-`context["params"]` es la política — los defaults de arriba, o lo que se le haya
+`context["params"]` es la política — los defaults de `POLICY_PARAMS`, o lo que se le haya
 dado a este run. Cada condición de reentrenamiento vigila uno de los tres tipos
 de drift de la tabla. `mean_length_shift` es el cambio relativo de la longitud
 media del texto (`+0.10` = un 10 % más largo), y va con `abs()` porque un texto
@@ -135,7 +135,7 @@ que se acorta es tanto drift como uno que se alarga. Fíjate en el orden: **una 
 a `request_retraining`.** Reentrenar con datos cuyo espacio de etiquetas todavía no has
 entendido es la receta para publicar un modelo peor convencido de que es mejor.
 
-Ahora las cuatro ramas. Tres son simples; la cuarta es un gate
+Ahora las cuatro ramas que puede elegir `decide`. Tres son simples; la cuarta es un gate
 **human-in-the-loop** (una task que espera a que una persona responda),
 `ApprovalOperator`, seguido de la task que arranca otro Dag:
 
@@ -198,8 +198,8 @@ Termina conectando las tasks:
 monitoring_dag()
 ```
 
-Cuatro ramas a partir de un branch; `decide` devuelve el `task_id` de la rama
-que hay que ejecutar. No hay join al final, porque nada tiene que correr después de
+Cuatro ramas que salen de `decide`, que devuelve el `task_id` de la rama que
+hay que ejecutar. No hay join al final, porque nada tiene que correr después de
 todas ellas.
 
 ### Ejecútalo
@@ -281,7 +281,7 @@ errores de hoy y vuelve a cometer los de antes. El Dag de este tutorial lo evita
 entrenando siempre con la tabla etiquetada completa — vale con este tamaño, y es lo
 primero que hay que revisar cuando la tabla deje de caber en una task.
 
-Por eso también el promotion gate de la §10 compara con el modelo que está en
+Por eso también `promotion_gate`, en la §10, compara con el modelo que está en
 producción en vez de solo con un umbral fijo: un modelo reentrenado que es peor
 que el actual no debería publicarse solo porque saltó un monitor.
 

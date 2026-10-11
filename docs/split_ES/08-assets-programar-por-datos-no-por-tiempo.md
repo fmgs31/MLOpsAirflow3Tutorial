@@ -1,11 +1,13 @@
 ## 8. Assets: programar por datos, no por tiempo
 
-Un **Asset** es un conjunto de datos con nombre. Una task declara que lo produce con
-`outlets=`, y cada vez que esa task tiene éxito Airflow registra un **asset
-event**; un Dag declara que lo consume poniéndolo en `schedule=`, y cada evento
-nuevo arranca un run de ese Dag. Ese es todo
-el mecanismo, y sustituye a cualquier cron del tipo "corre 30 minutos después del
-otro Dag, y cruza los dedos" que hayas visto en tu vida.
+Un **Asset** es un conjunto de datos con nombre. Una task declara que lo
+produce poniéndolo en `outlets=` — los assets de esa lista son los **outlets**
+de la task, y la task es su **productor** —, y cada vez que esa task tiene
+éxito Airflow registra un **asset event**. Un Dag declara que lo consume
+poniéndolo en `schedule=` — el Dag es el **consumidor** del asset —, y cada
+evento nuevo arranca un run de ese Dag. Ese es todo el mecanismo, y sustituye a
+cualquier cron del tipo "corre 30 minutos después del otro Dag, y cruza los
+dedos" que hayas visto en tu vida.
 
 Los assets que usa este tutorial ya están definidos, en
 [`src/tagifai/assets.py`](../../src/tagifai/assets.py), para que `dataops` y `mlops`
@@ -25,8 +27,10 @@ LABELED_PROJECTS = Asset(
 la UI enseña en la página del asset; este `extra` describe el asset en sí, no
 un evento concreto.
 
-El lado productor es lo que escribirás en la §9 — fíjate en que el outlet va en
-la task de **validación**, no en la de transform:
+En este tutorial, el productor de `labeled_projects` es `validate_transformed`,
+la última de las cuatro tasks de `dataops` del diagrama de la §1, que escribirás
+en la §9. El outlet va en esa task de **validación**, no en `transform`, la task
+anterior, que es la que escribe los datos:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
@@ -44,8 +48,9 @@ adjuntar un dict `extra` al evento que está a punto de emitir — un `extra`
 distinto en cada evento, a diferencia del `extra` fijo del asset.
 `AirflowFailException` hace fallar la task sin reintentos; la §9 lo explica.
 
-Y el lado consumidor, §10, donde `triggering_asset_events` — también inyectado
-por nombre — contiene los eventos que arrancaron el run:
+Y el consumidor, `mlops`, que escribirás en la §10. Ahí
+`triggering_asset_events` — también inyectado por nombre — contiene los eventos
+que arrancaron el run:
 
 ```python
 @dag(schedule=[LABELED_PROJECTS], ...)
@@ -57,8 +62,9 @@ def mlops():
                 print(f"triggered by {asset} extra={event.extra}")
 ```
 
-Esa es la idea en una línea: **el Dag aguas abajo se programa con "llegaron
-datos buenos", no con un cron que adivina cuándo habrá terminado el otro Dag.**
+Esa es la idea en una línea: **el consumidor se programa con "llegaron datos
+buenos", no con un cron que adivina cuándo habrá terminado el Dag del
+productor.**
 El evento lo emite la task que validó los datos, así que "terminó con éxito"
 significa justo eso.
 El evento incluso lleva el número de filas que validó la task.
@@ -108,7 +114,7 @@ ocupado, el *siguiente* run de `mlops` se lleva los tres eventos, y
 pone al día en un run, no en tres.
 
 > **Un consumidor en pausa no encola, y no se pone al día.** Las palabras *sin
-> pausa* de arriba importan. Si `mlops` está en pausa cuando
+> pausa* de "cada Dag sin pausa" importan. Si `mlops` está en pausa cuando
 > `dataops` emite, el asset event se escribe igualmente — lo verás en la página
 > de Assets — pero no se encola ningún run para `mlops`, y **quitar
 > la pausa después no lo recupera**. Airflow filtra los Dags en pausa en el

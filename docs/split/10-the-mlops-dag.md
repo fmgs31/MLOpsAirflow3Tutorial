@@ -1,6 +1,7 @@
 ## 10. The MLOps Dag
 
-`dags/04_mlops.py` — no time schedule: the asset triggers it.
+`dags/04_mlops.py` — no time schedule: each `labeled_projects` asset event
+triggers it.
 
 ```
 prepare_data ─► validate_training_data ─┐
@@ -124,7 +125,8 @@ all — it looks at the **split**:
 Each problem in those comments — a class only in train, three rows of a class,
 the same project in both splits — passes a column-level suite without a
 warning, and still produces a model whose f1 on the test set means nothing. That f1 is
-exactly what the promotion gate compares against production.
+exactly what `promotion_gate`, later in this section, compares against the
+production model.
 
 **Dynamic task mapping** creates, while the Dag runs, one task instance per
 hyperparameter set, and a later task gathers all the results. Three tasks:
@@ -176,11 +178,11 @@ and Dag that uses it.
 > receives context keys by parameter name (§4), and `params` is reserved — a task argument
 > called `params` gets the Dag's params, not your data.
 
-The **promotion gate** decides whether the best candidate goes to production.
-Unlike the gates in §9, it does not fail the task when the answer is no: it is
-a *branch*, a task that picks which of two paths of the Dag continues. Add the
-evaluation, the gate, the promotion and the two `EmptyOperator`s the branch
-needs:
+The **promotion gate**, `promotion_gate`, decides whether the best candidate
+goes to production. Unlike the gates in §9, it does not fail the task when the
+answer is no: it is a *branch task*, a task that picks which of the Dag's two
+**branches** continues. Add `evaluate_best`, `promotion_gate`, `promote_model`
+and the two `EmptyOperator`s the branches need:
 
 ```python dags/04_mlops.py
     @task
@@ -253,14 +255,14 @@ Finish the file with the wiring:
 mlops()
 ```
 
-`snapshot >> results` wires the validation gate upstream of *every* mapped
-instance, carrying no data, only the order. The gate's two `>>` lines give the
-branch its two paths and join them at `done`.
+`snapshot >> results` wires `validate_training_data` upstream of *every*
+mapped instance of `train_candidate`, carrying no data, only the order. The two
+`gate >>` lines give `promotion_gate` its two branches and join them at `done`.
 
 ### See the wiring
 
-Save it. You have now written both halves of the pipeline, and before running
-anything you can ask Airflow what it knows:
+Save it. You have now written both Dags of the pipeline, `dataops` and
+`mlops`, and before running anything you can ask Airflow what it knows:
 
 ```bash
 docker compose exec airflow-scheduler airflow assets details --name labeled_projects -o plain
@@ -290,8 +292,8 @@ and change **Options → Dependencies** (§5):
 
 ### Watch the whole chain fire
 
-This is the payoff of §8. Un-pause the consumer first, so it is listening, then
-the producer:
+This is the payoff of §8. Un-pause the consumer, `mlops`, first, so it is
+listening, then the producer's Dag, `dataops`:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause mlops
@@ -321,14 +323,14 @@ triggered from the CLI without one (§7). In the UI, open **Assets** and you wil
 caused it.
 
 Know where the wait comes from. Almost all of it is `dataops` itself running
-its five tasks — `extract` downloads the source file, so that part depends on
+its five tasks — `extract_projects` downloads the source file, so that part depends on
 your connection. The Airflow part is small: one scheduler loop to create the
 `dataops` run after the un-pause, and one more to create the `mlops` run once
 the asset event is recorded (§3, §8). If nothing has appeared after a minute, check that both Dags
 are un-paused and that the `dataops` run succeeded — a failed
 `validate_transformed` emits no event, by design.
 
-Now the two waves. Open that `mlops` run in the UI, click `train_candidate`,
+Now the two waves of `train_candidate`. Open that `mlops` run in the UI, click `train_candidate`,
 and read its **Task Instances** tab — four rows, map index 0 to 3, each with
 its own start and end time. Two start together; each of the other two starts
 only when one of the first pair has finished. The *Show Gantt* view (§5),
@@ -341,7 +343,8 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 
 Four `train_candidate` rows with `map_index` 0–3; 2 and 3 each start after one
 of 0 and 1 has ended. And `keep_current_model` is `skipped`
-while `promote_model` is `success`: the gate took the promoting arm, because
+while `promote_model` is `success`: `promotion_gate` took the `promote_model`
+branch, because
 the best f1 cleared the threshold and there was no production model to beat.
 
 > **Try it, once more by hand:**
@@ -355,8 +358,8 @@ the best f1 cleared the threshold and there was no production model to beat.
 > event, whichever way the producer was started — and the consumer runs on it
 > (events that arrive while `mlops` is busy share its next run, §8).
 
-> **Try it, the other branch.** Set the bar impossibly high and watch the gate
-> take the other arm. The threshold is read from an environment variable inside
+> **Try it, the other branch.** Set the bar impossibly high and watch
+> `promotion_gate` take the `keep_current_model` branch. The threshold is read from an environment variable inside
 > the task's own process, and `airflow dags test` runs the tasks in its own
 > process, so pass the variable to that command with `-e`:
 >

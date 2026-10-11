@@ -46,8 +46,9 @@ Tres piezas: una **reference** (dónde arranca el reloj), un **interval** (cuán
 después) y un **callback**, la función que se llama cuando vence el plazo, con
 los `kwargs` que se le pasan. El callback se nombra por su ruta de import
 (`módulo.función`) porque no corre dentro de ninguna task: lo importa y lo
-ejecuta otro proceso, el que indica su tipo (más abajo). Pasa una lista a
-`deadline=` para varios plazos.
+ejecuta otro proceso, y cuál depende de la clase del callback — aquí
+`SyncCallback`; las dos clases se listan después de las references. Pasa una
+lista a `deadline=` para varios plazos.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)` — esta última es "más lento que la propia media
