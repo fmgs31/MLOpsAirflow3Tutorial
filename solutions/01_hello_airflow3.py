@@ -12,6 +12,8 @@ Run it without a scheduler:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pendulum
 
 from airflow.sdk import Param, dag, task
@@ -46,7 +48,7 @@ def hello_airflow3():
     """A four-task Dag: one source, two branches of work, one join."""
 
     @task
-    def make_greeting(**context) -> str:
+    def make_greeting(**context: Any) -> str:
         # `**context` gives you the run's metadata: run_id, params, ti,
         # dag_run, ds, data_interval_start/end, var, conn, macros.
         #

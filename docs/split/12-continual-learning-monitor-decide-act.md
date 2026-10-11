@@ -101,7 +101,7 @@ Measure, then decide:
         return report
 
     @task.branch
-    def decide(report: dict[str, Any], **context) -> str:
+    def decide(report: dict[str, Any], **context: Any) -> str:
         drift, performance = report["drift"], report["performance"]
         policy = context["params"]
 

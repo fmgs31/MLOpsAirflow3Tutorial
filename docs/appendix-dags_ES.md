@@ -87,6 +87,8 @@ Run it without a scheduler:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pendulum
 
 from airflow.sdk import Param, dag, task
@@ -121,7 +123,7 @@ def hello_airflow3():
     """A four-task Dag: one source, two branches of work, one join."""
 
     @task
-    def make_greeting(**context) -> str:
+    def make_greeting(**context: Any) -> str:
         # `**context` gives you the run's metadata: run_id, params, ti,
         # dag_run, ds, data_interval_start/end, var, conn, macros.
         #
@@ -194,11 +196,14 @@ Run it:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import Label, chain, cross_downstream, dag, task
+from airflow.sdk.types import RuntimeTaskInstanceProtocol
 
 DEFAULT_ARGS = {
     "owner": "mlops-course",
@@ -207,7 +212,7 @@ DEFAULT_ARGS = {
 }
 
 
-def _push_seed(ti) -> None:
+def _push_seed(ti: RuntimeTaskInstanceProtocol) -> None:
     """Operator style: push an XCom under an explicit key.
 
     `ti` (the task instance) is injected because the parameter is named `ti` -
@@ -216,7 +221,7 @@ def _push_seed(ti) -> None:
     ti.xcom_push(key="seed", value=7)
 
 
-def _multiply(ti, factor: int) -> None:
+def _multiply(ti: RuntimeTaskInstanceProtocol, factor: int) -> None:
     # Name the task you are pulling from. Without `task_ids` this reads the
     # current task's own XComs and quietly returns None.
     seed = ti.xcom_pull(task_ids="push_seed", key="seed")
@@ -264,7 +269,7 @@ def operators_and_xcoms():
     )
 
     @task
-    def taskflow_reader(**context) -> int:
+    def taskflow_reader(**context: Any) -> int:
         """TaskFlow can read operator XComs, and vice versa - they mix freely."""
         product = context["ti"].xcom_pull(task_ids="multiply", key="product")
         print(f"TaskFlow saw product={product}")
@@ -351,6 +356,7 @@ from airflow.sdk import dag, task, task_group
 # Task code imports exceptions from the Task SDK. It is the namespace a remote
 # worker has, and the one to reach for in a task.
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
 from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
@@ -377,7 +383,7 @@ DEFAULT_ARGS = {
 )
 def dataops():
     @task(outlets=[RAW_PROJECTS])
-    def extract_projects(*, outlet_events) -> str:
+    def extract_projects(*, outlet_events: OutletEventAccessorsProtocol) -> str:
         """Land the source data. Returns a path, not a dataframe."""
         config.ensure_dirs()
         fp = data.extract()
@@ -405,7 +411,9 @@ def dataops():
         return str(out)
 
     @task(outlets=[LABELED_PROJECTS])
-    def validate_transformed(fp: str, *, outlet_events) -> dict[str, Any]:
+    def validate_transformed(
+        fp: str, *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         """Final gate. Only a passing run emits the asset event.
 
         Placing the outlet on the *validation* task, not the transform task, is
@@ -488,12 +496,14 @@ Run it:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import dag, task
+from airflow.sdk import Asset, dag, task
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
 from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
@@ -519,7 +529,9 @@ DEFAULT_ARGS = {
 )
 def mlops():
     @task
-    def prepare_data(*, triggering_asset_events) -> dict[str, int]:
+    def prepare_data(
+        *, triggering_asset_events: Mapping[Asset, Sequence[Any]]
+    ) -> dict[str, int]:
         """Inspect what triggered us, then materialise the train/test split."""
         for asset, events in triggering_asset_events.items():
             for event in events:
@@ -566,7 +578,7 @@ def mlops():
         return train_module.SEARCH_SPACE
 
     @task(max_active_tis_per_dag=2)
-    def train_candidate(hparams: dict[str, Any], **context) -> dict[str, Any]:
+    def train_candidate(hparams: dict[str, Any], **context: Any) -> dict[str, Any]:
         """One task instance per hyperparameter set.
 
         The argument is named `hparams`, not `params`: TaskFlow injects context
@@ -612,7 +624,9 @@ def mlops():
         return "promote_model"
 
     @task(outlets=[PRODUCTION_MODEL])
-    def promote_model(evaluation: dict[str, Any], *, outlet_events) -> dict[str, Any]:
+    def promote_model(
+        evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         pointer = registry.promote(evaluation["run_id"])
         outlet_events[PRODUCTION_MODEL].extra = {
             "run_id": pointer["run_id"],
@@ -847,7 +861,7 @@ def monitoring_dag():
         return report
 
     @task.branch
-    def decide(report: dict[str, Any], **context) -> str:
+    def decide(report: dict[str, Any], **context: Any) -> str:
         drift, performance = report["drift"], report["performance"]
         policy = context["params"]
 

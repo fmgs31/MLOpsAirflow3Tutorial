@@ -53,6 +53,7 @@ from typing import Any
 import pendulum
 from airflow.sdk import dag, task, task_group
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
 from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
@@ -77,8 +78,10 @@ DEFAULT_ARGS = {
 def dataops():
 ```
 
-Two imports are new. `AirflowFailException` comes from `airflow.sdk.exceptions`,
-part of the Task SDK (§4), like everything else this Dag imports from Airflow.
+Three imports are new. `AirflowFailException` comes from
+`airflow.sdk.exceptions`, and `OutletEventAccessorsProtocol`, the type of
+`outlet_events` (§8), from `airflow.sdk.types`; both are part of the Task SDK
+(§4), like everything else this Dag imports from Airflow.
 And `from project_tagger import …` works only because the compose file puts
 `/opt/airflow/src` on `PYTHONPATH` for every service: the Dag processor needs it
 to parse the file, and the processes that run the tasks need it too.
@@ -90,7 +93,7 @@ The first task produces an asset. Add it inside `dataops()`:
 
 ```python dags/03_dataops.py
     @task(outlets=[RAW_PROJECTS])
-    def extract_projects(*, outlet_events) -> str:
+    def extract_projects(*, outlet_events: OutletEventAccessorsProtocol) -> str:
         config.ensure_dirs()
         fp = data.extract()
         df = data.load_raw(fp)
@@ -141,7 +144,9 @@ The final gate — the one that emits the asset `mlops` will be scheduled on:
 
 ```python dags/03_dataops.py
     @task(outlets=[LABELED_PROJECTS])
-    def validate_transformed(fp: str, *, outlet_events) -> dict[str, Any]:
+    def validate_transformed(
+        fp: str, *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         df = data.load_labeled(fp)
         result = validate.run_suite(df, "labeled_projects")
         print(result.summary())

@@ -22,6 +22,8 @@ imports y un diccionario de valores por defecto:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pendulum
 from airflow.sdk import Param, dag, task
 
@@ -122,7 +124,7 @@ Dentro de la función, las tasks. Indéntalas — son el cuerpo de
 
 ```python dags/01_hello_airflow3.py
     @task
-    def make_greeting(**context) -> str:
+    def make_greeting(**context: Any) -> str:
         greeting = context["params"]["greeting"]
         when = context.get("logical_date") or "no logical date"
         return f"{greeting} from run {context['run_id']} at {when}"
@@ -147,7 +149,8 @@ imprima acaba en el log de la task, visible en la UI.
 
 `**context` es cómo una task ve el run al que pertenece: `run_id`, `params`, `ti`
 (la task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`, `conn`,
-`macros`. Lee `logical_date` — la fecha que da nombre a un run, como en "el
+`macros`. Son objetos de tipos distintos, de ahí `**context: Any`; Airflow
+rellena el contexto por nombre y no lee la anotación. Lee `logical_date` — la fecha que da nombre a un run, como en "el
 run del 10 de septiembre" (§7) — con `.get()`, nunca con `context["logical_date"]`:
 un run disparado por asset, o desde la CLI sin logical date, no tiene ninguna, y
 entonces la clave

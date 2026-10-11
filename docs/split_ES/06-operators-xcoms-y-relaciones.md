@@ -47,11 +47,14 @@ normales que llamará un `PythonOperator`:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import Label, chain, cross_downstream, dag, task
+from airflow.sdk.types import RuntimeTaskInstanceProtocol
 
 DEFAULT_ARGS = {
     "owner": "mlops-course",
@@ -60,18 +63,19 @@ DEFAULT_ARGS = {
 }
 
 
-def _push_seed(ti) -> None:
+def _push_seed(ti: RuntimeTaskInstanceProtocol) -> None:
     ti.xcom_push(key="seed", value=7)
 
 
-def _multiply(ti, factor: int) -> None:
+def _multiply(ti: RuntimeTaskInstanceProtocol, factor: int) -> None:
     seed = ti.xcom_pull(task_ids="push_seed", key="seed")
     ti.xcom_push(key="product", value=seed * factor)
 ```
 
 `ti` — la task instance — se inyecta porque el parámetro se llama `ti`, la misma
-inyección por nombre que hizo `**context` en la §4. Dos cosas en las que
-fijarse:
+inyección por nombre que hizo `**context` en la §4. Su tipo,
+`RuntimeTaskInstanceProtocol` de `airflow.sdk.types`, describe ese objeto, con
+`xcom_push` y `xcom_pull` entre sus métodos. Dos cosas en las que fijarse:
 
 **`xcom_pull` sin `task_ids` lee los XComs de la propia task actual** y devuelve
 `None` en silencio. Casi todos los pull que escribas necesitan `task_ids=`; el
@@ -208,7 +212,7 @@ Ahora una task de TaskFlow en el mismo Dag, leyendo el XCom de un operator:
 
 ```python dags/02_operators_and_xcoms.py
     @task
-    def taskflow_reader(**context) -> int:
+    def taskflow_reader(**context: Any) -> int:
         product = context["ti"].xcom_pull(task_ids="multiply", key="product")
         print(f"TaskFlow saw product={product}")
         return product
