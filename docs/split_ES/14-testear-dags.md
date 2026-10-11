@@ -104,7 +104,7 @@ python scripts/sync_readme.py             # fix it
 Ninguno de esos niveles habría detectado los fallos del recuadro de la "trampa"
 de la §7 (el `KeyError` y el `UndefinedError` de un run sin logical date):
 `airflow dags test` siempre aporta una logical date, así que un Dag que
-se rompe en un run sin ella pasa todos los tests de arriba. **Dispara cada Dag
+se rompe en un run sin ella pasa todos los tests de esta sección. **Dispara cada Dag
 una vez de verdad** — a través del scheduler, con `airflow dags trigger` y sin `-l`,
 para que el run no tenga logical date, igual que uno disparado por asset — antes
 de darlo por bueno.

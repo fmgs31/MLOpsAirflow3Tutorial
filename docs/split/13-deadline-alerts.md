@@ -46,8 +46,9 @@ Three pieces: a **reference** (where the clock starts), an **interval** (how
 long after it), and a **callback**, the function called when the deadline
 passes, with the `kwargs` passed to it. The callback is named by its import
 path (`module.function`) because it does not run inside any task: another
-process imports and runs it, the one its type says (below). Pass a list to
-`deadline=` for several deadlines.
+process imports and runs it, and which one depends on the callback class —
+`SyncCallback` here; both classes are listed after the references. Pass a
+list to `deadline=` for several deadlines.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)` — that last one is "slower than this Dag's own

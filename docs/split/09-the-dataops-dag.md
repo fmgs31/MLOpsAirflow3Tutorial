@@ -21,7 +21,7 @@ other scheduled one, at 06:00.) Leave the stack up overnight and the
 > of `id, created_on, title, description, tag` — so `transform` cleans the text
 > and collapses rare tags, and that is all. A real warehouse usually keeps the
 > labels in a separate table, which makes `transform` a join and gives the Dag a
-> second extract-and-validate arm feeding it:
+> second extract-and-validate branch feeding it:
 >
 > ```python
 > [validate_projects, validate_tags] >> transform >> validate_transformed
@@ -105,7 +105,7 @@ scheduled on `raw_projects`. The task returns a **path**, not the dataframe: XCo
 data, not the data itself.
 
 Now the *gate* on the raw data — a task that lets the pipeline through only if
-the data passes the suite, and stops it otherwise —, and the transform:
+the data passes the suite, and stops it otherwise —, and `transform`:
 
 ```python dags/03_dataops.py
     @task
@@ -124,8 +124,8 @@ the data passes the suite, and stops it otherwise —, and the transform:
         return str(out)
 ```
 
-The validation gate is the part worth copying, and two details in it are easy
-to get wrong:
+The gate, `validate_raw`, is the part worth copying, and two details in it are
+easy to get wrong:
 
 - **`AirflowFailException`, not `AirflowException`.** A data-quality failure is
   not transient; with `retries=2` in the defaults, a plain exception would run
@@ -156,10 +156,10 @@ The final gate — the one that emits the asset `mlops` will be scheduled on:
         return {"suite": result.suite, "rows": len(df), "results": result.results}
 ```
 
-Placing the outlet on the *validation* task, not the transform task, is the
-whole trick: the event is written only when this task succeeds, so the
-success that starts `mlops` is the validation's, not that of any task in the
-Dag: downstream Dags are scheduled on "good data arrived".
+Putting the outlet on `validate_transformed`, not on `transform`, is the whole
+trick: the event is written only when this task succeeds, so `mlops` starts
+only on data that passed the `labeled_projects` suite — the consumer is
+scheduled on "good data arrived".
 
 One more task, inside a **task group** — `@task_group` nests tasks under one
 collapsible node in the Graph view, useful once a Dag has more than a
@@ -192,8 +192,8 @@ dataops()
 
 Read the wiring twice. `transform` takes `raw_fp`, so data flow draws its edge
 from `extract_projects` — but nothing it consumes comes from `validate_raw`, so
-`raw_report >> curated_fp` adds the edge by hand: the transform must wait for
-the gate even though it does not use its output. Those are the first and
+`raw_report >> curated_fp` adds the edge by hand: `transform` must wait for
+`validate_raw` even though it does not use its output. Those are the first and
 second ways from §6: implicit edges when data flows, `>>` when only the order
 matters.
 
@@ -222,8 +222,8 @@ docker compose exec airflow-scheduler airflow dags test dataops
 /opt/airflow/data/warehouse/labeled_projects.csv`, `suite=labeled_projects
 passed=6/6`, and from the task group, `raw_projects: 4 checks, failed=none`
 and `labeled_projects: 6 checks, failed=none`. The file
-`data/warehouse/labeled_projects.csv` now exists on your machine. (`extract`
-downloads the source CSV over HTTPS — it is the one task in the pipeline that
+`data/warehouse/labeled_projects.csv` now exists on your machine.
+(`extract_projects` downloads the source CSV over HTTPS — it is the one task in the pipeline that
 needs an internet connection, and the row count is whatever that file holds
 when you download it.)
 
@@ -337,8 +337,8 @@ builds a throwaway GX context inside the task, and the suite is the Python list
 above — the four checks of the `raw_projects` suite in `validate.py`, one GX
 expectation each.
 
-The Dag's structure does not change: `outlets=[LABELED_PROJECTS]` still goes on the
-last validation task, and everything downstream still schedules on the asset.
+The Dag's structure does not change: `outlets=[LABELED_PROJECTS]` still goes on
+`validate_transformed`, and everything downstream still schedules on the asset.
 Those three providers are **not** installed here, which is why this tutorial
 needs no vendor account.
 

@@ -38,8 +38,8 @@ cuando llega el evento. `TriggerDagRunOperator` (§12) vuelve a ser el verbo.
 
 ### Constrúyelo
 
-Crea `dags/05_sensors_and_events.py` con la cabecera y los dos sensors de tipo
-operator:
+Crea `dags/05_sensors_and_events.py` con la cabecera y los dos sensors que son
+operators, `settle` y `wait_for_curated_data`:
 
 ```python dags/05_sensors_and_events.py
 """Lesson 5 - waiting for things: sensors, deferrable operators, and events."""
@@ -198,8 +198,8 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler \
 docker compose exec airflow-scheduler airflow dags test sensors_and_events
 ```
 
-Esta vez el comando se queda esperando. Ambos sensors están en `mode="reschedule"`, así que sus task
-instances **terminan su proceso entre pokes** en vez de retener un slot, y pasan a
+Esta vez el comando se queda esperando. `wait_for_curated_data` y
+`enough_rows` están los dos en `mode="reschedule"`, así que sus task instances **terminan su proceso entre pokes** en vez de retener un slot, y pasan a
 `up_for_reschedule` — el estado que la §3 describe para un sensor entre pokes. El run lo
 indica cada segundo:
 
@@ -220,9 +220,9 @@ acabará fallando por su `timeout` declarado: 120 segundos para `enough_rows`,
 300 para `wait_for_curated_data`. El run solo falla cuando los dos se han
 rendido, a los cinco minutos más o menos.
 
-Lo importante es lo que *no* estaba pasando durante la espera: la task instance
-no estaba corriendo entre pokes — estaba en `up_for_reschedule`, como has
-visto — así que no se retuvo ningún worker slot. Un poking sensor en el modo por
+Lo importante es lo que *no* estaba pasando durante la espera: las task
+instances de los dos sensors no estaban corriendo entre pokes — estaban en
+`up_for_reschedule`, como has visto — así que no se retuvo ningún worker slot. Un poking sensor en el modo por
 defecto habría ocupado un slot todo ese tiempo sin hacer nada, y esa es
 precisamente la razón por la que existen los otros dos modos.
 

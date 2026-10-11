@@ -1,6 +1,7 @@
 ## 10. El Dag de MLOps
 
-`dags/04_mlops.py` — sin schedule de tiempo: lo dispara el asset.
+`dags/04_mlops.py` — sin schedule de tiempo: lo dispara cada asset event de
+`labeled_projects`.
 
 ```
 prepare_data ─► validate_training_data ─┐
@@ -124,7 +125,8 @@ tabla no puede hacer — mira el **split**:
 Cada problema de esos comentarios — una clase solo en train, tres filas de una
 clase, el mismo proyecto en los dos splits — supera una suite a nivel de columna
 sin ningún aviso, y aun así produce un modelo cuyo f1 sobre el conjunto de test
-no significa nada. Ese f1 es exactamente lo que el promotion gate compara contra producción.
+no significa nada. Ese f1 es exactamente lo que `promotion_gate`, más adelante
+en esta sección, compara con el modelo en producción.
 
 **El dynamic task mapping** crea, mientras corre el Dag, una task instance por
 conjunto de hiperparámetros, y una task posterior reúne todos los resultados.
@@ -177,11 +179,11 @@ cuatro copias de los datos en memoria. Cuando el recurso limitado es compartido
 > claves del contexto por nombre de parámetro (§4), y `params` está reservado — un argumento
 > de task llamado `params` recibe los params del Dag, no tus datos.
 
-El **promotion gate** decide si el mejor candidato pasa a producción. A
-diferencia de los gates de la §9, no falla la task cuando la respuesta es no: es
-un *branch*, una task que elige cuál de dos ramas del Dag sigue. Añade la
-evaluación, el gate, la promoción y los dos `EmptyOperator` que el branch
-necesita:
+El **promotion gate**, `promotion_gate`, decide si el mejor candidato pasa a
+producción. A diferencia de los gates de la §9, no falla la task cuando la
+respuesta es no: es un *branch*, una task que elige cuál de dos ramas del Dag
+sigue. Añade `evaluate_best`, `promotion_gate`, `promote_model` y los dos
+`EmptyOperator` que necesitan las ramas:
 
 ```python dags/04_mlops.py
     @task
@@ -254,14 +256,15 @@ Termina el archivo conectando las tasks:
 mlops()
 ```
 
-`snapshot >> results` coloca el gate de validación aguas arriba de *todas* las
-instancias mapeadas, sin llevar datos: solo fija el orden. Las dos líneas `>>`
-del gate le dan al branch sus dos ramas y las unen en `done`.
+`snapshot >> results` coloca `validate_training_data` aguas arriba de *todas*
+las instancias mapeadas de `train_candidate`, sin llevar datos: solo fija el
+orden. Las dos líneas `gate >>` le dan a `promotion_gate` sus dos ramas y las
+unen en `done`.
 
 ### Comprueba las conexiones
 
-Guárdalo. Ya has escrito las dos mitades del pipeline, y antes de ejecutar nada
-puedes preguntarle a Airflow qué sabe:
+Guárdalo. Ya has escrito los dos Dags del pipeline, `dataops` y `mlops`, y
+antes de ejecutar nada puedes preguntarle a Airflow qué sabe:
 
 ```bash
 docker compose exec airflow-scheduler airflow assets details --name labeled_projects -o plain
@@ -291,8 +294,8 @@ a **Graph** y ve cambiando **Options → Dependencies** (§5):
 
 ### Mira cómo se dispara la cadena entera
 
-Esta es la recompensa de la §8. Quita la pausa primero al consumidor, para que esté
-a la escucha, y después al productor:
+Esta es la recompensa de la §8. Quita la pausa primero al consumidor, `mlops`,
+para que esté a la escucha, y después al Dag del productor, `dataops`:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause mlops
@@ -322,14 +325,14 @@ date, igual que un run disparado desde la CLI sin ella (§7). En la UI, abre **A
 la arista que lo causó.
 
 Ten claro de dónde viene la espera. Casi toda es `dataops` ejecutando sus cinco tasks
-— `extract` descarga el archivo de origen, así que esa parte depende de tu
+— `extract_projects` descarga el archivo de origen, así que esa parte depende de tu
 conexión. La parte de Airflow es pequeña: un bucle del scheduler para crear el
 run de `dataops` tras quitar la pausa, y uno más para crear el run de `mlops`
 cuando se registra el asset event (§3, §8). Si tras un minuto no ha aparecido nada, comprueba
 que ambos Dags están sin pausa y que el run de `dataops` tuvo éxito — un
 `validate_transformed` fallido no emite evento, por diseño.
 
-Ahora las dos oleadas. Abre ese run de `mlops` en la UI, haz clic en
+Ahora las dos oleadas de `train_candidate`. Abre ese run de `mlops` en la UI, haz clic en
 `train_candidate` y lee su pestaña **Task Instances** — cuatro filas, map index
 del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan juntas; cada una de
 las otras dos arranca solo cuando ha terminado una del primer par. La vista *Show
@@ -344,8 +347,8 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 
 Cuatro filas de `train_candidate` con `map_index` de 0 a 3; la 2 y la 3 arrancan
 cada una después de que haya terminado una de la 0 y la 1. Y
-`keep_current_model` está `skipped` mientras `promote_model` está `success`: el
-gate eligió la rama de promoción, porque el mejor f1 superó el umbral y no había
+`keep_current_model` está `skipped` mientras `promote_model` está `success`:
+`promotion_gate` eligió la rama de `promote_model`, porque el mejor f1 superó el umbral y no había
 modelo en producción al que batir.
 
 > **Pruébalo, una vez más a mano:**
@@ -360,8 +363,8 @@ modelo en producción al que batir.
 > él (los eventos que llegan mientras `mlops` está ocupado comparten su
 > siguiente run, §8).
 
-> **Pruébalo: la otra rama.** Pon el listón imposiblemente alto y mira cómo el
-> gate elige la otra rama. El umbral se lee de una variable de entorno dentro
+> **Pruébalo: la otra rama.** Pon el listón imposiblemente alto y mira cómo
+> `promotion_gate` elige la rama de `keep_current_model`. El umbral se lee de una variable de entorno dentro
 > del proceso de la propia task, y `airflow dags test` ejecuta las tasks en su
 > propio proceso, así que pásale la variable a ese comando con `-e`:
 >

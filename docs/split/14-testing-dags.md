@@ -98,7 +98,7 @@ python scripts/sync_readme.py             # fix it
 None of those levels would have caught the failures in §7's "trap" box (the
 `KeyError` and the `UndefinedError` of a run without a logical date):
 `airflow dags test` always supplies a logical date, so a Dag that breaks on a
-run without one passes every test above. **Trigger each Dag once for real** —
+run without one passes every test in this section. **Trigger each Dag once for real** —
 through the scheduler, with `airflow dags trigger` and no `-l`, so the run has
 no logical date, just like an asset-triggered one — before you trust it.
 
