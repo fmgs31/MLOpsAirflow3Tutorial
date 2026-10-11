@@ -29,6 +29,10 @@ mlops:                  prepare ─► validate ─► train×N ─► select �
 monitoring:  measure ─► decide ─► {continue | inspect | rollback | approve ─► retrain}
 ```
 
+An **asset** is a named piece of data: `labeled_projects` is the labeled data
+`dataops` produces, and `production_model` is the model `mlops` promotes. Each
+time the task that produces an asset succeeds, Airflow records an event, and
+any Dag that has that asset as its schedule starts a run (§8). That is why
 `mlops` has **no time schedule**: its schedule is an asset, and it runs when
 `dataops` publishes good data. That is
 data-aware scheduling, and it is the idea this whole tutorial is built around.

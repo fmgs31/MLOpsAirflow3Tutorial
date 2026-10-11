@@ -1,5 +1,36 @@
 ## 7. Scheduling and logical dates
 
+A scheduled run has several dates, and each one answers a different question.
+They are easiest to tell apart on a Dag that, every night at midnight,
+processes the previous day's data. Its `start_date` is 2025-01-01, and this is
+its run for 10 September 2026:
+
+| Date | Question it answers | In the example |
+|---|---|---|
+| `logical_date` | Which run is this? The date in "the run of 10 September" | 2026-09-10 00:00 |
+| `data_interval_start` | From when is the data it processes? | 2026-09-10 00:00 |
+| `data_interval_end` | Until when is the data it processes? | 2026-09-11 00:00 |
+| `run_after` | From when may it start? | 2026-09-11 00:00 |
+| `start_date` of the run | When did it actually start? | a few seconds after `run_after`, or hours later if the Dag was paused or busy |
+| `start_date` of the Dag | From what date does the scheduler schedule runs? | 2025-01-01 00:00: no earlier slice gets a run |
+
+The run *of* the 10th starts on the 11th: it cannot process a day's data until
+that day is over. Its tasks know which data to process from
+`data_interval_start` and `data_interval_end`, and the logical date names the
+run: it is the start of its interval. `ds`, `ts` and the `run_id` are that same
+logical date written as text: `2026-09-10`, `2026-09-10T00:00:00+00:00`,
+`scheduled__2026-09-10T00:00:00+00:00`.
+
+The two `start_date`s share a name and nothing else. The run's is recorded by
+Airflow when that run starts, and differs from run to run. The Dag's is an
+argument you write (§4), is the same for every run, and fixes from when there
+are runs at all; more on it further down in §7.
+
+With a plain cron string, like the `"0 3 * * *"` that `dataops` uses, there is
+no period to wait for: the run is "the 03:00 run", so the first four dates in
+the table are all 03:00, and only the run's `start_date` can be later. That is
+why they usually look like one date.
+
 Both Dags so far have `schedule=None`. The other values:
 
 ```python
@@ -15,28 +46,29 @@ makes the two decisions a schedule involves; the last line names one directly, a
 writing your own Timetable class is how you get a cadence cron cannot express.
 
 The two decisions: *when* to create a run, and which slice of time that run is
-*for* — its **data interval**, exposed to every task as `data_interval_start`
-and `data_interval_end`, and labelled by the run's `logical_date`. None of
-those says when the run happens: that is `run_after`, the earliest time the run
-may start. How the slice is cut depends on
-the timetable, and there are two kinds:
+*for* — its **data interval**. How the slice is cut depends on the timetable,
+and there are two kinds:
 
 - **A cron string or a `timedelta`** — `"0 3 * * *"`, the schedule you will
   give `dataops` in §9, or `timedelta(days=1)` — fires at a moment, and the
-  slice *is* that moment: `logical_date`, `data_interval_start` and
-  `data_interval_end` are all the same instant, 03:00 for the cron string.
+  slice *is* that moment: `logical_date`, `data_interval_start`,
+  `data_interval_end` and `run_after` are all the same instant, 03:00 for the
+  cron string.
 - **A data-interval timetable** — `CronDataIntervalTimetable("0 0 * * *",
-  timezone="UTC")`, imported from `airflow.sdk` — cuts real spans. The run
-  *for* 2026-09-10 is created once that day is over, at 2026-09-11 00:00; its
-  data interval runs from 2026-09-10 00:00 to 2026-09-11 00:00, and its
-  `logical_date` is 2026-09-10 00:00: the start of the span, a day before the
-  run happens. Use this kind when a task must process "yesterday's data",
-  because the interval tells it exactly which day that is.
+  timezone="UTC")`, imported from `airflow.sdk` — cuts real spans. It is the
+  one behind the table at the top of §7. Use this kind when a task must
+  process "yesterday's data", because the interval tells it exactly which day
+  that is.
 
-`start_date` is where the slices begin: no run is ever scheduled before it. It
-is optional — without one, a scheduled Dag starts from the moment you un-pause
-it — and it only governs the runs the scheduler creates; a manual trigger is
-never held back by it.
+The Dag's `start_date` is where the slices begin: no run is ever scheduled for
+an earlier slice. It only governs the runs the scheduler creates; a manual
+trigger works even with a `start_date` in the future.
+
+It is also optional, and without one there is no past to catch up on. When you
+un-pause the Dag, a cron schedule waits for its next time, unless the last one
+passed very recently: within a tenth of the interval, five minutes at least
+(2.4 hours on a daily schedule). A `timedelta` schedule starts as soon as you
+un-pause.
 
 Three things about scheduling that follow from the above and will save you an
 afternoon:
@@ -44,8 +76,8 @@ afternoon:
 **`catchup` defaults to `False`** (`[scheduler] catchup_by_default`), and it is
 worth knowing exactly what that means when you un-pause a Dag. Un-pausing a cron Dag with a 2025 `start_date`
 does not create a run for every slice since then. It creates **one**, for the
-most recent slice the cron has already passed — today's 03:00 if that is
-behind you, yesterday's if not — and it creates it immediately, because that
+most recent slice the cron has already passed — if it is now later than
+03:00, today's; if earlier, yesterday's — and it creates it immediately, because that
 slice is overdue. From there on, one per slice as they come due. You will
 watch this happen in §10: un-pausing `dataops` is enough to start it. If you
 *want* the history, ask for it with `catchup=True` — or backfill just the range
@@ -57,24 +89,24 @@ you need (§9).
 tab and the **Next Run** column of the Dags list are worth checking after you
 write one.
 
-**`logical_date` can be empty.** It labels the slice a scheduled run is for.
-An asset-triggered run is for no slice and has none, and neither does a run
+**`logical_date` can be empty.** It is the date that names the run, and for a
+scheduled run it comes from the run's slice. An asset-triggered run is for no slice and has none, and neither does a run
 triggered from the CLI or the REST API without one. The UI's Trigger form is
 the exception: it pre-fills the logical date with the current time, so a run
 triggered from the form has one unless you clear the field. This is what
 `mlops`'s run list will look like in §10, one run of each kind — the manual one
-triggered from the form — trimmed to the columns that matter here:
+triggered from the form — trimmed to the columns that matter here. The asset-triggered run leaves the
+`logical_date` column empty:
 
 ```bash
 $ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 dag_id  run_id                                      state    run_after             logical_date
-mlops   asset_triggered__2026-09-09T08:23:16+00:00  success  2026-09-09T08:23:16              ← none
+mlops   asset_triggered__2026-09-09T08:23:16+00:00  success  2026-09-09T08:23:16
 mlops   manual__2026-09-09T08:22:31+00:00           success  2026-09-09T08:22:32   2026-09-09T08:22:31
 ```
 
-Use `run_after` when you mean "when was this run due to start". When it
-actually started is the run's own `start_date`, which can be later; the paused
-Dag example further down in §7 shows one.
+Use `run_after` when you mean "when was this run due to start": every run has
+one, with or without a logical date.
 
 Context keys available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
 `data_interval_end`, `run_id`, `dag_run`, `ti`, `params`, `var`, `conn`,
@@ -100,8 +132,10 @@ Context keys available to every task: `ds`, `ts`, `logical_date`, `data_interval
 
 ### Manual runs
 
-A schedule is not the only way to start a Dag. Two commands cover most of it,
-and `hello_airflow3` is the Dag to try them on:
+A schedule is not the only way to start a Dag. `airflow dags trigger` creates a
+run right now, without waiting for any schedule. `hello_airflow3` is the Dag to
+try it on; it needs `unpause` first, and what pausing does is explained after
+the `trigger` options:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause hello_airflow3
@@ -116,8 +150,12 @@ docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"
 - In the UI the same thing is the **Trigger** button, with the form generated
   from your `params` — you used it in §5.
 
-A new Dag arrives **paused** (`[core] dags_are_paused_at_creation`), so
-`unpause` is not optional — and it is the step everyone forgets:
+Pausing a Dag does two things: the scheduler creates none of its scheduled
+runs, and it starts none of its runs, not even the ones you create by hand. The
+first is what *`catchup` defaults to `False`* is about. The second is why
+`hello_airflow3`, which has no schedule, needs `unpause` all the same. A new Dag
+arrives **paused** (`[core] dags_are_paused_at_creation`), so `unpause` is not
+optional — and it is the step everyone forgets:
 
 **A paused Dag still accepts a trigger — the run is created and then sits in
 `queued` until you unpause.** Nothing fails, nothing warns:
@@ -149,9 +187,14 @@ it was simply held.
 
 The UI's trigger form has an *"Unpause … on trigger"* checkbox for exactly this.
 
-Two more ways to start a run: `airflow dags test <dag_id>` runs the whole Dag
-inside the command itself (§4), and the REST API does it over HTTP —
+Besides `airflow dags trigger` and the UI's **Trigger** button, there are two
+more ways to start a run. The REST API does what `trigger` does, over HTTP —
 `POST /api/v2/dags/{dag_id}/dagRuns`, which is what the UI button calls.
+`airflow dags test <dag_id>` is different: it runs the whole Dag inside the
+command itself, without the scheduler (§4). That is why pausing does not hold
+it back, and why it worked in §4 while `hello_airflow3` was still paused. Use
+`test` while you write a Dag, and `trigger` to run it the way the scheduler
+will.
 
 ---
 

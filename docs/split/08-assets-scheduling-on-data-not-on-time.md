@@ -94,8 +94,9 @@ writes no event, which is the entire safety property: `mlops` cannot be started
 by data that did not pass validation, because the task that would have announced
 it never finished.
 
-The scheduler then does the second half. On its next loop it reads new asset
-events and queues a Dag run for **each unpaused Dag** scheduled on that asset.
+In the same step, Airflow adds a queue entry for **each unpaused Dag**
+scheduled on that asset. The scheduler then does the second half: on its next
+loop it turns those entries into Dag runs.
 
 Events that arrive faster than the consumer can run are neither lost nor run
 one by one. `mlops` allows a single active run (`max_active_runs=1`), so if

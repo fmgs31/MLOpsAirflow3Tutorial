@@ -57,7 +57,8 @@ The other two decide what happens when a task fails:
   whether downstream tasks run.
 - **`retry_delay`** — how long it waits before the next attempt. Thirty seconds
   is generous for a demo and short for real work; a flaky API usually wants
-  minutes, and `retry_exponential_backoff=True` spreads them out instead.
+  minutes, and `retry_exponential_backoff=2.0` doubles the wait after each
+  attempt instead.
 
 **The default is `retries=0`** (`[core] default_task_retries`), which means a
 task hit by a brief network glitch just fails and takes the run with it. Retrying
@@ -97,8 +98,8 @@ Line by line:
   own; it never schedules one before it. It does not stop you starting a run
   yourself — a manual trigger works even with a `start_date` in the future — so
   on this `schedule=None` Dag it changes nothing yet; it is set so the Dag is
-  ready the day it gets a schedule. It is optional: a scheduled Dag without one
-  starts from the moment you un-pause it.
+  ready the day it gets a schedule. It is optional; §7 explains when a
+  scheduled Dag without one starts.
 - **`catchup=False`** — decides what happens when you un-pause a scheduled Dag
   whose `start_date` is in the past. With `False`, the default, the scheduler
   ignores the missed past and creates a single run, for the most recent time
@@ -143,7 +144,8 @@ to the task log, viewable in the UI.
 
 `**context` is how a task sees the run it belongs to: `run_id`, `params`, `ti`
 (the task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`,
-`conn`, `macros`. Read `logical_date` with `.get()`, never
+`conn`, `macros`. Read `logical_date` — the date that names a run, as in "the
+run of 10 September" (§7) — with `.get()`, never
 `context["logical_date"]`: an asset-triggered run, or one triggered from the
 CLI without a logical date, has none, and the key is then missing from the context entirely — indexing it raises
 `KeyError` at runtime, while `airflow dags test` (which always supplies one)

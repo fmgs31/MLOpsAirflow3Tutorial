@@ -219,6 +219,27 @@ escritos.
   strings de la UI publicada y en los endpoints que hay detrás, como antes —
   nadie hizo clic en ellos en esta ejecución.
 
+Comprobado el 2026-10-10 contra el código de 3.3.1 de la imagen de este stack,
+después de que un lector detectara una afirmación errónea sobre `run_after`:
+
+- `run_after` es "the date before which dag run won't start"
+  (`airflow/models/dagrun.py`): el arranque más temprano posible, no el real.
+- El schedule sin `start_date` de la §7: `CronTriggerTimetable` usa por defecto
+  `run_immediately=False`, y `next_dagrun_info` sin `start_date` dio mañana a
+  las 03:00 para `"0 3 * * *"` a las 08:04 UTC, mientras que
+  `DeltaTriggerTimetable` dio el momento actual. Un Dag de prueba en pausa sin
+  `start_date` con `*/2 * * * *` recalculaba su próximo run en cada parseo
+  (08:00, luego 08:02), así que el primer run es la siguiente hora después de
+  quitar la pausa, no después del primer parseo.
+- La cola de la §8: `AssetManager.register_asset_change` escribe la entrada de
+  cola de cada consumidor sin pausa en el mismo paso que el evento; el
+  scheduler solo convierte esas entradas en runs.
+- El rango del backfill de la §9: `iter_dagrun_infos_between` incluye los dos
+  extremos. Para `dataops`, `2026-02-01` → `2026-02-04` da tres runs y
+  `2026-02-01` → `2026-02-04T03:00:00` da cuatro.
+- El backoff de la §4: `retry_exponential_backoff` es un multiplicador
+  (`float`, por defecto 0); `True` se sigue deserializando como `2.0`.
+
 Se encontraron seis defectos reales mientras se construía esto, todos
 documentados en [troubleshooting](troubleshooting.md):
 

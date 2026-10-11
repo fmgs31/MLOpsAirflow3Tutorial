@@ -323,8 +323,8 @@ caused it.
 Know where the wait comes from. Almost all of it is `dataops` itself running
 its five tasks — `extract` downloads the source file, so that part depends on
 your connection. The Airflow part is small: one scheduler loop to create the
-`dataops` run after the un-pause, and one more to queue `mlops` once the asset
-event is recorded (§3). If nothing has appeared after a minute, check that both Dags
+`dataops` run after the un-pause, and one more to create the `mlops` run once
+the asset event is recorded (§3, §8). If nothing has appeared after a minute, check that both Dags
 are un-paused and that the `dataops` run succeeded — a failed
 `validate_transformed` emits no event, by design.
 

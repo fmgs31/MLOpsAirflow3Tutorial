@@ -170,7 +170,7 @@ cuando la task corre ya ha pasado parte de ese tiempo, o todo. Si queda algo, no
 hay triggerer al que pasarle la espera: `airflow dags test` ejecuta el trigger él
 mismo, y lo anuncia en el log con `[DAG TEST] running trigger in line` (§4).
 
-**Para ver una task quedar deferred de verdad**, lanza el run a través del scheduler, y luego
+**Para ver de verdad una task en estado `deferred`**, lanza el run a través del scheduler, y luego
 lee los estados de las tasks unas cuantas veces a lo largo de los siguientes diez
 segundos:
 
