@@ -28,7 +28,7 @@ model, returning `(model, metrics)`; `registry.save_run`, `load_metrics`,
 `promote` and `get_production` are the repo's *model registry*, on the
 filesystem: it stores each trained model with its metrics and records which
 one is in production; `config.MIN_F1_TO_PROMOTE` is the minimum f1 for moving a
-model to production (0.65, or the value of `TAGIFAI_MIN_F1` if set).
+model to production (0.65, or the value of `PROJECT_TAGGER_MIN_F1` if set).
 
 Create `dags/04_mlops.py`:
 
@@ -44,8 +44,8 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, registry, train as train_module, validate
-from tagifai.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger import config, data, registry, train as train_module, validate
+from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -114,7 +114,7 @@ payloads (§6). The second half of its check is one a table-level suite cannot d
 all — it looks at the **split**:
 
 ```python
-# src/tagifai/validate.py — check_split()
+# src/project_tagger/validate.py — check_split()
 ("split_is_non_empty",          ...,  critical)
 ("classes_in_both_splits",      ...,  critical)   # a class only in train
 ("min_rows_per_class:20",       ...,  critical)   # 3 rows of a class in train
@@ -364,7 +364,7 @@ the best f1 cleared the threshold and there was no production model to beat.
 > process, so pass the variable to that command with `-e`:
 >
 > ```bash
-> docker compose exec -e TAGIFAI_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
+> docker compose exec -e PROJECT_TAGGER_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
 > ```
 >
 > `promotion_gate` logs `below threshold 0.99 - not promoting`, `promote_model`

@@ -32,7 +32,7 @@ other scheduled one, at 06:00.) Leave the stack up overnight and the
 
 ### Build it
 
-The workload this Dag calls, all in `src/tagifai/`: `data.extract()` downloads
+The workload this Dag calls, all in `src/project_tagger/`: `data.extract()` downloads
 the CSV into the *landing zone* (the folder where raw data arrives) and returns
 its path; `data.load_raw(fp)` and `data.load_labeled(fp)` read a table;
 `data.transform(df)` produces the cleaned table and `data.save_labeled(df)`
@@ -54,8 +54,8 @@ import pendulum
 from airflow.sdk import dag, task, task_group
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, validate
-from tagifai.assets import LABELED_PROJECTS, RAW_PROJECTS
+from project_tagger import config, data, validate
+from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -79,7 +79,7 @@ def dataops():
 
 Two imports are new. `AirflowFailException` comes from `airflow.sdk.exceptions`,
 part of the Task SDK (§4), like everything else this Dag imports from Airflow.
-And `from tagifai import …` works only because the compose file puts
+And `from project_tagger import …` works only because the compose file puts
 `/opt/airflow/src` on `PYTHONPATH` for every service: the Dag processor needs it
 to parse the file, and the processes that run the tasks need it too.
 

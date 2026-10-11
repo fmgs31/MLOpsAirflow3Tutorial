@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from tagifai import data, monitoring, validate
+from project_tagger import data, monitoring, validate
 
 RAW = pd.DataFrame(
     {
@@ -109,7 +109,7 @@ def test_drift_report_flags_a_new_label() -> None:
 
 @pytest.mark.slow
 def test_training_beats_a_trivial_baseline() -> None:
-    from tagifai import train as train_module
+    from project_tagger import train as train_module
 
     df = data.transform(RAW, min_tag_freq=10)
     train_df, test_df = data.split(df, test_size=0.25)

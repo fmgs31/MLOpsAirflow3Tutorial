@@ -13,8 +13,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
 from sklearn.pipeline import Pipeline
 
-from tagifai import data as data_module
-from tagifai.evaluate import evaluate
+from project_tagger import data as data_module
+from project_tagger.evaluate import evaluate
 
 DEFAULT_PARAMS: dict[str, Any] = {
     "ngram_max": 2,
@@ -74,7 +74,7 @@ def train(
 
 
 def train_from_files(params: dict[str, Any] | None = None) -> tuple[Pipeline, dict[str, Any]]:
-    """Convenience entry point used by the Dags and by `python -m tagifai.train`."""
+    """Convenience entry point used by the Dags and by `python -m project_tagger.train`."""
     df = data_module.load_labeled()
     train_df, test_df = data_module.split(df)
     return train(train_df, test_df, params)

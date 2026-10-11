@@ -19,9 +19,9 @@ comentarios se dejan en inglés: son los archivos que de verdad se ejecutan.
 Las definiciones compartidas de Assets van primero, porque todos los Dags de
 abajo las importan.
 <details>
-<summary><b>src/tagifai/assets.py</b> — los Assets que los Dags producen y consumen (§8)</summary>
+<summary><b>src/project_tagger/assets.py</b> — los Assets que los Dags producen y consumen (§8)</summary>
 
-<!-- BEGIN FILE: src/tagifai/assets.py -->
+<!-- BEGIN FILE: src/project_tagger/assets.py -->
 ```python
 """The Assets shared by the Dags.
 
@@ -64,7 +64,7 @@ PRODUCTION_MODEL = Asset(
     extra={"owner": "ml-engineering"},
 )
 ```
-<!-- END FILE: src/tagifai/assets.py -->
+<!-- END FILE: src/project_tagger/assets.py -->
 
 </details>
 
@@ -352,8 +352,8 @@ from airflow.sdk import dag, task, task_group
 # worker has, and the one to reach for in a task.
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, validate
-from tagifai.assets import LABELED_PROJECTS, RAW_PROJECTS
+from project_tagger import config, data, validate
+from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -495,8 +495,8 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, registry, train as train_module, validate
-from tagifai.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger import config, data, registry, train as train_module, validate
+from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -684,7 +684,7 @@ from airflow.providers.standard.sensors.filesystem import FileSensor
 from airflow.providers.standard.sensors.time_delta import TimeDeltaSensor
 from airflow.sdk import PokeReturnValue, dag, task
 
-from tagifai import config, data
+from project_tagger import config, data
 
 DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
 
@@ -803,7 +803,7 @@ from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
 
-from tagifai import monitoring, registry
+from project_tagger import monitoring, registry
 
 DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 
@@ -949,7 +949,7 @@ Three mandatory pieces: a **reference** (where the clock starts), an
                    (e.g. AsyncCallback(SlackWebhookNotifier, kwargs={...}))
 
 This Dag deliberately misses its own 30-second deadline, so the callback in
-`tagifai/callbacks.py` fires and you can find it in the scheduler/executor logs.
+`project_tagger/callbacks.py` fires and you can find it in the scheduler/executor logs.
 
     docker compose logs -f airflow-scheduler | grep "DEADLINE MISSED"
 
@@ -985,7 +985,7 @@ from airflow.sdk import DeadlineAlert, DeadlineReference, SyncCallback, dag, tas
         reference=DeadlineReference.DAGRUN_QUEUED_AT,
         interval=timedelta(seconds=30),
         callback=SyncCallback(
-            "tagifai.callbacks.deadline_missed",
+            "project_tagger.callbacks.deadline_missed",
             kwargs={"dag_id": "deadline_alerts", "budget": "30s"},
         ),
     ),
@@ -1006,7 +1006,7 @@ deadline_alerts()
 
 </details>
 
-El resto de `src/tagifai/` — `data.py`, `validate.py`, `train.py`,
+El resto de `src/project_tagger/` — `data.py`, `validate.py`, `train.py`,
 `evaluate.py`, `registry.py`, `monitoring.py`, `predict.py`, `config.py`,
 `callbacks.py` — es el proyecto de ML que se orquesta, no la orquestación, y no
 importa Airflow. Está en el repo; aquí no se reproduce.

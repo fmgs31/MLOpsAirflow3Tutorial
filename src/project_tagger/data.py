@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from tagifai import config
+from project_tagger import config
 
 STOPWORD_PATTERN = re.compile(r"\b(a|an|the|and|or|of|to|in|for|on|with|is|are|this|that)\b")
 NON_ALNUM = re.compile(r"[^A-Za-z0-9 ]")

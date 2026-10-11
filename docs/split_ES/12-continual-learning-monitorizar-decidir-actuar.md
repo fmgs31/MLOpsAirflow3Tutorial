@@ -55,7 +55,7 @@ from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
 
-from tagifai import monitoring, registry
+from project_tagger import monitoring, registry
 
 DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 

@@ -10,7 +10,7 @@ cualquier cron del tipo "corre 30 minutos después del otro Dag, y cruza los
 dedos" que hayas visto en tu vida.
 
 Los assets que usa este tutorial ya están definidos, en
-[`src/tagifai/assets.py`](../../src/tagifai/assets.py), para que `dataops` y `mlops`
+[`src/project_tagger/assets.py`](../../src/project_tagger/assets.py), para que `dataops` y `mlops`
 importen los mismos objetos:
 
 ```python

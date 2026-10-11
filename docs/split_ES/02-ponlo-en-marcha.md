@@ -107,7 +107,7 @@ CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${A
 pip install -r requirements.txt --constraint "${CONSTRAINT_URL}"   # constraints are NOT optional
 
 export AIRFLOW_HOME=${PWD}/airflow
-export PYTHONPATH=${PWD}/src                    # so tasks can import `tagifai`
+export PYTHONPATH=${PWD}/src                    # so tasks can import `project_tagger`
 export AIRFLOW__CORE__DAGS_FOLDER=${PWD}/dags
 export AIRFLOW__CORE__LOAD_EXAMPLES=False
 export AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5            # see §3: pick up a new file in seconds

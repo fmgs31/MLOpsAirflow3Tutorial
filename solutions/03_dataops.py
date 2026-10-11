@@ -32,8 +32,8 @@ from airflow.sdk import dag, task, task_group
 # worker has, and the one to reach for in a task.
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, validate
-from tagifai.assets import LABELED_PROJECTS, RAW_PROJECTS
+from project_tagger import config, data, validate
+from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",

@@ -50,7 +50,7 @@ Reference material: [CLI cheatsheet](../cheatsheet.md) ·
 ```
 dags/                       your workspace - empty until you write the seven Dags
 solutions/                  the finished version of each, numbered in reading order
-src/tagifai/                the ML project Airflow orchestrates (imports no Airflow)
+src/project_tagger/         the ML project Airflow orchestrates (imports no Airflow)
   config.py                 paths and thresholds
   data.py                   extract / clean / transform / split
   validate.py               a tiny expectation-suite runner

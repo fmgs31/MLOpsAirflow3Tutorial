@@ -9,7 +9,7 @@ starts a run of it. That is the whole mechanism, and it replaces every "run 30
 minutes after the other Dag, and hope" cron you have ever seen.
 
 The assets this tutorial uses are already defined, in
-[`src/tagifai/assets.py`](../../src/tagifai/assets.py), so that `dataops` and `mlops`
+[`src/project_tagger/assets.py`](../../src/project_tagger/assets.py), so that `dataops` and `mlops`
 import the same objects:
 
 ```python

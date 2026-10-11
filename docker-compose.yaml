@@ -45,8 +45,8 @@ x-airflow-common: &airflow-common
     # Our tutorial package lives in ./src and must be importable by the
     # dag-processor (parsing) and the scheduler (LocalExecutor runs tasks there).
     PYTHONPATH: /opt/airflow/src
-    TAGIFAI_DATA_DIR: /opt/airflow/data
-    TAGIFAI_MODEL_REGISTRY: /opt/airflow/model_registry
+    PROJECT_TAGGER_DATA_DIR: /opt/airflow/data
+    PROJECT_TAGGER_MODEL_REGISTRY: /opt/airflow/model_registry
   volumes:
     # `dags/` is the Dag folder Airflow parses - the one you write into.
     # `solutions/` is the finished version of every lesson, mounted read-only

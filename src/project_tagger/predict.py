@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tagifai import registry
+from project_tagger import registry
 
 
 def predict(texts: list[str], run_id: str | None = None) -> list[dict[str, Any]]:

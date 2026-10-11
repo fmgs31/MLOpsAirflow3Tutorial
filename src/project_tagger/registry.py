@@ -13,7 +13,7 @@ from typing import Any
 
 import joblib
 
-from tagifai import config
+from project_tagger import config
 
 PRODUCTION_POINTER = "production.json"
 

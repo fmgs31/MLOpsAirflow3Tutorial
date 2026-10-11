@@ -231,7 +231,7 @@ simple_auth_manager_users = "admin:admin,bob:viewer"
 
 Passwords land in `$AIRFLOW_HOME/simple_auth_manager_passwords.json.generated`.
 
-## Tasks fail with `ModuleNotFoundError: No module named 'tagifai'`
+## Tasks fail with `ModuleNotFoundError: No module named 'project_tagger'`
 
 The Dag processor parses the files, but the **executor** runs the tasks — both
 need the package on `PYTHONPATH`. In this repo `PYTHONPATH=/opt/airflow/src` is

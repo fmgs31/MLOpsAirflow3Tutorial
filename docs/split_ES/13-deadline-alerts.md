@@ -34,7 +34,7 @@ from airflow.sdk import DeadlineAlert, DeadlineReference, SyncCallback, dag, tas
         reference=DeadlineReference.DAGRUN_QUEUED_AT,
         interval=timedelta(seconds=30),
         callback=SyncCallback(
-            "tagifai.callbacks.deadline_missed",
+            "project_tagger.callbacks.deadline_missed",
             kwargs={"dag_id": "deadline_alerts", "budget": "30s"},
         ),
     ),

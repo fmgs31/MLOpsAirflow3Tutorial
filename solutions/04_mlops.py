@@ -33,8 +33,8 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.sdk import dag, task
 from airflow.sdk.exceptions import AirflowFailException
 
-from tagifai import config, data, registry, train as train_module, validate
-from tagifai.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger import config, data, registry, train as train_module, validate
+from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",

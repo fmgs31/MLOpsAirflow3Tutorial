@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from tagifai import config
+from project_tagger import config
 
 
 @dataclass

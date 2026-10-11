@@ -30,9 +30,9 @@ of these in. Some stop the file from importing (`schedule_interval=`,
 `airflow.operators.` still imports through a deprecation shim, `sla=` is
 accepted and does nothing, and `execution_date` fails only once the task runs.
 
-**Unit tests on the workload** — [`tests/test_tagifai.py`](../../tests/test_tagifai.py).
+**Unit tests on the workload** — [`tests/test_project_tagger.py`](../../tests/test_project_tagger.py).
 Apart from `assets.py`, which defines the Asset objects, nothing in
-`src/tagifai/` imports Airflow, so the ML code is testable without a scheduler
+`src/project_tagger/` imports Airflow, so the ML code is testable without a scheduler
 in the loop. That separation is deliberate: Airflow orchestrates the
 code, it does not contain it.
 

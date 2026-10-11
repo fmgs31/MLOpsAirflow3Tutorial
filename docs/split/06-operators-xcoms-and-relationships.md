@@ -352,10 +352,10 @@ run:
 ```python
 from airflow.sdk import BaseOperator
 
-from tagifai import train as train_module
+from project_tagger import train as train_module
 
 
-class TagifaiTrainOperator(BaseOperator):
+class ProjectTaggerTrainOperator(BaseOperator):
     template_fields = ("experiment_name",)
 
     def __init__(self, *, experiment_name: str, min_f1: float, **kwargs) -> None:
@@ -376,9 +376,9 @@ class TagifaiTrainOperator(BaseOperator):
 A Dag instantiates it like any other operator:
 
 ```python
-train = TagifaiTrainOperator(
+train = ProjectTaggerTrainOperator(
     task_id="train",
-    experiment_name="tagifai_{{ run_id }}",
+    experiment_name="project_tagger_{{ run_id }}",
     min_f1=0.65,
 )
 ```
@@ -388,7 +388,7 @@ arguments. With `min_f1=65` the Dag does not load at all, and the UI shows the
 import error `ValueError: min_f1 must be between 0 and 1, got 65`. `execute`
 runs when the task instance runs, after Airflow has rendered every attribute
 named in `template_fields` — so `self.experiment_name` holds
-`tagifai_manual__…`, not the braces. Whatever `execute` returns is pushed as an
+`project_tagger_manual__…`, not the braces. Whatever `execute` returns is pushed as an
 XCom, exactly like a `@task` function's `return`.
 
 `template_fields` is what links the argument to the rendering. It is a class
@@ -416,7 +416,7 @@ def train(experiment_name: str, min_f1: float) -> float:
         raise ValueError(f"f1={metrics['f1']:.4f} is below min_f1={min_f1}")
     return metrics["f1"]
 
-train(experiment_name="tagifai_{{ run_id }}", min_f1=0.65)
+train(experiment_name="project_tagger_{{ run_id }}", min_f1=0.65)
 ```
 
 With `min_f1=65` this Dag loads without errors, and the mistake shows up only
@@ -436,7 +436,7 @@ throughout.
 guide to custom operators starts from `BaseOperator`, which brings what all
 tasks share (`task_id`, retries, templating) and leaves `execute` to you: it is
 the starting point when your operator does something new, like
-`TagifaiTrainOperator`. But subclassing an existing operator is the norm when
+`ProjectTaggerTrainOperator`. But subclassing an existing operator is the norm when
 you want what it does plus something: the same guide does it to add
 `template_fields` to an existing operator, and most provider operators derive
 from another operator, not from `BaseOperator` directly.
@@ -446,7 +446,7 @@ function plus something extra: that is how `BranchPythonOperator`,
 `ShortCircuitOperator`, `PythonVirtualenvOperator` and the class `@task`
 creates, `_PythonDecoratedOperator`, are built — which is why the logs show
 `<Task(_PythonDecoratedOperator): taskflow_reader>` even though the UI labels
-it `@task`. For `TagifaiTrainOperator` it is not: it writes its own `execute`,
+it `@task`. For `ProjectTaggerTrainOperator` it is not: it writes its own `execute`,
 so it would replace the one thing `PythonOperator` does, and still have to
 take `python_callable`, which is required.
 
@@ -480,7 +480,7 @@ def export_labeled_projects(day: str) -> str:
     df = df[df["tag"].notna()]                  # your own code, between the two calls
     key = f"exports/labeled_projects_{day}.csv"
     S3Hook(aws_conn_id="aws_default").load_string(
-        df.to_csv(index=False), key=key, bucket_name="tagifai-exports"
+        df.to_csv(index=False), key=key, bucket_name="project-tagger-exports"
     )
     return key
 ```
