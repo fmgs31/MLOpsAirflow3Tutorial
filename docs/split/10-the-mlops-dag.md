@@ -37,12 +37,14 @@ Create `dags/04_mlops.py`:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import dag, task
+from airflow.sdk import Asset, dag, task
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
 from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
@@ -80,7 +82,9 @@ Add the first two tasks:
 
 ```python dags/04_mlops.py
     @task
-    def prepare_data(*, triggering_asset_events) -> dict[str, int]:
+    def prepare_data(
+        *, triggering_asset_events: Mapping[Asset, Sequence[Any]]
+    ) -> dict[str, int]:
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
@@ -108,7 +112,8 @@ Add the first two tasks:
 
 `triggering_asset_events` is injected by name — the events that caused this
 run, keyed by asset, each carrying the `extra` the producer attached. On a run
-you start by hand it is empty. `validate_training_data` re-reads the table
+you start by hand it is empty. Its annotation is the one from §8, which is
+why the file imports `Mapping`, `Sequence` and `Asset`. `validate_training_data` re-reads the table
 rather than receiving it from `prepare_data`: XComs are for metadata, not
 payloads (§6). The second half of its check is one a table-level suite cannot do at
 all — it looks at the **split**:
@@ -137,7 +142,7 @@ hyperparameter set, and a later task gathers all the results. Three tasks:
         return train_module.SEARCH_SPACE
 
     @task(max_active_tis_per_dag=2)
-    def train_candidate(hparams: dict[str, Any], **context) -> dict[str, Any]:
+    def train_candidate(hparams: dict[str, Any], **context: Any) -> dict[str, Any]:
         config.ensure_dirs()
         run_id = f"{context['run_id']}__{context['ti'].map_index}".replace(":", "-").replace("+", "-")
         model, metrics = train_module.train_from_files(hparams)
@@ -208,7 +213,9 @@ and the two `EmptyOperator`s the branches need:
         return "promote_model"
 
     @task(outlets=[PRODUCTION_MODEL])
-    def promote_model(evaluation: dict[str, Any], *, outlet_events) -> dict[str, Any]:
+    def promote_model(
+        evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         pointer = registry.promote(evaluation["run_id"])
         outlet_events[PRODUCTION_MODEL].extra = {
             "run_id": pointer["run_id"],

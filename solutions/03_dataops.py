@@ -31,6 +31,7 @@ from airflow.sdk import dag, task, task_group
 # Task code imports exceptions from the Task SDK. It is the namespace a remote
 # worker has, and the one to reach for in a task.
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
 from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
@@ -57,7 +58,7 @@ DEFAULT_ARGS = {
 )
 def dataops():
     @task(outlets=[RAW_PROJECTS])
-    def extract_projects(*, outlet_events) -> str:
+    def extract_projects(*, outlet_events: OutletEventAccessorsProtocol) -> str:
         """Land the source data. Returns a path, not a dataframe."""
         config.ensure_dirs()
         fp = data.extract()
@@ -85,7 +86,9 @@ def dataops():
         return str(out)
 
     @task(outlets=[LABELED_PROJECTS])
-    def validate_transformed(fp: str, *, outlet_events) -> dict[str, Any]:
+    def validate_transformed(
+        fp: str, *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         """Final gate. Only a passing run emits the asset event.
 
         Placing the outlet on the *validation* task, not the transform task, is

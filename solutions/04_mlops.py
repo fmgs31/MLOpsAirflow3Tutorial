@@ -26,12 +26,14 @@ Run it:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import dag, task
+from airflow.sdk import Asset, dag, task
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
 from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
@@ -57,7 +59,9 @@ DEFAULT_ARGS = {
 )
 def mlops():
     @task
-    def prepare_data(*, triggering_asset_events) -> dict[str, int]:
+    def prepare_data(
+        *, triggering_asset_events: Mapping[Asset, Sequence[Any]]
+    ) -> dict[str, int]:
         """Inspect what triggered us, then materialise the train/test split."""
         for asset, events in triggering_asset_events.items():
             for event in events:
@@ -104,7 +108,7 @@ def mlops():
         return train_module.SEARCH_SPACE
 
     @task(max_active_tis_per_dag=2)
-    def train_candidate(hparams: dict[str, Any], **context) -> dict[str, Any]:
+    def train_candidate(hparams: dict[str, Any], **context: Any) -> dict[str, Any]:
         """One task instance per hyperparameter set.
 
         The argument is named `hparams`, not `params`: TaskFlow injects context
@@ -150,7 +154,9 @@ def mlops():
         return "promote_model"
 
     @task(outlets=[PRODUCTION_MODEL])
-    def promote_model(evaluation: dict[str, Any], *, outlet_events) -> dict[str, Any]:
+    def promote_model(
+        evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         pointer = registry.promote(evaluation["run_id"])
         outlet_events[PRODUCTION_MODEL].extra = {
             "run_id": pointer["run_id"],

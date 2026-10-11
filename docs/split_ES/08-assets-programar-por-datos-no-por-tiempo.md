@@ -34,7 +34,7 @@ anterior, que es la que escribe los datos:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
-def validate_transformed(fp: str, *, outlet_events) -> dict:
+def validate_transformed(fp: str, *, outlet_events: OutletEventAccessorsProtocol) -> dict:
     df = data.load_labeled(fp)
     result = validate.run_suite(df, "labeled_projects")
     if not result.passed:
@@ -43,9 +43,12 @@ def validate_transformed(fp: str, *, outlet_events) -> dict:
     return {...}
 ```
 
-`outlet_events` se inyecta por nombre, como `ti` en la §6, y permite a la task
-adjuntar un dict `extra` al evento que está a punto de emitir — un `extra`
-distinto en cada evento, a diferencia del `extra` fijo del asset.
+`outlet_events` se inyecta por nombre, como `ti` en la §6. Su tipo,
+`OutletEventAccessorsProtocol` de `airflow.sdk.types`, funciona como un dict
+indexado por asset: `outlet_events[LABELED_PROJECTS]` es la entrada de ese
+asset, y asignar su `.extra` adjunta un dict al evento que la task está a punto
+de emitir — un `extra` distinto en cada evento, a diferencia del `extra` fijo
+del asset.
 `AirflowFailException` hace fallar la task sin reintentos; la §9 lo explica.
 
 Y el consumidor, `mlops`, que escribirás en la §10. Ahí
@@ -56,11 +59,18 @@ que arrancaron el run:
 @dag(schedule=[LABELED_PROJECTS], ...)
 def mlops():
     @task
-    def prepare_data(*, triggering_asset_events):
+    def prepare_data(*, triggering_asset_events: Mapping[Asset, Sequence[Any]]):
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
 ```
+
+`triggering_asset_events` es un mapping de solo lectura que asocia cada asset
+con la lista de sus eventos. La API pública de Airflow no tiene un tipo para
+esos eventos, así que la anotación dice `Sequence[Any]`; los campos que conviene
+conocer son `extra`, `timestamp`, y `source_dag_id` y `source_run_id`, el Dag
+run que emitió el evento. Como con `ti`, estas anotaciones son para ti y para
+tu editor: Airflow inyecta los argumentos por nombre e ignora sus tipos.
 
 Esa es la idea en una línea: **el consumidor se programa con "llegaron datos
 buenos", no con un cron que adivina cuándo habrá terminado el Dag del

@@ -56,6 +56,7 @@ from typing import Any
 import pendulum
 from airflow.sdk import dag, task, task_group
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
 from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
@@ -80,9 +81,10 @@ DEFAULT_ARGS = {
 def dataops():
 ```
 
-Dos imports son nuevos. `AirflowFailException` viene de
-`airflow.sdk.exceptions`, parte del Task SDK (§4), igual que el resto de lo que
-este Dag importa de Airflow. Y `from project_tagger import …` funciona solo porque el
+Tres imports son nuevos. `AirflowFailException` viene de
+`airflow.sdk.exceptions`, y `OutletEventAccessorsProtocol`, el tipo de
+`outlet_events` (§8), de `airflow.sdk.types`; los dos son parte del Task SDK
+(§4), igual que el resto de lo que este Dag importa de Airflow. Y `from project_tagger import …` funciona solo porque el
 archivo de compose pone `/opt/airflow/src` en `PYTHONPATH` para todos los
 servicios: el Dag processor lo necesita para parsear el archivo, y los procesos
 que ejecutan las tasks, para correrlas.
@@ -94,7 +96,7 @@ La primera task produce un asset. Añádela dentro de `dataops()`:
 
 ```python dags/03_dataops.py
     @task(outlets=[RAW_PROJECTS])
-    def extract_projects(*, outlet_events) -> str:
+    def extract_projects(*, outlet_events: OutletEventAccessorsProtocol) -> str:
         config.ensure_dirs()
         fp = data.extract()
         df = data.load_raw(fp)
@@ -146,7 +148,9 @@ El gate final — el que emite el asset con el que se programará `mlops`:
 
 ```python dags/03_dataops.py
     @task(outlets=[LABELED_PROJECTS])
-    def validate_transformed(fp: str, *, outlet_events) -> dict[str, Any]:
+    def validate_transformed(
+        fp: str, *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         df = data.load_labeled(fp)
         result = validate.run_suite(df, "labeled_projects")
         print(result.summary())

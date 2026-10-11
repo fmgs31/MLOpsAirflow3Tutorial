@@ -38,12 +38,14 @@ Crea `dags/04_mlops.py`:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import dag, task
+from airflow.sdk import Asset, dag, task
 from airflow.sdk.exceptions import AirflowFailException
+from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
 from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
@@ -80,7 +82,9 @@ primeras tasks:
 
 ```python dags/04_mlops.py
     @task
-    def prepare_data(*, triggering_asset_events) -> dict[str, int]:
+    def prepare_data(
+        *, triggering_asset_events: Mapping[Asset, Sequence[Any]]
+    ) -> dict[str, int]:
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
@@ -108,7 +112,8 @@ primeras tasks:
 
 `triggering_asset_events` se inyecta por nombre — los eventos que causaron este
 run, indexados por asset, cada uno con el `extra` que adjuntó el productor. En un
-run que arranques a mano está vacío. `validate_training_data` vuelve a leer la
+run que arranques a mano está vacío. Su anotación es la de la §8, y por eso el
+archivo importa `Mapping`, `Sequence` y `Asset`. `validate_training_data` vuelve a leer la
 tabla en vez de recibirla de `prepare_data`: los XComs son para metadatos, no
 para payloads (§6). La segunda mitad de su comprobación es algo que una suite a nivel de
 tabla no puede hacer — mira el **split**:
@@ -138,7 +143,7 @@ Tres tasks:
         return train_module.SEARCH_SPACE
 
     @task(max_active_tis_per_dag=2)
-    def train_candidate(hparams: dict[str, Any], **context) -> dict[str, Any]:
+    def train_candidate(hparams: dict[str, Any], **context: Any) -> dict[str, Any]:
         config.ensure_dirs()
         run_id = f"{context['run_id']}__{context['ti'].map_index}".replace(":", "-").replace("+", "-")
         model, metrics = train_module.train_from_files(hparams)
@@ -209,7 +214,9 @@ sigue. Añade `evaluate_best`, `promotion_gate`, `promote_model` y los dos
         return "promote_model"
 
     @task(outlets=[PRODUCTION_MODEL])
-    def promote_model(evaluation: dict[str, Any], *, outlet_events) -> dict[str, Any]:
+    def promote_model(
+        evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
         pointer = registry.promote(evaluation["run_id"])
         outlet_events[PRODUCTION_MODEL].extra = {
             "run_id": pointer["run_id"],

@@ -33,7 +33,7 @@ before it that writes the data:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
-def validate_transformed(fp: str, *, outlet_events) -> dict:
+def validate_transformed(fp: str, *, outlet_events: OutletEventAccessorsProtocol) -> dict:
     df = data.load_labeled(fp)
     result = validate.run_suite(df, "labeled_projects")
     if not result.passed:
@@ -42,9 +42,11 @@ def validate_transformed(fp: str, *, outlet_events) -> dict:
     return {...}
 ```
 
-`outlet_events` is injected by name, like `ti` in §6, and lets the task attach
-an `extra` dict to the event it is about to emit — a different `extra` on each
-event, unlike the asset's fixed one. `AirflowFailException` fails the task
+`outlet_events` is injected by name, like `ti` in §6. Its type,
+`OutletEventAccessorsProtocol` from `airflow.sdk.types`, works like a dict keyed
+by asset: `outlet_events[LABELED_PROJECTS]` is that asset's entry, and setting
+its `.extra` attaches a dict to the event the task is about to emit — a
+different `extra` on each event, unlike the asset's fixed one. `AirflowFailException` fails the task
 without retries; §9 explains it.
 
 And the consumer, `mlops`, which you write in §10. There
@@ -55,11 +57,18 @@ started the run:
 @dag(schedule=[LABELED_PROJECTS], ...)
 def mlops():
     @task
-    def prepare_data(*, triggering_asset_events):
+    def prepare_data(*, triggering_asset_events: Mapping[Asset, Sequence[Any]]):
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
 ```
+
+`triggering_asset_events` is a read-only mapping from each asset to the list
+of its events. Airflow's public API has no type for those events, so the
+annotation says `Sequence[Any]`; the fields worth knowing are `extra`,
+`timestamp`, and `source_dag_id` and `source_run_id`, the Dag run that emitted
+the event. As with `ti`, these annotations are for you and your editor:
+Airflow injects the arguments by name and ignores their types.
 
 That is the idea in one line: **the consumer is scheduled on "good data
 arrived", not on a cron that guesses when the producer's Dag will have finished.**

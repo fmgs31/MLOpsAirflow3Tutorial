@@ -25,11 +25,14 @@ Run it:
 
 from __future__ import annotations
 
+from typing import Any
+
 import pendulum
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import Label, chain, cross_downstream, dag, task
+from airflow.sdk.types import RuntimeTaskInstanceProtocol
 
 DEFAULT_ARGS = {
     "owner": "mlops-course",
@@ -38,7 +41,7 @@ DEFAULT_ARGS = {
 }
 
 
-def _push_seed(ti) -> None:
+def _push_seed(ti: RuntimeTaskInstanceProtocol) -> None:
     """Operator style: push an XCom under an explicit key.
 
     `ti` (the task instance) is injected because the parameter is named `ti` -
@@ -47,7 +50,7 @@ def _push_seed(ti) -> None:
     ti.xcom_push(key="seed", value=7)
 
 
-def _multiply(ti, factor: int) -> None:
+def _multiply(ti: RuntimeTaskInstanceProtocol, factor: int) -> None:
     # Name the task you are pulling from. Without `task_ids` this reads the
     # current task's own XComs and quietly returns None.
     seed = ti.xcom_pull(task_ids="push_seed", key="seed")
@@ -95,7 +98,7 @@ def operators_and_xcoms():
     )
 
     @task
-    def taskflow_reader(**context) -> int:
+    def taskflow_reader(**context: Any) -> int:
         """TaskFlow can read operator XComs, and vice versa - they mix freely."""
         product = context["ti"].xcom_pull(task_ids="multiply", key="product")
         print(f"TaskFlow saw product={product}")
