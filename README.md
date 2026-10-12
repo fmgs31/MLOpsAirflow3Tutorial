@@ -32,9 +32,12 @@ This tutorial is based on Made With ML's
 by Goku Mohandas: the same project (tagging ML projects from their title and
 description), the same data, and the same pipeline of DataOps, MLOps and
 continual learning.
-I wanted to learn using the latest Airflow version (v3), and I wanted a hands-on tutorial rather than one to read, so I asked Claude to port the Made With ML lesson to
-Airflow 3. But it turns out that it was not at all that straightforward : getting it right took extensive corrections, polishing and a fair amount of work  (it's still a
-work in progress). Now it is open to anyone who wants to learn.
+
+I wanted to learn using the latest Airflow version (v3), and I wanted a hands-on
+tutorial rather than one to read, so I asked Claude to port the Made With ML
+lesson to Airflow 3. But it turns out it was not at all that straightforward:
+getting it right took extensive corrections, polishing and a fair amount of work
+(it's still a work in progress). Now it is open to anyone who wants to learn.
 
 ---
 
