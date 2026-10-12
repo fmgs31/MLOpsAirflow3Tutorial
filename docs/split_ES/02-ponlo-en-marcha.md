@@ -17,8 +17,8 @@ Airflow no tiene soporte nativo en Windows. En Windows usa Docker Desktop, o haz
 la instalación nativa dentro de WSL2.
 
 ```bash
-git clone <this repo>
-cd Airflow3Tutorial
+git clone https://github.com/fmgs31/MLOpsAirflow3Tutorial.git
+cd MLOpsAirflow3Tutorial
 ```
 
 Luego levanta el stack. En Linux, macOS, WSL2 o Git Bash en Windows:

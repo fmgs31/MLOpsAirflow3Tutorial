@@ -129,7 +129,7 @@ de la memoria de la máquina por defecto.)
    | Dataset name | `projects` | `tags` |
    | File format | `csv` | `csv` |
    | Storage provider | HTTPS: Public Web | HTTPS: Public Web |
-   | URL | `https://raw.githubusercontent.com/fmgs31/Airflow3Tutorial/main/datasets/projects.csv` | `https://raw.githubusercontent.com/fmgs31/Airflow3Tutorial/main/datasets/tags.csv` |
+   | URL | `https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/projects.csv` | `https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/tags.csv` |
 
    El dataset name pasa a ser el nombre de la tabla en BigQuery. Los archivos
    están en la carpeta [`datasets/`](../../datasets/) de este repo: los
