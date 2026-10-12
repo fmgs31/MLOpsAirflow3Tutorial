@@ -27,6 +27,68 @@ dag_bundle_config_list = [
   ]
 ```
 
+**Más maquinaria de assets.** La §8 cubrió un asset, un productor y un
+consumidor. Otras cuatro piezas responden a necesidades que aparecen cuando un
+pipeline crece.
+
+*Una task que decide mientras corre qué asset produce* — por ejemplo, un export
+por día. Su outlet es un `AssetAlias`, un nombre provisional, y la task le
+añade el asset concreto a través de `outlet_events`:
+
+```python
+from airflow.sdk import Asset, AssetAlias
+
+DAILY_EXPORTS = AssetAlias(name="daily_exports")
+
+@task(outlets=[DAILY_EXPORTS])
+def export(*, outlet_events: OutletEventAccessorsProtocol, ds: str) -> None:
+    outlet_events[DAILY_EXPORTS].add(Asset(name=f"export_{ds}"), extra={"rows": 764})
+```
+
+*Un Dag que solo existe para producir un asset.* `@asset` construye el asset,
+el Dag y su única task a partir de una función, y los tres llevan el nombre de
+la función. El resultado es un asset como cualquier otro, así que otro Dag
+puede poner `raw_projects` en su `schedule=`. `@asset.multi(outlets=[...])` hace
+lo mismo para una función que produce varios.
+
+```python
+from airflow.sdk import asset
+
+@asset(schedule="@daily")
+def raw_projects() -> str:
+    return str(data.extract())
+```
+
+*Rellenar el `extra` de un evento sin `outlet_events`.* La task hace `yield` de
+un `Metadata` por asset en vez de asignar `outlet_events[…].extra`:
+
+```python
+from airflow.sdk import Metadata
+
+@task(outlets=[LABELED_PROJECTS])
+def validate_transformed(fp: str):
+    df = data.load_labeled(fp)
+    ...
+    yield Metadata(LABELED_PROJECTS, {"rows": len(df)})
+```
+
+*Runs por partición.* `CronPartitionTimetable` se dispara como un cron, pero
+además le da a cada run una **partition key**: un string que nombra la parte de
+los datos que le toca al run, por defecto la fecha del run (`run_offset=-1` la
+retrasa un intervalo del cron, así que el run de hoy procesa la parte de ayer).
+La task la lee de `dag_run.partition_key`:
+
+```python
+from airflow.sdk import CronPartitionTimetable
+from airflow.sdk.types import DagRunProtocol
+
+@dag(schedule=CronPartitionTimetable("0 3 * * *", timezone="UTC"), ...)
+def daily_partitions():
+    @task
+    def process(*, dag_run: DagRunProtocol) -> None:
+        print(f"processing partition {dag_run.partition_key}")
+```
+
 **Intervalos de parseo.** Este stack escanea archivos cada 5 segundos para que
 lo que guardas aparezca al momento. Vuelve a los valores por defecto
 (`refresh_interval` 300, `min_file_process_interval` 30) en cualquier cosa con

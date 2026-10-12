@@ -165,10 +165,8 @@ El gate final — el que emite el asset con el que se programará `mlops`:
         return {"suite": result.suite, "rows": len(df), "results": result.results}
 ```
 
-Poner el outlet en `validate_transformed`, no en `transform`, es todo el truco:
-el evento se escribe solo cuando esta task tiene éxito, así que `mlops` solo
-arranca con datos que pasaron la suite `labeled_projects` — el consumidor se
-programa con "llegaron datos buenos".
+Es la ubicación del outlet que explicó la §8: en `validate_transformed`, no en
+`transform`.
 
 Una task más, dentro de un **task group** — `@task_group` anida tasks bajo un
 único nodo plegable en la vista Graph, algo a lo que recurrir en cuanto un Dag
@@ -272,8 +270,7 @@ por `backfill__`. Ten claro qué viene después antes de hacerlo:
   tantos a la vez como diga la opción `--max-active-runs` de `backfill create`.
 - Cada run de backfill de `dataops` que tenga éxito emite un asset event de
   `labeled_projects` exactamente igual que un run normal (§8), así que un `mlops`
-  sin pausa entrena detrás de ellos. Hacer backfill de un productor también
-  dispara runs de sus consumidores.
+  sin pausa entrena detrás de ellos.
 - La CLI en 3.3.1 solo *crea* backfills. Mientras uno no ha terminado, la
   página del Dag muestra un banner *Backfill in progress* con un botón de pausa
   y otro de stop; stop lo cancela. También la API — `PUT

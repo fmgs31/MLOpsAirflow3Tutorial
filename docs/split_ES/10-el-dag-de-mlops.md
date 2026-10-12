@@ -110,10 +110,8 @@ primeras tasks:
         }
 ```
 
-`triggering_asset_events` se inyecta por nombre — los eventos que causaron este
-run, indexados por asset, cada uno con el `extra` que adjuntó el productor. En un
-run que arranques a mano está vacío. Su anotación es la de la §8, y por eso el
-archivo importa `Mapping`, `Sequence` y `Asset`. `validate_training_data` vuelve a leer la
+`triggering_asset_events` funciona como en la §8 (de ahí los imports de
+`Mapping`, `Sequence` y `Asset`); en un run que arranques a mano está vacío. `validate_training_data` vuelve a leer la
 tabla en vez de recibirla de `prepare_data`: los XComs son para metadatos, no
 para payloads (§6). La segunda mitad de su comprobación es algo que una suite a nivel de
 tabla no puede hacer — mira el **split**:
@@ -229,6 +227,12 @@ sigue. Añade `evaluate_best`, `promotion_gate`, `promote_model` y los dos
     keep_current_model = EmptyOperator(task_id="keep_current_model")
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 ```
+
+`evaluate_best` imprime el f1 del mejor candidato en cada **slice de
+evaluación**: un subgrupo del conjunto de test que selecciona una regla de
+`evaluate.py` (textos cortos, y textos que mencionan transformers, BERT o LLMs). No
+son las franjas de tiempo de la §7; sirven para pillar un modelo cuyo f1 global
+parece bueno mientras falla con un tipo de entrada.
 
 Un `@task.branch` devuelve el `task_id` que hay que ejecutar; la otra rama queda
 **skipped**, no failed. Un candidato que no llega al umbral es un desenlace

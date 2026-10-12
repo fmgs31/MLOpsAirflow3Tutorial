@@ -24,11 +24,10 @@ TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 In the default mode, `mode="poke"`, the process stays alive and asleep,
 holding its worker slot. With `mode="reschedule"`, the task instance exits,
 sits in `up_for_reschedule` (§3), and the scheduler re-queues it for the next
-poke. A deferrable sensor does not wait on the worker at all: it hands the
-wait to the triggerer.
+poke.
 
-The word **trigger** has more than one meaning, so pin it down before the
-third option can make sense. You *trigger* a Dag (§7): a verb. The triggerer process from §3
+The third option, deferrable, needs the word **trigger** pinned down first,
+because it has more than one meaning. You *trigger* a Dag (§7): a verb. The triggerer process from §3
 runs **triggers**: nouns — small pieces of asynchronous code that wait for one
 thing (a moment in time, a file, a message) and fire an event when it happens.
 "Deferrable" means the task hands the triggerer such a trigger, exits, and is
@@ -77,12 +76,9 @@ def sensors_and_events():
     )
 ```
 
-`settle` is deferrable: it releases its worker slot while it waits, which
-needs `airflow triggerer` running. `wait_for_curated_data` watches for the
-file `dataops` writes, through the `fs_default` connection the compose file
-provides. `mode="reschedule"` is the non-deferrable way to free a slot: the
-task instance exits and is re-queued every `poke_interval` seconds, and gives
-up after `timeout`.
+`settle` is the deferrable kind, and `wait_for_curated_data` uses `reschedule`
+mode; it watches for the file `dataops` writes, through the `fs_default`
+connection the compose file provides.
 
 A sensor can also be written as a function. Add it, with the task that uses
 its value, and the wiring:
@@ -216,11 +212,8 @@ sensor eventually fails on its declared `timeout`: 120 seconds for
 `enough_rows`, 300 for `wait_for_curated_data`. The run fails only once both
 have given up, after about five minutes.
 
-The point is what was *not* happening during the wait: the two sensors' task
-instances were not running between pokes — they were in `up_for_reschedule`,
-as you saw — so no worker slot was held. A poking sensor in the default mode would have occupied
-a slot for the whole time doing nothing, and that is exactly why the other two
-modes exist.
+In `up_for_reschedule` neither sensor held a worker slot. In the default mode
+they would have held one each for the whole wait, doing nothing.
 
 **Rule of thumb:** seconds → a poking sensor is fine. Minutes or hours →
 `mode="reschedule"` or deferrable, or you are paying a worker slot to sleep. A service that announces

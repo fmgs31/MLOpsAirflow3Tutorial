@@ -9,13 +9,9 @@ What you are watching for is **drift**, in three flavours:
 
 | Drift | What moved | Caught here by |
 |---|---|---|
-| **data drift** | the input distribution — the text itself | `mean_length_shift` in `monitoring.drift_report()` |
+| **data drift** | the input distribution — the text itself | `mean_length_shift` in `monitoring.drift_report()`: the relative change in the mean text length (`+0.10` = 10% longer) |
 | **target drift** | the label distribution — one tag takes over, or a new tag appears | `label_tvd` (total variation distance: how much the share of each tag changed, from 0 to 1) and `new_labels` |
-| **concept drift** | the relation between input and label — the same input now deserves a different label | only the live performance check: f1 falls while inputs look unchanged |
-
-Concept drift is the one no input-side statistic can see, which is why
-`monitoring.production_performance()` scores recently labelled rows instead of
-trusting a distribution comparison alone.
+| **concept drift** | the relation between input and label — the same input now deserves a different label | only the live performance check, `monitoring.production_performance()`, which scores the production model on recently labelled rows: f1 falls while inputs look unchanged |
 
 A monitoring event has four sensible responses, and
 `dags/06_monitoring_and_retraining.py` makes them branches:
@@ -127,8 +123,7 @@ Measure, then decide:
 
 `context["params"]` is the policy — the defaults in `POLICY_PARAMS`, or whatever this run
 was given. Each retraining condition watches one of the three kinds of drift
-in the table. `mean_length_shift` is the relative change in the text's mean
-length (`+0.10` = 10% longer), and it goes through `abs()` because text that
+in the table. `mean_length_shift` goes through `abs()` because text that
 gets shorter is as much drift as text that gets longer. Note the ordering: **a new label routes to `inspect`, not to
 `request_retraining`.** Retraining on data whose label space you have not understood yet is
 how you ship a worse model with full confidence.

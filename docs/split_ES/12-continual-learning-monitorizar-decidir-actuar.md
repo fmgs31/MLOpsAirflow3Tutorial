@@ -10,13 +10,9 @@ Lo que estás vigilando es el **drift**, de tres tipos:
 
 | Drift | Qué se movió | Aquí lo detecta |
 |---|---|---|
-| **data drift** | la distribución de entrada — el texto en sí | `mean_length_shift` en `monitoring.drift_report()` |
+| **data drift** | la distribución de entrada — el texto en sí | `mean_length_shift` en `monitoring.drift_report()`: el cambio relativo de la longitud media del texto (`+0.10` = un 10 % más largo) |
 | **target drift** | la distribución de etiquetas — un tag domina, o aparece uno nuevo | `label_tvd` (total variation distance: cuánto cambió la proporción de los tags, de 0 a 1) y `new_labels` |
-| **concept drift** | la relación entre entrada y etiqueta — la misma entrada ahora merece otra etiqueta | solo la comprobación de rendimiento en vivo: el f1 cae mientras las entradas parecen iguales |
-
-El concept drift es el que ninguna estadística del lado de la entrada puede ver,
-y por eso `monitoring.production_performance()` puntúa filas etiquetadas
-recientemente en vez de fiarse solo de una comparación de distribuciones.
+| **concept drift** | la relación entre entrada y etiqueta — la misma entrada ahora merece otra etiqueta | solo la comprobación de rendimiento en vivo, `monitoring.production_performance()`, que puntúa el modelo en producción con filas etiquetadas recientemente: el f1 cae mientras las entradas parecen iguales |
 
 Un evento de monitorización tiene cuatro respuestas sensatas, y
 `dags/06_monitoring_and_retraining.py` las convierte en branches:
@@ -129,8 +125,7 @@ Medir, y luego decidir:
 
 `context["params"]` es la política — los defaults de `POLICY_PARAMS`, o lo que se le haya
 dado a este run. Cada condición de reentrenamiento vigila uno de los tres tipos
-de drift de la tabla. `mean_length_shift` es el cambio relativo de la longitud
-media del texto (`+0.10` = un 10 % más largo), y va con `abs()` porque un texto
+de drift de la tabla. `mean_length_shift` va con `abs()` porque un texto
 que se acorta es tanto drift como uno que se alarga. Fíjate en el orden: **una etiqueta nueva lleva a `inspect`, no
 a `request_retraining`.** Reentrenar con datos cuyo espacio de etiquetas todavía no has
 entendido es la receta para publicar un modelo peor convencido de que es mejor.
