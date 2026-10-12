@@ -125,7 +125,7 @@ default.)
    | Dataset name | `projects` | `tags` |
    | File format | `csv` | `csv` |
    | Storage provider | HTTPS: Public Web | HTTPS: Public Web |
-   | URL | `https://raw.githubusercontent.com/fmgs31/Airflow3Tutorial/main/datasets/projects.csv` | `https://raw.githubusercontent.com/fmgs31/Airflow3Tutorial/main/datasets/tags.csv` |
+   | URL | `https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/projects.csv` | `https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/tags.csv` |
 
    The dataset name becomes the table name in BigQuery. The files are in this
    repo's [`datasets/`](../../datasets/): the projects, and their tags in a
