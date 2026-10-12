@@ -110,10 +110,8 @@ Add the first two tasks:
         }
 ```
 
-`triggering_asset_events` is injected by name — the events that caused this
-run, keyed by asset, each carrying the `extra` the producer attached. On a run
-you start by hand it is empty. Its annotation is the one from §8, which is
-why the file imports `Mapping`, `Sequence` and `Asset`. `validate_training_data` re-reads the table
+`triggering_asset_events` works as in §8 (hence the `Mapping`, `Sequence` and
+`Asset` imports); on a run you start by hand it is empty. `validate_training_data` re-reads the table
 rather than receiving it from `prepare_data`: XComs are for metadata, not
 payloads (§6). The second half of its check is one a table-level suite cannot do at
 all — it looks at the **split**:
@@ -228,6 +226,12 @@ and the two `EmptyOperator`s the branches need:
     keep_current_model = EmptyOperator(task_id="keep_current_model")
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 ```
+
+`evaluate_best` prints the best candidate's f1 on each **evaluation slice**: a
+subgroup of the test set picked out by a rule in `evaluate.py` (short texts,
+and texts that mention transformers, BERT or LLMs). These are not the time slices of
+§7; they catch a model whose overall f1 looks fine while one kind of input
+fails.
 
 A `@task.branch` returns the `task_id` to run; the other branch is **skipped**,
 not failed. A candidate that misses the threshold is a normal outcome — the run

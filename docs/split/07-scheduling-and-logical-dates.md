@@ -108,10 +108,6 @@ mlops   manual__2026-09-09T08:22:31+00:00           success  2026-09-09T08:22:32
 Use `run_after` when you mean "when was this run due to start": every run has
 one, with or without a logical date.
 
-Context keys available to every task: `ds`, `ts`, `logical_date`, `data_interval_start`,
-`data_interval_end`, `run_id`, `dag_run`, `ti`, `params`, `var`, `conn`,
-`macros`, `inlets`/`outlets`, `triggering_asset_events`.
-
 > **The trap worth knowing before you trigger anything:** a run triggered from
 > the CLI or the REST API has **no logical date** unless you give it one, so `logical_date` is missing from the task context and `ds`,
 > `ts` and friends are *undefined* in templates. Both fail at runtime, and

@@ -161,10 +161,8 @@ The final gate — the one that emits the asset `mlops` will be scheduled on:
         return {"suite": result.suite, "rows": len(df), "results": result.results}
 ```
 
-Putting the outlet on `validate_transformed`, not on `transform`, is the whole
-trick: the event is written only when this task succeeds, so `mlops` starts
-only on data that passed the `labeled_projects` suite — the consumer is
-scheduled on "good data arrived".
+This is the outlet placement §8 explained: on `validate_transformed`, not on
+`transform`.
 
 One more task, inside a **task group** — `@task_group` nests tasks under one
 collapsible node in the Graph view, useful once a Dag has more than a
@@ -269,7 +267,7 @@ beginning `backfill__`. Know what follows before you do it:
   a time as `backfill create`'s `--max-active-runs` option says.
 - Every `dataops` backfill run that succeeds emits a `labeled_projects` asset
   event exactly as a normal run does (§8), so an un-paused `mlops` trains after
-  them. Backfilling a producer also triggers runs of its consumers.
+  them.
 - The CLI in 3.3.1 only *creates* backfills. While one is unfinished, the
   Dag's page shows a *Backfill in progress* banner with a pause and a stop
   button; stop cancels it. So does the API — `PUT

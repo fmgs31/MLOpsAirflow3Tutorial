@@ -120,7 +120,7 @@ The modules, of which only `assets.py` imports Airflow:
 |---|---|
 | `data.py` | extract, clean, transform, train/test split |
 | `validate.py` | data-quality expectations, the thing the gates run |
-| `train.py`, `evaluate.py` | TF-IDF + SGD classifier, metrics and slices |
+| `train.py`, `evaluate.py` | TF-IDF + SGD classifier, metrics overall and on evaluation slices (§10) |
 | `registry.py` | filesystem stand-in for a model registry |
 | `monitoring.py` | drift and live-performance checks |
 | `predict.py` | tag new text with whatever is currently promoted |

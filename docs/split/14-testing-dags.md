@@ -4,7 +4,13 @@ Four levels — and the first of them checks the seven files you wrote.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
 These catch, before the file reaches Airflow, the failures that would otherwise
-surface as an import error in the UI, and they are the single highest-value thing you can put in CI:
+surface as an import error in the UI, and they are the single highest-value thing you can put in CI.
+
+They rest on `DagBag`, the class Airflow uses to parse a Dag folder:
+`DagBag(dag_folder=...)` imports every file in it and keeps the Dags it found
+in `.dags` and the files that failed in `.import_errors`. The `dagbag` argument
+in each test is a pytest fixture, defined in the same file, that
+builds one from your `dags/` folder:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -17,7 +23,7 @@ def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag):
     assert "labeled_projects" in asset_names
 ```
 
-They load **your `dags/` folder**, and they encode what this tutorial expects:
+They test **your `dags/` folder**, and they encode what this tutorial expects:
 seven specific `dag_id`s; every Dag with tags, a `doc_md` and an owner that is
 not `airflow`; `retries` of at least one on every Dag that does real work;
 `dataops` producing both assets; `mlops` scheduled on `labeled_projects` and

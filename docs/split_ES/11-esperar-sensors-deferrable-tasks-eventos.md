@@ -25,11 +25,10 @@ TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 Con el modo por defecto, `mode="poke"`, el proceso sigue
 vivo y dormido, ocupando su worker slot. Con `mode="reschedule"`, la task
 instance termina su proceso, queda en `up_for_reschedule` (§3) y el scheduler la vuelve a
-encolar para el siguiente poke. Un sensor deferrable no espera en el worker: le
-pasa la espera al triggerer.
+encolar para el siguiente poke.
 
-La palabra **trigger** tiene más de un significado, así que conviene aclararla
-antes de explicar la tercera opción. Tú *disparas* (trigger) un Dag (§7): un verbo. El
+La tercera opción, deferrable, necesita aclarar antes la palabra **trigger**,
+porque tiene más de un significado. Tú *disparas* (trigger) un Dag (§7): un verbo. El
 proceso triggerer de la §3 ejecuta **triggers**: sustantivos — pequeños fragmentos de
 código asíncrono que esperan a algo (un momento concreto, un archivo, un
 mensaje) y lanzan un evento cuando ocurre. "Deferrable" significa que la task le
@@ -79,12 +78,9 @@ def sensors_and_events():
     )
 ```
 
-`settle` es deferrable: libera su worker slot mientras espera, lo que necesita
-`airflow triggerer` corriendo. `wait_for_curated_data` vigila el archivo que
-escribe `dataops`, a través de la connection `fs_default` que aporta el archivo
-de compose. `mode="reschedule"` es la forma no-deferrable de liberar un slot: la
-task instance termina su proceso y se vuelve a encolar cada `poke_interval`
-segundos, y se rinde pasado `timeout`.
+`settle` es de tipo deferrable, y `wait_for_curated_data` usa el modo
+`reschedule`; vigila el archivo que escribe `dataops`, a través de la
+connection `fs_default` que aporta el archivo de compose.
 
 Un sensor también se puede escribir como función. Añádelo, con la task que usa su
 valor, y las conexiones entre tasks:
@@ -220,11 +216,8 @@ acabará fallando por su `timeout` declarado: 120 segundos para `enough_rows`,
 300 para `wait_for_curated_data`. El run solo falla cuando los dos se han
 rendido, a los cinco minutos más o menos.
 
-Lo importante es lo que *no* estaba pasando durante la espera: las task
-instances de los dos sensors no estaban corriendo entre pokes — estaban en
-`up_for_reschedule`, como has visto — así que no se retuvo ningún worker slot. Un poking sensor en el modo por
-defecto habría ocupado un slot todo ese tiempo sin hacer nada, y esa es
-precisamente la razón por la que existen los otros dos modos.
+En `up_for_reschedule` ningún sensor retuvo un worker slot. En el modo por
+defecto habrían ocupado uno cada uno durante toda la espera, sin hacer nada.
 
 **Regla práctica:** segundos → un poking sensor vale. Minutos u horas →
 `mode="reschedule"` o deferrable, o estarás ocupando un worker slot solo para dormir. Un servicio que avisa
