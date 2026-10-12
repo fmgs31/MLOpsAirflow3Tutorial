@@ -26,6 +26,18 @@ anteriores.
 montar el stack de datos de la §9. Uno o dos días para los siete Dags si los
 escribes tú, que es la idea.
 
+## Basado en Made With ML
+
+Este tutorial se basa en la
+[el tutorial de orquestación](https://madewithml.com/courses/mlops/orchestration/)
+de Made With ML, de Goku Mohandas: el mismo proyecto (etiquetar proyectos de ML
+a partir de su título y su descripción)
+Quería aprender con la nueva versión de Airflow (3), y quería un tutorial práctico en
+vez de uno para leer, así que le pedí a Claude que adaptara la lección de Made
+With ML a Airflow 3. Pero no fue para nada lo qyeesperaba: dejarlo bien ha
+requerido muchas correcciones, mucho pulido y bastante trabajo, (todavía sigo corrigiendo). Ahora está abierto para cualquiera que quiera aprender.
+
+
 ---
 
 ## Contenidos
