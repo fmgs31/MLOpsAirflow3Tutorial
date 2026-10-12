@@ -1,8 +1,26 @@
 # Extra dependencies baked into the tutorial's Airflow image (see Dockerfile).
-# Airflow itself and its providers already ship in apache/airflow:3.3.1, so only
-# the ML workload deps go here. Never pin airflow itself in this file - that is
-# what makes an extended image break.
+# Airflow itself already ships in apache/airflow:3.3.1. Never pin airflow
+# itself in this file - that is what makes an extended image break.
+#
+# dbt and alibi-detect are NOT here: their pins clash with Airflow's, so the
+# Dockerfile gives each its own virtualenv.
+
+# Providers: trigger Airbyte syncs, talk to BigQuery.
+apache-airflow-providers-airbyte
+apache-airflow-providers-google
+
+# BigQuery -> pandas (the mlops and monitoring Dags read the warehouse).
+google-cloud-bigquery[pandas]
+
+# Data validation (§9, §10), hyperparameter search (§10), experiment tracking
+# and model registry (§10, §12).
+great_expectations
+optuna
+mlflow-skinny
+# MLflow saves scikit-learn models with skops, a format that cannot run code on load.
+skops
+
+# The ML workload used by the dataops/mlops Dags.
 pandas>=2.2
 scikit-learn>=1.5
 pytest>=8.0
-

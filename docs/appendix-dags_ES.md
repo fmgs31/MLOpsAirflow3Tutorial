@@ -30,34 +30,49 @@ wired together: the DataOps Dag *produces* `labeled_projects`, and the MLOps Dag
 is scheduled on it (`schedule=[LABELED_PROJECTS]`) instead of guessing a cron
 that runs "some time after" DataOps finishes.
 
-An Asset is identified by a name and a URI. Here the assets are name-only, which
-keeps them identical whether you run in Docker or natively; in production give
-them the real URI of the data (`s3://...`, `bq://...`) so lineage in the UI
-points somewhere.
+An Asset is identified by a name and a URI. The tables get their real
+BigQuery URI, `bigquery://<project>/<dataset>/<table>` - a scheme the Google
+provider registers - so the Assets view in the UI says exactly which table
+each one is.
 """
 
 from __future__ import annotations
 
 from airflow.sdk import Asset
 
-# Landing-zone copy of the source data, produced by `dataops`.
+from project_tagger import config
+
+
+def _bigquery_uri(table: str) -> str:
+    return f"bigquery://{config.GCP_PROJECT_ID}/{config.BQ_DATASET}/{table}"
+
+
+# The two raw tables Airbyte loads, produced by `dataops`.
 RAW_PROJECTS = Asset(
     name="raw_projects",
+    uri=_bigquery_uri(config.PROJECTS_TABLE),
+    group="dataset",
+    extra={"layer": "raw", "owner": "data-engineering"},
+)
+RAW_TAGS = Asset(
+    name="raw_tags",
+    uri=_bigquery_uri(config.TAGS_TABLE),
     group="dataset",
     extra={"layer": "raw", "owner": "data-engineering"},
 )
 
-# The curated table the ML Dag trains on. Produced by `dataops`,
+# The table dbt builds and the ML Dag trains on. Produced by `dataops`,
 # consumed (as a schedule) by `mlops`.
 LABELED_PROJECTS = Asset(
     name="labeled_projects",
+    uri=_bigquery_uri(config.LABELED_PROJECTS_TABLE),
     group="dataset",
     extra={"layer": "warehouse", "owner": "data-engineering"},
 )
 
-# Produced by `mlops` when a model clears the promotion gate. Nothing is
-# scheduled on it yet - point a Dag's `schedule` at it and the edge appears in
-# the UI's Assets graph.
+# Produced by `mlops` when a model clears the promotion gate - that is, when
+# the registry's `champion` alias moves. Nothing is scheduled on it yet - point
+# a Dag's `schedule` at it and the edge appears in the UI's Assets graph.
 PRODUCTION_MODEL = Asset(
     name="production_model",
     group="model",
@@ -323,24 +338,25 @@ operators_and_xcoms()
 
 <!-- BEGIN FILE: solutions/03_dataops.py -->
 ```python
-"""Lesson 3 - the DataOps Dag: extract -> validate -> transform -> validate.
+"""Lesson 3 - the DataOps Dag: extract & load -> validate -> transform -> validate.
 
-The first Dag that does real work. Every task is a slot you can swap for the
-vendor tool of a production stack, without changing the Dag's shape:
+The first Dag that does real work, and none of it happens inside Airflow:
+Airflow tells each tool when to run and checks the result.
 
-    extract_projects   -> AirbyteTriggerSyncOperator / FivetranOperator / an EL job
-    validate_*         -> GreatExpectationsOperator / SodaOperator / dbt test
-    transform          -> DbtCloudRunJobOperator / astronomer-cosmos task group
+    extract_and_load_*   Airbyte copies each CSV into a BigQuery table
+    validate_*           Great Expectations suites gate each raw table
+    transform            dbt builds `labeled_projects` (a join) and tests it
+    validate_transformed a final suite; only a pass emits the asset event
 
 Three things to watch for:
 
 * The Dag **produces Assets** (`outlets=[...]`). Finishing the producing task
   emits an asset event, and that event is what schedules the MLOps Dag - no
   cron guessing, no sensor, no polling.
-* Asset events carry metadata (`outlet_events[asset].extra`), so the consumer
-  can see the row count that triggered it.
-* Validation results move through XCom as small dicts; the dataframes never do.
-  Tasks exchange paths and counts, not payloads.
+* The Airbyte connection ids are **Variables**, read through a template at run
+  time, so the Dag file names no id that only exists in your Airbyte.
+* Validation results move through XCom as small dicts; the tables never do.
+  Tasks exchange names and counts, not payloads.
 
 Run it:
     airflow dags test dataops
@@ -351,6 +367,8 @@ from __future__ import annotations
 from typing import Any
 
 import pendulum
+from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
+from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import dag, task, task_group
 
 # Task code imports exceptions from the Task SDK. It is the namespace a remote
@@ -359,7 +377,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
-from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
+from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -382,79 +400,101 @@ DEFAULT_ARGS = {
     doc_md=__doc__,
 )
 def dataops():
-    @task(outlets=[RAW_PROJECTS])
-    def extract_projects(*, outlet_events: OutletEventAccessorsProtocol) -> str:
-        """Land the source data. Returns a path, not a dataframe."""
-        config.ensure_dirs()
-        fp = data.extract()
-        df = data.load_raw(fp)
-        outlet_events[RAW_PROJECTS].extra = {"rows": len(df), "path": str(fp)}
-        return str(fp)
+    # Extract and load: Airbyte does the copying, Airflow only starts it and
+    # waits. `deferrable=True` hands the waiting to the triggerer, so no worker
+    # slot is held while the sync runs.
+    extract_and_load_projects = AirbyteTriggerSyncOperator(
+        task_id="extract_and_load_projects",
+        airbyte_conn_id="airbyte",
+        connection_id="{{ var.value.airbyte_projects_connection_id }}",
+        deferrable=True,
+        timeout=3600,
+        outlets=[RAW_PROJECTS],
+    )
+    extract_and_load_tags = AirbyteTriggerSyncOperator(
+        task_id="extract_and_load_tags",
+        airbyte_conn_id="airbyte",
+        connection_id="{{ var.value.airbyte_tags_connection_id }}",
+        deferrable=True,
+        timeout=3600,
+        outlets=[RAW_TAGS],
+    )
 
     @task
-    def validate_raw(fp: str) -> dict[str, Any]:
-        """Quality gate on the landing zone."""
-        result = validate.run_suite(data.load_raw(fp), "raw_projects")
+    def validate_projects() -> dict[str, Any]:
+        """Quality gate on the raw `projects` table."""
+        result = validate.run_suite(data.load_projects(), "projects")
         print(result.summary())
         if not result.passed:
             # AirflowFailException stops retries: a data-quality break will not
             # fix itself by running the same task again.
-            raise AirflowFailException(f"Raw data failed validation: {result.failures}")
+            raise AirflowFailException(f"projects failed validation: {result.failures}")
         return {"suite": result.suite, "results": result.results}
 
     @task
-    def transform(fp: str) -> str:
-        """Raw -> curated `labeled_projects` - the dbt model of a real stack, in pandas."""
-        df = data.transform(data.load_raw(fp))
-        out = data.save_labeled(df)
-        print(f"Wrote {len(df)} rows to {out}")
-        return str(out)
+    def validate_tags() -> dict[str, Any]:
+        """Quality gate on the raw `tags` table."""
+        result = validate.run_suite(data.load_tags(), "tags")
+        print(result.summary())
+        if not result.passed:
+            raise AirflowFailException(f"tags failed validation: {result.failures}")
+        return {"suite": result.suite, "results": result.results}
+
+    # Transform: dbt runs in its own virtualenv, so a BashOperator calls its
+    # executable. `dbt build` builds every model and then runs its tests; a
+    # failing test exits non-zero, and that fails the task.
+    transform = BashOperator(
+        task_id="transform",
+        bash_command=(
+            f"{config.DBT_BIN} build"
+            f" --project-dir {config.DBT_PROJECT_DIR}"
+            f" --profiles-dir {config.DBT_PROJECT_DIR}"
+        ),
+    )
 
     @task(outlets=[LABELED_PROJECTS])
-    def validate_transformed(
-        fp: str, *, outlet_events: OutletEventAccessorsProtocol
-    ) -> dict[str, Any]:
+    def validate_transformed(*, outlet_events: OutletEventAccessorsProtocol) -> dict[str, Any]:
         """Final gate. Only a passing run emits the asset event.
 
         Placing the outlet on the *validation* task, not the transform task, is
         the whole trick: downstream Dags are then scheduled on
         "good data arrived", never on "a task finished".
         """
-        df = data.load_labeled(fp)
+        df = data.load_labeled()
         result = validate.run_suite(df, "labeled_projects")
         print(result.summary())
         if not result.passed:
-            raise AirflowFailException(f"Labeled data failed validation: {result.failures}")
+            raise AirflowFailException(f"labeled_projects failed validation: {result.failures}")
 
         outlet_events[LABELED_PROJECTS].extra = {
             "rows": len(df),
             "tags": sorted(df["tag"].unique().tolist()),
-            "path": fp,
             "warnings": [r["expectation"] for r in result.failures],
         }
         return {"suite": result.suite, "rows": len(df), "results": result.results}
 
     @task_group(group_id="quality_report")
-    def quality_report(raw_report: dict[str, Any], curated_report: dict[str, Any]):
+    def quality_report(reports: list[dict[str, Any]]):
         """A task group nests tasks under one collapsible node in the UI."""
 
         @task
-        def summarize(raw: dict[str, Any], curated: dict[str, Any]) -> None:
-            for report in (raw, curated):
+        def summarize(reports: list[dict[str, Any]]) -> None:
+            for report in reports:
                 failed = [r["expectation"] for r in report["results"] if not r["passed"]]
                 print(f"{report['suite']}: {len(report['results'])} checks, failed={failed or 'none'}")
 
-        summarize(raw_report, curated_report)
+        summarize(reports)
 
-    raw_fp = extract_projects()
-    raw_report = validate_raw(raw_fp)
+    projects_report = validate_projects()
+    tags_report = validate_tags()
+    extract_and_load_projects >> projects_report
+    extract_and_load_tags >> tags_report
 
-    # `transform` waits on the raw gate even though it does not use its output.
-    curated_fp = transform(raw_fp)
-    raw_report >> curated_fp
+    # Fan-in: dbt joins the two tables, so it waits for both gates.
+    curated_report = validate_transformed()
+    [projects_report, tags_report] >> transform >> curated_report
 
-    curated_report = validate_transformed(curated_fp)
-    quality_report(raw_report, curated_report)
+    quality_report([projects_report, tags_report, curated_report])
 
 
 dataops()
@@ -468,7 +508,7 @@ dataops()
 
 <!-- BEGIN FILE: solutions/04_mlops.py -->
 ```python
-"""Lesson 4 - the MLOps Dag: asset-triggered training, tuning, and promotion.
+"""Lesson 4 - the MLOps Dag: asset-triggered tuning, training, and promotion.
 
 The payoff of data-aware scheduling. This Dag has no cron. It runs when
 `dataops` emits the `labeled_projects` asset event - which only happens when
@@ -476,16 +516,19 @@ the data passed validation.
 
 Also shown:
 
-* **A validation gate before training** - `dataops` validated the warehouse
-  table; this validates the *training snapshot*, including the split, which no
-  table-level suite can see.
-* **Dynamic task mapping** - one `train_candidate` task instance per
-  hyperparameter set, fanned out at runtime, then reduced by `select_best`.
+* **A snapshot and a validation gate before training** - the warehouse table
+  is copied once per run, and that copy is what gets validated and trained on,
+  including the split, which no table-level suite can see.
+* **Distributed tuning with dynamic task mapping** - one Optuna study, stored
+  in a database, and one `run_trials` task instance per worker, fanned out at
+  runtime. Every worker adds trials to the same study.
+* **Experiment tracking** - every trial and the final model are MLflow runs;
+  the final model is registered as a new version.
 * **Branching as a promotion gate** - a model that misses the f1 threshold does
   not reach production, and the Dag run still succeeds (a rejected candidate is
   a normal outcome, not a failure).
-* **XCom discipline** - tasks exchange run ids and metric dicts. The models and
-  dataframes live in the registry and on disk.
+* **XCom discipline** - tasks exchange paths, run ids and metric dicts. The
+  models live in MLflow and the data in the warehouse and on disk.
 
 Deadline alerts live in `07_deadline_alerts.py` - see the note there for why
 they are not attached to this Dag.
@@ -501,7 +544,7 @@ from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import Asset, dag, task
+from airflow.sdk import Asset, Param, dag, task
 from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
@@ -515,6 +558,11 @@ DEFAULT_ARGS = {
 }
 
 
+def run_key(run_id: str) -> str:
+    """A Dag run id made safe for file names and study names."""
+    return run_id.replace(":", "-").replace("+", "-")
+
+
 @dag(
     dag_id="mlops",
     # The whole point: schedule on data, not on time. Pass several assets for
@@ -526,37 +574,40 @@ DEFAULT_ARGS = {
     default_args=DEFAULT_ARGS,
     tags=["tutorial", "mlops"],
     doc_md=__doc__,
+    # The tuning budget, overridable per run from the Trigger form.
+    params={
+        "n_trials": Param(20, type="integer", minimum=1, description="Optuna trials in total."),
+        "n_workers": Param(4, type="integer", minimum=1, description="Tasks the trials are spread over."),
+    },
 )
 def mlops():
     @task
     def prepare_data(
-        *, triggering_asset_events: Mapping[Asset, Sequence[Any]]
-    ) -> dict[str, int]:
-        """Inspect what triggered us, then materialise the train/test split."""
+        *, triggering_asset_events: Mapping[Asset, Sequence[Any]], run_id: str
+    ) -> str:
+        """Inspect what triggered us, then pin the rows this run will use."""
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
 
-        df = data.load_labeled()
-        train_df, test_df = data.split(df)
-        return {"num_train": len(train_df), "num_test": len(test_df)}
+        config.ensure_dirs()
+        fp = data.save_snapshot(data.load_labeled(), run_key(run_id))
+        print(f"snapshot: {fp}")
+        return str(fp)
 
     @task
-    def validate_training_data(split_sizes: dict[str, int]) -> dict[str, Any]:
+    def validate_training_data(snapshot_fp: str) -> dict[str, Any]:
         """The gate between the warehouse and the trainer.
 
         `dataops` already validated `labeled_projects` - but that was a
         different Dag run, possibly hours ago, and this run may have been
-        triggered by hand. What the model is fitted on is the snapshot on disk
-        *now*, plus a split that no single-frame suite can inspect, so both are
+        triggered by hand. What the model is fitted on is the snapshot,
+        plus a split that no single-table suite can inspect, so both are
         checked here.
-
-        The dataframe is re-read rather than passed from `prepare_data`: XComs
-        carry metadata, never payloads.
         """
-        df = data.load_labeled()
+        df = data.load_snapshot(snapshot_fp)
         table = validate.run_suite(df, "labeled_projects")
-        split = validate.check_split(*data.split(df))
+        split = validate.check_split(*data.split(data.preprocess(df)))
         print(f"{table.summary()} {split.summary()}")
 
         if not (table.passed and split.passed):
@@ -567,45 +618,60 @@ def mlops():
             )
         return {
             "rows": len(df),
-            "split_sizes": split_sizes,
             "warnings": [r["expectation"] for r in table.failures + split.failures],
-            "results": table.results + split.results,
         }
 
     @task
-    def candidates() -> list[dict[str, Any]]:
-        """The search space. Returning a list is what `.expand()` maps over."""
-        return train_module.SEARCH_SPACE
-
-    @task(max_active_tis_per_dag=2)
-    def train_candidate(hparams: dict[str, Any], **context: Any) -> dict[str, Any]:
-        """One task instance per hyperparameter set.
-
-        The argument is named `hparams`, not `params`: TaskFlow injects context
-        keys by parameter name, and `params` is a reserved context key.
-        """
-        config.ensure_dirs()
-        run_id = f"{context['run_id']}__{context['ti'].map_index}".replace(":", "-").replace("+", "-")
-        model, metrics = train_module.train_from_files(hparams)
-        registry.save_run(run_id, model, metrics)
-        print(f"run={run_id} hparams={hparams} f1={metrics['f1']:.4f}")
-        # Small, JSON-serialisable payload. The model itself stays in the registry.
-        return {"run_id": run_id, "f1": metrics["f1"], "hparams": hparams}
+    def create_study(*, run_id: str) -> str:
+        """One Optuna study per Dag run. Safe to retry: an existing study is loaded."""
+        return train_module.create_study(f"{config.REGISTERED_MODEL}-{run_key(run_id)}")
 
     @task
-    def select_best(results: list[dict[str, Any]]) -> dict[str, Any]:
-        """The reduce step: every mapped instance's return value arrives as a list."""
-        best = max(results, key=lambda r: r["f1"])
-        print(f"best={best['run_id']} f1={best['f1']:.4f} of {len(results)} candidates")
+    def trial_budget(*, params: Mapping[str, Any]) -> list[int]:
+        """Split the trials over the workers. Returning a list is what `.expand()` maps over."""
+        base, extra = divmod(params["n_trials"], params["n_workers"])
+        return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
+
+    @task(max_active_tis_per_dag=2)
+    def run_trials(n_trials: int, study_name: str, snapshot_fp: str) -> list[dict[str, Any]]:
+        """One task instance per worker; each adds `n_trials` trials to the shared study."""
+        train_df, _ = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+        results = train_module.run_trials(study_name, n_trials, train_df)
+        print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
+        return results
+
+    @task
+    def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
+        """The reduce step: every mapped instance's return value arrives as a list.
+
+        The study already knows its best trial; `results` is taken so this task
+        waits for every worker.
+        """
+        best = train_module.best_trial(study_name)
+        print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
         return best
 
     @task
-    def evaluate_best(best: dict[str, Any]) -> dict[str, Any]:
+    def train_best(best: dict[str, Any], snapshot_fp: str, *, run_id: str) -> dict[str, Any]:
+        """Fit on the full training split, score on the test split, log and register in MLflow."""
+        train_df, test_df = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+        trained = train_module.train_model(
+            best["params"], train_df, test_df,
+            run_name=f"final-{run_key(run_id)}",
+            tags={"airflow_run_id": run_id},
+        )
+        version = registry.register(trained["model_uri"])
+        print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
+        # Small, JSON-serialisable payload. The model itself stays in MLflow.
+        return {"run_id": trained["run_id"], "version": version, "f1": trained["metrics"]["f1"]}
+
+    @task
+    def evaluate_best(trained: dict[str, Any]) -> dict[str, Any]:
         """Re-read the full metrics, including per-class and slice performance."""
-        metrics = registry.load_metrics(best["run_id"])
+        metrics = registry.load_metrics(trained["run_id"])
         for name, slice_metrics in metrics.get("slices", {}).items():
             print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
-        return {"run_id": best["run_id"], "metrics": metrics}
+        return {**trained, "metrics": metrics}
 
     @task.branch
     def promotion_gate(evaluation: dict[str, Any]) -> str:
@@ -627,14 +693,15 @@ def mlops():
     def promote_model(
         evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
     ) -> dict[str, Any]:
-        pointer = registry.promote(evaluation["run_id"])
+        """Move the registry's `champion` alias to the new version."""
+        champion = registry.promote(evaluation["version"])
         outlet_events[PRODUCTION_MODEL].extra = {
-            "run_id": pointer["run_id"],
-            "f1": pointer["metrics"]["f1"],
-            "previous_run_id": pointer["previous_run_id"],
+            "version": champion["version"],
+            "f1": champion["metrics"]["f1"],
+            "previous_version": champion["previous_version"],
         }
-        print(f"promoted {pointer['run_id']} (was {pointer['previous_run_id']})")
-        return pointer
+        print(f"champion -> version {champion['version']} (was {champion['previous_version']})")
+        return champion
 
     keep_current_model = EmptyOperator(task_id="keep_current_model")
 
@@ -642,17 +709,21 @@ def mlops():
     # the default `all_success` would skip it after any branch skip.
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 
-    snapshot = validate_training_data(prepare_data())
-    results = train_candidate.expand(hparams=candidates())
-    # No data flows from the gate to the trainer, only permission to run: every
+    snapshot = prepare_data()
+    gate = validate_training_data(snapshot)
+    study = create_study()
+    results = run_trials.partial(study_name=study, snapshot_fp=snapshot).expand(
+        n_trials=trial_budget()
+    )
+    # No data flows from the gate to the trainers, only permission to run: every
     # mapped instance waits on it.
-    snapshot >> results
+    gate >> results
 
-    evaluation = evaluate_best(select_best(results))
-    gate = promotion_gate(evaluation)
+    evaluation = evaluate_best(train_best(best_params(study, results), snapshot))
+    decision = promotion_gate(evaluation)
 
-    gate >> promote_model(evaluation) >> done
-    gate >> keep_current_model >> done
+    decision >> promote_model(evaluation) >> done
+    decision >> keep_current_model >> done
 
 
 mlops()
@@ -671,32 +742,34 @@ mlops()
 Three ways to react to the outside world, cheapest last:
 
 1. **Poking sensors** - a worker slot is held while polling. Fine for seconds.
-2. **Deferrable sensors** (`*Async`, or `deferrable=True`) - the task suspends,
-   the slot is released, and the triggerer resumes it. This is what you want for
-   anything measured in minutes or hours.
-3. **Event-driven scheduling** (`AssetWatcher`) - no task waits at all: an
-   external event emits an asset update and *that* starts the Dag run. See the
-   note at the bottom.
+2. **`reschedule` mode** - the task instance exits between pokes and is
+   re-queued, so no slot is held while it waits.
+3. **Deferrable sensors** (`deferrable=True`) - the task suspends, the slot is
+   released, and the triggerer resumes it. This is what you want for anything
+   measured in minutes or hours.
+
+And one way not to wait at all: **event-driven scheduling** (`AssetWatcher`),
+where an external event emits an asset update and *that* starts the Dag run.
+See the note at the bottom.
+
+The table to wait for is a Dag param, `table`, so a run can be pointed at one
+that does not exist yet:
 
 Run it:
-    airflow dags test sensors_and_events       # everything it waits for is already true
-    airflow dags trigger sensors_and_events    # through the scheduler (unpause first):
-                                               # `settle` visibly sits in `deferred`
-
-`dags test` never defers `settle`: the sensor's five-second target is measured
-from the run's logical date, which the command fixes before the task starts, so
-the moment has passed by the time the task runs and it returns at once. Only a
-scheduler-driven run shows the `deferred` state.
+    airflow dags test sensors_and_events       # labeled_projects already exists
+    airflow dags test sensors_and_events -c '{"table": "labeled_projects_copy"}'
+                                               # waits until you create that table
 """
 
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 import pendulum
-from airflow.providers.standard.sensors.filesystem import FileSensor
+from airflow.providers.google.cloud.sensors.bigquery import BigQueryTableExistenceSensor
 from airflow.providers.standard.sensors.time_delta import TimeDeltaSensor
-from airflow.sdk import PokeReturnValue, dag, task
+from airflow.sdk import Param, PokeReturnValue, dag, task
 
 from project_tagger import config, data
 
@@ -711,42 +784,45 @@ DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
     default_args=DEFAULT_ARGS,
     tags=["tutorial", "sensors"],
     doc_md=__doc__,
+    params={"table": Param(config.LABELED_PROJECTS_TABLE, type="string", description="Table to wait for.")},
 )
 def sensors_and_events():
-    # Deferrable: releases its worker slot while waiting. Needs `airflow triggerer`,
-    # and a scheduler-driven run to see it - `dags test` returns at once (docstring).
+    # Deferrable: releases its worker slot while waiting. Needs `airflow triggerer`.
     settle = TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 
-    # `reschedule` mode is the non-deferrable way to free a slot between pokes:
-    # the task instance exits and is re-queued each interval.
-    wait_for_curated_data = FileSensor(
-        task_id="wait_for_curated_data",
-        filepath=str(config.LABELED_PROJECTS_FP),
+    # Deferrable too: the triggerer asks BigQuery whether the table exists,
+    # through the `google_cloud_default` connection, every `poke_interval`.
+    wait_for_table = BigQueryTableExistenceSensor(
+        task_id="wait_for_table",
+        project_id=config.GCP_PROJECT_ID,
+        dataset_id=config.BQ_DATASET,
+        table_id="{{ params.table }}",
+        deferrable=True,
         poke_interval=10,
         timeout=60 * 5,
-        mode="reschedule",
     )
 
     @task.sensor(poke_interval=10, timeout=120, mode="reschedule")
-    def enough_rows() -> PokeReturnValue:
+    def enough_rows(*, params: dict[str, Any]) -> PokeReturnValue:
         """A sensor written as a function.
 
         Return `PokeReturnValue(is_done=..., xcom_value=...)` to both stop poking
         and hand a value to downstream tasks.
         """
-        if not config.LABELED_PROJECTS_FP.exists():
+        from google.api_core.exceptions import NotFound
+
+        try:
+            rows = data.count_rows(params["table"])
+        except NotFound:
             return PokeReturnValue(is_done=False)
-        # Read it as a table: descriptions contain newlines, so counting lines
-        # would overstate the row count.
-        rows = len(data.load_labeled())
-        print(f"curated table has {rows} rows")
+        print(f"{params['table']} has {rows} rows")
         return PokeReturnValue(is_done=rows >= 500, xcom_value=rows)
 
     @task
     def proceed(rows: int) -> None:
         print(f"Data is ready ({rows} rows). Downstream work can start.")
 
-    settle >> wait_for_curated_data >> proceed(enough_rows())
+    settle >> wait_for_table >> proceed(enough_rows())
 
 
 sensors_and_events()
@@ -772,7 +848,7 @@ sensors_and_events()
 #         ...
 #
 # Only triggers deriving from `BaseEventTrigger` can be used as watchers -
-# a trigger that tests a permanent condition ("file exists") would re-fire
+# a trigger that tests a permanent condition ("table exists") would re-fire
 # forever.
 ```
 <!-- END FILE: solutions/05_sensors_and_events.py -->
@@ -796,6 +872,9 @@ explicit branches:
 
 Pieces on show:
 
+* `@task.external_python` - the drift checks run alibi-detect, which needs
+  libraries Airflow's own environment cannot have, so they run in a separate
+  virtualenv baked into the image.
 * `@task.branch` picking one arm of the response.
 * `ApprovalOperator` (human-in-the-loop): retraining waits for a person to
   click Approve in the UI. `defaults` + `response_timeout` mean an unattended
@@ -817,18 +896,17 @@ from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
 
-from project_tagger import monitoring, registry
+from project_tagger import config, monitoring, registry
 
 DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 
 # Thresholds that turn a measurement into a decision. Exposed as Dag params so
 # the policy is visible in the UI, overridable per run, and recorded with the
 # run that used it:
-#     airflow dags test monitoring --conf '{"max_label_tvd": 0.0}'
+#     airflow dags test monitoring --conf '{"drift_p_val": 1.0}'
 POLICY_PARAMS = {
-    "max_label_tvd": Param(0.15, type="number", description="Label-drift budget."),
-    "max_length_shift": Param(
-        0.25, type="number", description="Input-drift budget: relative change in mean text length."
+    "drift_p_val": Param(
+        0.05, type="number", description="A drift test with a p-value below this reports drift."
     ),
     "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
@@ -848,40 +926,57 @@ POLICY_PARAMS = {
 )
 def monitoring_dag():
     @task
-    def measure() -> dict[str, Any]:
-        report = monitoring.monitor()
-        drift = report["drift"]
-        print(
-            f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']} "
-            f"length shift={drift['mean_length_shift']:+.4f}"
-        )
-        if report["performance"]:
-            perf = report["performance"]
-            print(f"f1 at promotion={perf['f1_at_promotion']:.4f} now={perf['f1_now']:.4f}")
-        return report
+    def prepare_windows(*, run_id: str) -> dict[str, str]:
+        """Read the warehouse once and write the two windows drift is measured on."""
+        key = run_id.replace(":", "-").replace("+", "-")
+        windows = monitoring.prepare_windows(f"monitoring-{key}")
+        print(f"windows: {windows}")
+        return windows
+
+    # Runs with alibi-detect's interpreter, not Airflow's. The function body is
+    # shipped to that interpreter, so everything it uses is imported inside it,
+    # and its arguments and return value must be plain data. `expect_airflow=False`:
+    # that virtualenv has no Airflow, and the function needs none.
+    @task.external_python(python=config.ALIBI_PYTHON, expect_airflow=False)
+    def detect_drift(windows: dict, p_val: str) -> dict:
+        from project_tagger import drift
+
+        return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
+
+    @task
+    def check_performance(windows: dict[str, str]) -> dict[str, Any] | None:
+        performance = monitoring.production_performance(windows["current"])
+        if performance:
+            print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        return performance
 
     @task.branch
-    def decide(report: dict[str, Any], **context: Any) -> str:
-        drift, performance = report["drift"], report["performance"]
-        policy = context["params"]
+    def decide(
+        drift: dict[str, Any], performance: dict[str, Any] | None, *, params: dict[str, Any]
+    ) -> str:
+        label, length = drift["label_drift"], drift["length_drift"]
+        print(
+            f"label drift p={label['p_val']:.4g} length drift p={length['p_val']:.4g} "
+            f"new_labels={drift['new_labels']} policy={dict(params)}"
+        )
 
         if performance is None:
             print("No production model yet - train one.")
             return "request_retraining"
 
         f1_drop = performance["f1_at_promotion"] - performance["f1_now"]
-        print(f"f1_drop={f1_drop:.4f} label_tvd={drift['label_tvd']:.4f} policy={dict(policy)}")
+        print(f"f1_drop={f1_drop:.4f}")
 
-        if f1_drop >= policy["critical_f1_drop"]:
+        if f1_drop >= params["critical_f1_drop"]:
             return "rollback"
         if drift["new_labels"]:
             # An unseen label means the schema/label space moved. Retraining on
             # data you do not understand yet is how you ship a worse model.
             return "inspect"
         if (
-            f1_drop >= policy["max_f1_drop"]                                 # concept drift
-            or drift["label_tvd"] >= policy["max_label_tvd"]                 # target drift
-            or abs(drift["mean_length_shift"]) >= policy["max_length_shift"] # data drift
+            f1_drop >= params["max_f1_drop"]                    # concept drift
+            or label["p_val"] < params["drift_p_val"]           # target drift
+            or length["p_val"] < params["drift_p_val"]          # data drift
         ):
             return "request_retraining"
         return "continue_serving"
@@ -889,16 +984,16 @@ def monitoring_dag():
     continue_serving = EmptyOperator(task_id="continue_serving")
 
     @task
-    def inspect(report: dict[str, Any]) -> None:
+    def inspect(drift: dict[str, Any]) -> None:
         print("MANUAL INSPECTION NEEDED")
-        print(f"  new labels: {report['drift']['new_labels']}")
-        print(f"  current distribution: {report['drift']['current_distribution']}")
+        print(f"  new labels: {drift['new_labels']}")
+        print(f"  current distribution: {drift['current_distribution']}")
 
     @task
     def rollback() -> dict[str, Any] | None:
-        pointer = registry.rollback()
-        print(f"rolled back to {pointer['run_id']}" if pointer else "nothing to roll back")
-        return pointer
+        champion = registry.rollback()
+        print(f"champion -> version {champion['version']}" if champion else "nothing to roll back to")
+        return champion
 
     # Human-in-the-loop gate. The task sits in `awaiting_input` and shows a
     # prompt in the UI; on Reject, everything downstream is skipped.
@@ -924,11 +1019,12 @@ def monitoring_dag():
         reset_dag_run=True,
     )
 
-    report = measure()
-    branch = decide(report)
+    windows = prepare_windows()
+    drift = detect_drift(windows, "{{ params.drift_p_val }}")
+    branch = decide(drift, check_performance(windows))
 
     branch >> continue_serving
-    branch >> inspect(report)
+    branch >> inspect(drift)
     branch >> rollback()
     branch >> request_retraining >> trigger_retraining
 

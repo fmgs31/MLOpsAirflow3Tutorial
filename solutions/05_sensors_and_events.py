@@ -3,32 +3,34 @@
 Three ways to react to the outside world, cheapest last:
 
 1. **Poking sensors** - a worker slot is held while polling. Fine for seconds.
-2. **Deferrable sensors** (`*Async`, or `deferrable=True`) - the task suspends,
-   the slot is released, and the triggerer resumes it. This is what you want for
-   anything measured in minutes or hours.
-3. **Event-driven scheduling** (`AssetWatcher`) - no task waits at all: an
-   external event emits an asset update and *that* starts the Dag run. See the
-   note at the bottom.
+2. **`reschedule` mode** - the task instance exits between pokes and is
+   re-queued, so no slot is held while it waits.
+3. **Deferrable sensors** (`deferrable=True`) - the task suspends, the slot is
+   released, and the triggerer resumes it. This is what you want for anything
+   measured in minutes or hours.
+
+And one way not to wait at all: **event-driven scheduling** (`AssetWatcher`),
+where an external event emits an asset update and *that* starts the Dag run.
+See the note at the bottom.
+
+The table to wait for is a Dag param, `table`, so a run can be pointed at one
+that does not exist yet:
 
 Run it:
-    airflow dags test sensors_and_events       # everything it waits for is already true
-    airflow dags trigger sensors_and_events    # through the scheduler (unpause first):
-                                               # `settle` visibly sits in `deferred`
-
-`dags test` never defers `settle`: the sensor's five-second target is measured
-from the run's logical date, which the command fixes before the task starts, so
-the moment has passed by the time the task runs and it returns at once. Only a
-scheduler-driven run shows the `deferred` state.
+    airflow dags test sensors_and_events       # labeled_projects already exists
+    airflow dags test sensors_and_events -c '{"table": "labeled_projects_copy"}'
+                                               # waits until you create that table
 """
 
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 import pendulum
-from airflow.providers.standard.sensors.filesystem import FileSensor
+from airflow.providers.google.cloud.sensors.bigquery import BigQueryTableExistenceSensor
 from airflow.providers.standard.sensors.time_delta import TimeDeltaSensor
-from airflow.sdk import PokeReturnValue, dag, task
+from airflow.sdk import Param, PokeReturnValue, dag, task
 
 from project_tagger import config, data
 
@@ -43,42 +45,45 @@ DEFAULT_ARGS = {"owner": "data-engineering", "retries": 0}
     default_args=DEFAULT_ARGS,
     tags=["tutorial", "sensors"],
     doc_md=__doc__,
+    params={"table": Param(config.LABELED_PROJECTS_TABLE, type="string", description="Table to wait for.")},
 )
 def sensors_and_events():
-    # Deferrable: releases its worker slot while waiting. Needs `airflow triggerer`,
-    # and a scheduler-driven run to see it - `dags test` returns at once (docstring).
+    # Deferrable: releases its worker slot while waiting. Needs `airflow triggerer`.
     settle = TimeDeltaSensor(task_id="settle", delta=timedelta(seconds=5), deferrable=True)
 
-    # `reschedule` mode is the non-deferrable way to free a slot between pokes:
-    # the task instance exits and is re-queued each interval.
-    wait_for_curated_data = FileSensor(
-        task_id="wait_for_curated_data",
-        filepath=str(config.LABELED_PROJECTS_FP),
+    # Deferrable too: the triggerer asks BigQuery whether the table exists,
+    # through the `google_cloud_default` connection, every `poke_interval`.
+    wait_for_table = BigQueryTableExistenceSensor(
+        task_id="wait_for_table",
+        project_id=config.GCP_PROJECT_ID,
+        dataset_id=config.BQ_DATASET,
+        table_id="{{ params.table }}",
+        deferrable=True,
         poke_interval=10,
         timeout=60 * 5,
-        mode="reschedule",
     )
 
     @task.sensor(poke_interval=10, timeout=120, mode="reschedule")
-    def enough_rows() -> PokeReturnValue:
+    def enough_rows(*, params: dict[str, Any]) -> PokeReturnValue:
         """A sensor written as a function.
 
         Return `PokeReturnValue(is_done=..., xcom_value=...)` to both stop poking
         and hand a value to downstream tasks.
         """
-        if not config.LABELED_PROJECTS_FP.exists():
+        from google.api_core.exceptions import NotFound
+
+        try:
+            rows = data.count_rows(params["table"])
+        except NotFound:
             return PokeReturnValue(is_done=False)
-        # Read it as a table: descriptions contain newlines, so counting lines
-        # would overstate the row count.
-        rows = len(data.load_labeled())
-        print(f"curated table has {rows} rows")
+        print(f"{params['table']} has {rows} rows")
         return PokeReturnValue(is_done=rows >= 500, xcom_value=rows)
 
     @task
     def proceed(rows: int) -> None:
         print(f"Data is ready ({rows} rows). Downstream work can start.")
 
-    settle >> wait_for_curated_data >> proceed(enough_rows())
+    settle >> wait_for_table >> proceed(enough_rows())
 
 
 sensors_and_events()
@@ -104,5 +109,5 @@ sensors_and_events()
 #         ...
 #
 # Only triggers deriving from `BaseEventTrigger` can be used as watchers -
-# a trigger that tests a permanent condition ("file exists") would re-fire
+# a trigger that tests a permanent condition ("table exists") would re-fire
 # forever.

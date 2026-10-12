@@ -119,7 +119,7 @@ Un **pool** es un conjunto con nombre de slots al que asignas tasks con `pool="�
 veinte conexiones a una base de datos que tolera cinco. Todo cae en
 `default_pool` salvo que digas otra cosa. La §10 fija el cuarto límite en una
 sola task (`max_active_tis_per_dag=2`) y verás el efecto: cuatro tasks de
-entrenamiento que corren de dos en dos en vez de todas a la vez.
+búsqueda de hiperparámetros que corren de dos en dos en vez de todas a la vez.
 
 ### La metadata database
 
@@ -128,9 +128,11 @@ definiciones de Dag tal y como se parsearon, cada Dag run, cada task instance co
 su estado y su número de intentos, XComs, Connections, Variables, pools, asset
 events, el audit log. En este stack es el contenedor `postgres` (Postgres 16).
 Es la base de datos propia de Airflow, y no hay que confundirla con las bases de
-datos que usan tus tasks. Si una task lee de un warehouse o del Postgres de una
-aplicación, esa es otra base de datos, y la task llega a ella con una
-Connection y un hook (§6). La UI es una vista de
+datos que usan tus tasks. Cuando una task lee el warehouse de BigQuery (§9), o
+el Postgres de una aplicación, esa es otra base de datos, y la task llega a
+ella con una Connection, un hook o el cliente propio de la herramienta (§6). El
+mismo contenedor de Postgres guarda también una segunda base de datos,
+`optuna`, para la §10; convive con la de Airflow, pero no forma parte de ella. La UI es una vista de
 la metadata database. El bucle del scheduler es una consulta contra ella.
 Reinicia los contenedores y no se pierde nada, porque el estado está en el
 volumen de la metadata database, no en los contenedores — `scripts/reset.sh`

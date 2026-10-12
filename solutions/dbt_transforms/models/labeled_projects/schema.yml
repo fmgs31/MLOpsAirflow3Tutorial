@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: labeled_projects
+    columns:
+      - name: id
+        data_tests:
+          - unique
+          - not_null
+      - name: title
+        data_tests:
+          - not_null
+      - name: tag
+        data_tests:
+          - not_null

@@ -1,6 +1,17 @@
 ## 2. Get it running
 
-### Docker (recommended, and on Windows the only option outside WSL2)
+There are two ways to install, and the choice decides how far you can go:
+
+| Install | Covers | Runs |
+|---|---|---|
+| **Docker** | the whole tutorial, §3 to §16 | Airflow, Postgres and MLflow, plus the dbt and alibi-detect virtualenvs, all from `docker-compose.yaml` |
+| **Native** | §3 to §8 only | Airflow alone, in a Python virtualenv on your machine |
+
+From §9 on, the pipeline needs more than Airflow: the MLflow server, Optuna's
+database and two extra virtualenvs, which only the Docker stack sets up. If you
+plan to do the whole tutorial, use Docker.
+
+### Docker (recommended, and required from §9 on)
 
 Airflow has no native Windows support. On Windows use Docker Desktop, or run the
 native install inside WSL2.
@@ -48,15 +59,21 @@ the Simple auth manager instead of FAB — Flask-AppBuilder, the provider that
 gives Airflow users, roles and a login page. Fewer moving parts while you are
 learning.
 
+Two services in the list are not Airflow. `mlflow` is MLflow (§1), whose UI
+is at <http://localhost:5000>; §10 is where you use it. `extra-databases` runs
+once at start-up, creates a database for Optuna (§10) on the same Postgres,
+and exits. The rest of the data stack, a Google
+Cloud project and Airbyte, you set up in §9; nothing before §9 needs either.
+
 > **Auth:** `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true` is set, so the
 > UI has no login, and port 8080 is published on `127.0.0.1` only — the loopback
 > address — so nothing outside your machine can reach it. Do not deploy this
 > configuration anywhere else.
 
 One more script, for later. Everything the stack accumulates — runs, task
-logs, the data and models the Dags write — survives a restart of the
-containers, because it lives in a Docker volume and in the `data/`,
-`model_registry/` and `logs/` folders of this repo (§3 comes back to this). To
+logs, the snapshots the Dags write, MLflow's runs and models — survives a
+restart of the containers, because it lives in Docker volumes and in the
+`data/` and `logs/` folders of this repo (§3 comes back to this). To
 throw all of it away and start over from a clean slate, on Linux, macOS, WSL2
 or Git Bash:
 
@@ -71,7 +88,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
 It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. It does
-not touch `dags/` — the files you write survive a reset. No step in this
+not touch `dags/` — the files you write survive a reset — nor anything outside
+this repo's stack: your BigQuery tables and Airbyte stay as they are. No step in this
 tutorial needs it; it is here for the day something is stuck and
 [troubleshooting](../troubleshooting.md) has not helped.
 
@@ -91,11 +109,19 @@ tutorial needs it; it is here for the day something is stuck and
 > works; the container sees the folder through a bind mount, so a file saved on
 > your machine is a file inside Airflow a moment later. Nothing needs copying.
 
-### Native (Linux / macOS / WSL2)
+### Native (Linux / macOS / WSL2; §3 to §8 only)
 
 ```bash
 ./scripts/setup-native.sh
 ```
+
+> **The native install covers Airflow, and so §3 to §8.** From §9 on, the
+> pipeline also needs the services in the compose file (MLflow, Optuna's
+> Postgres database) and the two virtualenvs the image builds for dbt and
+> alibi-detect (§9, §12). Recreating those by hand is possible, and the paths
+> are settings in `config.py` (`PROJECT_TAGGER_DBT_BIN`,
+> `PROJECT_TAGGER_ALIBI_PYTHON`, `MLFLOW_TRACKING_URI`, `OPTUNA_STORAGE`), but
+> this tutorial does not walk through it: for §9 onwards, use the Docker stack.
 
 What that script does, and why each line matters:
 
@@ -156,8 +182,8 @@ environment instead of editing `airflow.cfg`. The Docker stack uses the same
 mechanism in [`docker-compose.yaml`](../../docker-compose.yaml).
 
 > **Default connections are not created for you.** `fs_default` is added by hand
-> above because `FileSensor` (§11) needs it. In Docker the compose file provides
-> it as `AIRFLOW_CONN_FS_DEFAULT`.
+> above because a `FileSensor` uses it unless told otherwise (§6). In Docker
+> the compose file provides it as `AIRFLOW_CONN_FS_DEFAULT`.
 
 Then either the all-in-one process:
 

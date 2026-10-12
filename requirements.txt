@@ -14,6 +14,17 @@ apache-airflow==3.3.1
 # FileSensor, ...). Pre-installed with apache-airflow, pinned here to be explicit.
 apache-airflow-providers-standard>=1.18.0
 
+# The providers and tools the dataops/mlops/monitoring Dags call (see
+# requirements-image.txt). dbt and alibi-detect clash with Airflow's pins and
+# need virtualenvs of their own - the Dockerfile shows how.
+apache-airflow-providers-airbyte
+apache-airflow-providers-google
+google-cloud-bigquery[pandas]
+great_expectations
+optuna
+mlflow-skinny
+skops
+
 # The ML workload used by the dataops/mlops Dags.
 pandas>=2.2
 scikit-learn>=1.5

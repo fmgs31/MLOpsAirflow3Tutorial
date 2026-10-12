@@ -118,7 +118,7 @@ A **pool** is a named bucket of slots you assign tasks to with `pool="…"`
 (Admin → Pools), and it is how you stop twenty concurrent tasks from opening
 twenty connections to a database that tolerates five. Everything lands in
 `default_pool` unless you say otherwise. §10 sets the fourth limit on a single
-task (`max_active_tis_per_dag=2`), and you will see the effect: four training
+task (`max_active_tis_per_dag=2`), and you will see the effect: four tuning
 tasks that run two at a time instead of all at once.
 
 ### The metadata database
@@ -127,9 +127,11 @@ Every fact Airflow knows lives in one relational database: Dag definitions as
 parsed, every Dag run, every task instance and its state and try count, XComs,
 Connections, Variables, pools, asset events, the audit log. In this stack it is
 the `postgres` container (Postgres 16). It is Airflow's own database, not to
-be confused with the databases your tasks use. If a task reads from a warehouse
-or an application's Postgres, that is a different database, and the task
-reaches it through a Connection and a hook (§6). The UI is a view of the metadata database. The scheduler's loop is a query against
+be confused with the databases your tasks use. When a task reads the BigQuery
+warehouse (§9), or an application's Postgres, that is a different database,
+and the task reaches it through a Connection, a hook or the tool's own client
+(§6). The same Postgres container also holds a second database, `optuna`, for
+§10; it is a neighbour of Airflow's, not part of it. The UI is a view of the metadata database. The scheduler's loop is a query against
 it. Restart the containers and nothing is lost, because the state is in the
 metadata database's volume, not in the containers — `scripts/reset.sh` deletes
 that volume, which is why it is the last resort.

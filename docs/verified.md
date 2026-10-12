@@ -6,8 +6,54 @@
 
 The body of the tutorial says what you will see. This document says how that
 is known: every figure and claim there was read off a live stack, and this is
-the record of when, and how it was measured. Nothing here is a step to run.
+the record of when, and how it was measured — except what the first section
+below lists as still waiting. Nothing here is a step to run.
 Skip it, or come back when you want to know how far to trust a number.
+
+## Not yet verified on a live stack: the data-stack rewrite (2026-10-12)
+
+§9 to §12 were rewritten to use the real tools — Airbyte, BigQuery, dbt, Great
+Expectations, Optuna, MLflow, alibi-detect — instead of local stand-ins. The
+2026-09-09 record below describes the earlier version of those sections.
+
+Checked without a live stack, on 2026-10-12:
+
+- The image builds: `apache/airflow:3.3.1` (Python 3.13) plus the Airbyte and
+  Google providers, GX Core 1.24, Optuna 5.0, mlflow-skinny 3.17 and skops,
+  resolved against the 3.3.1 constraints; dbt-core 1.12.5 with dbt-bigquery
+  1.12.1 in `/opt/venvs/dbt`; alibi-detect 0.13.0 on Python 3.12 in
+  `/opt/venvs/alibi`.
+- In that image, `pytest tests` with `DAGS_DIR=solutions`: 41 passed, 1 skipped
+  (the drift test, which needs alibi-detect). That includes the Dag integrity
+  tests, the assembly of every "Build it" block in both languages, and the
+  check that the dbt files typed in §9 match `solutions/dbt_transforms/`.
+- §9's dbt steps, run in that image: `dbt init --skip-profile-setup`, the
+  `models:` edit and the four files give a project `dbt parse` accepts, with
+  1 model, 4 tests and 2 sources.
+- The unit tests run Optuna and MLflow for real, on SQLite: create a study, add
+  trials from two "workers", train, register two versions, promote, roll back,
+  load the champion.
+- The drift test passes inside an alibi-detect 0.13 environment.
+- §12's figures — label drift p ≈ 7.7e-05, length drift p ≈ 0.92, `mlops`
+  from ~6% to ~16%, NLP from 44% to 30% — come from running
+  `drift.detect_drift` on `datasets/projects.csv` joined with `tags.csv`.
+- `datasets/tags.csv` lines up with upstream `dataset.csv` on all 764 rows once
+  the three rarest tags are collapsed.
+
+Waiting for the first live walkthrough:
+
+- §9's Google Cloud and Airbyte steps, including every console and UI label
+  quoted, the `abctl` commands, and the Airbyte Connection reaching
+  `host.docker.internal:8000` with the `client-id` / `client-secret` pair.
+- The claim that the BigQuery sandbox cannot take Airbyte's writes, which rests
+  on Google's description of the sandbox and on Airbyte community reports.
+- The source URLs, which need this repo to be public.
+- Every checkpoint in §9 to §12: suite counts, dbt's `PASS=5`, the deferrable
+  Airbyte tasks under `airflow dags test`, the 21 MLflow runs, the sensor demo
+  with `labeled_projects_copy`, `@task.external_python` in the monitoring Dag.
+- `abctl local uninstall` (§15).
+
+## 2026-09-09
 
 Against a live `apache/airflow:3.3.1` stack (Postgres 16, LocalExecutor,
 api-server + scheduler + dag-processor + triggerer), on 2026-09-09:

@@ -9,9 +9,18 @@ What you are watching for is **drift**, in three flavours:
 
 | Drift | What moved | Caught here by |
 |---|---|---|
-| **data drift** | the input distribution — the text itself | `mean_length_shift` in `monitoring.drift_report()`: the relative change in the mean text length (`+0.10` = 10% longer) |
-| **target drift** | the label distribution — one tag takes over, or a new tag appears | `label_tvd` (total variation distance: how much the share of each tag changed, from 0 to 1) and `new_labels` |
+| **data drift** | the input distribution — the text itself | `length_drift`: a Kolmogorov–Smirnov test on the number of words per text |
+| **target drift** | the label distribution — one tag takes over, or a new tag appears | `label_drift`: a chi-squared test on the tag counts, and `new_labels` |
 | **concept drift** | the relation between input and label — the same input now deserves a different label | only the live performance check, `monitoring.production_performance()`, which scores the production model on recently labelled rows: f1 falls while inputs look unchanged |
+
+The two tests come from **alibi-detect**, a drift-detection library. Each takes
+a **reference** window (the older projects, what the model was built on) and a
+**current** window (the newest quarter, by date added), and answers with a
+**p-value**: the probability of seeing a difference at least this large if
+nothing had really changed. A small p-value means the difference is unlikely
+to be chance. Below a threshold you choose, conventionally 0.05, the test
+reports drift. The Kolmogorov–Smirnov (KS) test compares two distributions of a
+number; the chi-squared test compares two sets of category counts.
 
 A monitoring event has four sensible responses, and
 `dags/06_monitoring_and_retraining.py` makes them branches:
@@ -25,11 +34,15 @@ A monitoring event has four sensible responses, and
 
 ### Build it
 
-The workload: `monitoring.monitor()` returns a report with a `drift` dict
-(`label_tvd`, `new_labels`, `mean_length_shift`, `current_distribution`, …)
-and a `performance`
-dict (`f1_at_promotion`, `f1_now`) — or `performance=None` when nothing is
-promoted; `registry.rollback()` re-promotes the previous model.
+The workload: `monitoring.prepare_windows(key)` reads `labeled_projects`,
+splits it into the two windows and writes each to a file, returning their
+paths; `drift.detect_drift(reference_fp, current_fp, p_val)` runs both tests
+and returns `label_drift` and `length_drift` (each with `is_drift`, `p_val` and
+`distance`), `new_labels` and the two tag distributions;
+`monitoring.production_performance(current_fp)` scores the champion on the
+current window and returns `f1_at_promotion` and `f1_now`, or `None` when
+nothing is promoted; `registry.rollback()` moves `champion` back to
+`previous_champion` (§10).
 
 Create `dags/06_monitoring_and_retraining.py`. The thresholds are Dag
 **params**, so the policy is visible in the UI, overridable per run, and
@@ -49,14 +62,13 @@ from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
 
-from project_tagger import monitoring, registry
+from project_tagger import config, monitoring, registry
 
 DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 
 POLICY_PARAMS = {
-    "max_label_tvd": Param(0.15, type="number", description="Label-drift budget."),
-    "max_length_shift": Param(
-        0.25, type="number", description="Input-drift budget: relative change in mean text length."
+    "drift_p_val": Param(
+        0.05, type="number", description="A drift test with a p-value below this reports drift."
     ),
     "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
@@ -80,51 +92,88 @@ def monitoring_dag():
 (The function is `monitoring_dag` because `monitoring` is already the name of
 the imported module. The `dag_id` is what Airflow sees.)
 
-Measure, then decide:
+The drift task, `detect_drift`, runs in **another Python**. alibi-detect needs `numpy<2`, which
+Airflow's own environment cannot have, so the image has a second virtualenv
+just for it, `/opt/venvs/alibi`, and `config.ALIBI_PYTHON` is its interpreter.
+`@task.external_python` sends the function there: Airflow writes the
+function's source and its arguments to files, runs that interpreter on them in
+a subprocess, and reads the return value back. That has consequences you will
+see in the code below:
+
+- Everything the function uses is **imported inside it**. The module-level
+  imports of this file do not exist in that other Python.
+- Arguments and return value must be **plain data**: they are pickled to cross
+  the process boundary. Hence paths in, a dict of numbers out; never a
+  dataframe.
+- `expect_airflow=False`, because that virtualenv has no Airflow. The function
+  gets no context either. The threshold arrives as a template,
+  `"{{ params.drift_p_val }}"`, rendered before the subprocess starts, so it
+  arrives as a string, and `float()` converts it.
+
+This is the light version of what §15 recommends for teams with clashing
+dependencies: one container image per task, with `KubernetesPodOperator`.
+
+Measure first. The windows are written once; the drift tests and the
+performance check both read them:
 
 ```python dags/06_monitoring_and_retraining.py
     @task
-    def measure() -> dict[str, Any]:
-        report = monitoring.monitor()
-        drift = report["drift"]
-        print(
-            f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']} "
-            f"length shift={drift['mean_length_shift']:+.4f}"
-        )
-        if report["performance"]:
-            perf = report["performance"]
-            print(f"f1 at promotion={perf['f1_at_promotion']:.4f} now={perf['f1_now']:.4f}")
-        return report
+    def prepare_windows(*, run_id: str) -> dict[str, str]:
+        key = run_id.replace(":", "-").replace("+", "-")
+        windows = monitoring.prepare_windows(f"monitoring-{key}")
+        print(f"windows: {windows}")
+        return windows
 
+    @task.external_python(python=config.ALIBI_PYTHON, expect_airflow=False)
+    def detect_drift(windows: dict, p_val: str) -> dict:
+        from project_tagger import drift
+
+        return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
+
+    @task
+    def check_performance(windows: dict[str, str]) -> dict[str, Any] | None:
+        performance = monitoring.production_performance(windows["current"])
+        if performance:
+            print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        return performance
+```
+
+Then decide:
+
+```python dags/06_monitoring_and_retraining.py
     @task.branch
-    def decide(report: dict[str, Any], **context: Any) -> str:
-        drift, performance = report["drift"], report["performance"]
-        policy = context["params"]
+    def decide(
+        drift: dict[str, Any], performance: dict[str, Any] | None, *, params: dict[str, Any]
+    ) -> str:
+        label, length = drift["label_drift"], drift["length_drift"]
+        print(
+            f"label drift p={label['p_val']:.4g} length drift p={length['p_val']:.4g} "
+            f"new_labels={drift['new_labels']} policy={dict(params)}"
+        )
 
         if performance is None:
             print("No production model yet - train one.")
             return "request_retraining"
 
         f1_drop = performance["f1_at_promotion"] - performance["f1_now"]
-        print(f"f1_drop={f1_drop:.4f} label_tvd={drift['label_tvd']:.4f} policy={dict(policy)}")
+        print(f"f1_drop={f1_drop:.4f}")
 
-        if f1_drop >= policy["critical_f1_drop"]:
+        if f1_drop >= params["critical_f1_drop"]:
             return "rollback"
         if drift["new_labels"]:
             return "inspect"
         if (
-            f1_drop >= policy["max_f1_drop"]                                 # concept drift
-            or drift["label_tvd"] >= policy["max_label_tvd"]                 # target drift
-            or abs(drift["mean_length_shift"]) >= policy["max_length_shift"] # data drift
+            f1_drop >= params["max_f1_drop"]                    # concept drift
+            or label["p_val"] < params["drift_p_val"]           # target drift
+            or length["p_val"] < params["drift_p_val"]          # data drift
         ):
             return "request_retraining"
         return "continue_serving"
 ```
 
-`context["params"]` is the policy — the defaults in `POLICY_PARAMS`, or whatever this run
+`params` is the policy — the defaults in `POLICY_PARAMS`, or whatever this run
 was given. Each retraining condition watches one of the three kinds of drift
-in the table. `mean_length_shift` goes through `abs()` because text that
-gets shorter is as much drift as text that gets longer. Note the ordering: **a new label routes to `inspect`, not to
+in the table. Note the ordering: **a new label routes to `inspect`, not to
 `request_retraining`.** Retraining on data whose label space you have not understood yet is
 how you ship a worse model with full confidence.
 
@@ -136,16 +185,16 @@ by the task that starts another Dag:
     continue_serving = EmptyOperator(task_id="continue_serving")
 
     @task
-    def inspect(report: dict[str, Any]) -> None:
+    def inspect(drift: dict[str, Any]) -> None:
         print("MANUAL INSPECTION NEEDED")
-        print(f"  new labels: {report['drift']['new_labels']}")
-        print(f"  current distribution: {report['drift']['current_distribution']}")
+        print(f"  new labels: {drift['new_labels']}")
+        print(f"  current distribution: {drift['current_distribution']}")
 
     @task
     def rollback() -> dict[str, Any] | None:
-        pointer = registry.rollback()
-        print(f"rolled back to {pointer['run_id']}" if pointer else "nothing to roll back")
-        return pointer
+        champion = registry.rollback()
+        print(f"champion -> version {champion['version']}" if champion else "nothing to roll back to")
+        return champion
 
     request_retraining = ApprovalOperator(
         task_id="request_retraining",
@@ -176,14 +225,20 @@ in production. `TriggerDagRunOperator` starts another Dag: it creates a
 `manual__` run of `mlops` with the `conf` given, and with
 `wait_for_completion=False` it does not stay around to watch it.
 
+`rollback` moves the registry's `champion` alias back to `previous_champion`.
+Nothing is redeployed and no file is copied: whatever loads
+`models:/project_tagger@champion` gets the previous version from its next
+load on. That is what makes a rollback cheap enough to automate.
+
 Finish with the wiring:
 
 ```python dags/06_monitoring_and_retraining.py
-    report = measure()
-    branch = decide(report)
+    windows = prepare_windows()
+    drift = detect_drift(windows, "{{ params.drift_p_val }}")
+    branch = decide(drift, check_performance(windows))
 
     branch >> continue_serving
-    branch >> inspect(report)
+    branch >> inspect(drift)
     branch >> rollback()
     branch >> request_retraining >> trigger_retraining
 
@@ -196,14 +251,8 @@ There is no join at the end, because nothing needs to run after all of them.
 
 ### Run it
 
-Forcing the label-drift limit to zero makes `decide()` take the retraining
-branch, so you see the interesting path rather than whichever one your current
-data happens to deserve. (Only `rollback` or `inspect` would come first, and
-neither applies to the tutorial's data: no new labels, no 0.25 f1 drop.)
-
 ```bash
-docker compose exec airflow-scheduler \
-    airflow dags test monitoring --conf '{"max_label_tvd": 0.0}'
+docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
 > **This command takes about 70 seconds and looks frozen for 60 of them.** That
@@ -212,8 +261,13 @@ docker compose exec airflow-scheduler \
 > defaulting to Approve, because nobody is going to click the button. Let it
 > sit.
 
-**Checkpoint.** In order, with the minute-long wait between the second and
-third lines:
+**Checkpoint.** `decide` logs the two p-values: label drift around `7.7e-05`,
+length drift around `0.92`. The tag mix of the newest quarter really did move.
+`mlops` grows from about 6% of the older projects to about 16% of the newest,
+and `natural-language-processing` falls from 44% to 30%; the text length did
+not change. The label test is far below 0.05, so `decide` takes the retraining
+branch. Then, in order, with the minute-long wait between the second and third
+lines:
 
 ```
 Branch into request_retraining
@@ -239,13 +293,27 @@ the task without waiting for the timeout. Airflow records the answer either way
 back to its `defaults` stores the choice with the "who" left empty, which is how
 you tell "a person approved this" from "nobody was looking".
 
-> **Without the `--conf` override** the outcome depends on state, which is the
-> point of a monitor. If §10 promoted a model and the data has not moved,
-> `decide()` returns `continue_serving`, the retraining branch is skipped, and the
-> run is over in seconds. If there is no production model yet, `decide()` says
-> so — `No production model yet - train one.` — and takes the retraining
-> branch anyway, timeout included. Both are correct. Run it without `--conf`
-> to see which branch your current state picks.
+> **Change the policy, change the decision.** The threshold is a param, so a
+> run can be given a stricter one:
+>
+> ```bash
+> docker compose exec airflow-scheduler \
+>     airflow dags test monitoring --conf '{"drift_p_val": 0.00001}'
+> ```
+>
+> The label test's p-value is now above the threshold, so no test reports
+> drift. If §10 promoted a model, `decide()` returns `continue_serving`, the
+> retraining branch is skipped, and the run is over in seconds. If there is no
+> production model yet, `decide()` says so — `No production model yet - train
+> one.` — and takes the retraining branch anyway, timeout included. Both are
+> correct: the outcome depends on state and policy, which is the point of a
+> monitor.
+
+One caveat about `f1_now`. The current window is the newest quarter of the
+same table `mlops` trained on, so the champion has seen most of those rows,
+and its f1 there is flattering. In production the current window is rows that
+arrived *after* training, labelled since, which is what makes `f1_now` an
+honest measure of concept drift.
 
 Reference: [`solutions/06_monitoring_and_retraining.py`](../../solutions/06_monitoring_and_retraining.py).
 
@@ -273,6 +341,25 @@ revisit when the table stops fitting in a task.
 Which is also why `promotion_gate` in §10 compares against the current
 production model instead of a fixed threshold alone: a retrained model that is
 worse than what is serving should not ship just because a monitor fired.
+
+### Rolling back less often
+
+A rollback means a bad model reached production first. **Deployment
+strategies** shrink how much damage it can do before anyone notices:
+
+| Strategy | How the new model meets traffic |
+|---|---|
+| **canary** | a small share of requests (say 5%) goes to the new model; its metrics are compared with the champion's before the share grows |
+| **shadow** (or *dark canary*) | the new model receives a copy of real requests and its predictions are logged, never returned; it is judged on live data with no user affected |
+| **blue-green** | the new version runs alongside the old one, and traffic switches over all at once, with the old one kept ready to switch back |
+
+They belong to the serving layer, the service that answers prediction
+requests, which this project does not have: here `champion` switches all at
+once. The registry is where they start, though: a
+`challenger` alias next to `champion` is how a serving system knows which
+version gets the canary share or the shadow copy, and the promotion gate
+becomes "the challenger's live metrics beat the champion's" instead of a test
+set score.
 
 ---
 

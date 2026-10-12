@@ -42,9 +42,9 @@ conviene conocer:
   que filtrar: hay un run seleccionado, o el Dag tiene task groups o más de un
   tipo de operator — así que en `hello_airflow3` la ves en cuanto abres un run.
   Filtra por estado, task group, duración y **Min. map index** — "shows mapped tasks
-  expanded to at least this index". Una mapped task como `train_candidate`
+  expanded to at least this index". Una mapped task como `run_trials`
   (§10) es un único nodo colapsado hasta que subes ese valor; súbelo y cada
-  conjunto de hiperparámetros tiene su propio nodo.
+  instancia mapeada tiene su propio nodo.
 - **Download graph image**, la flecha abajo a la derecha del Graph.
 
 Las pestañas de la derecha dependen de lo que selecciones:
@@ -91,7 +91,7 @@ la pena declarar los params con tipos:
 
 ```python
 params={"greeting": Param("hello", type="string")}              # dags/01
-POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
+POLICY_PARAMS = {"drift_p_val": Param(0.05, type="number")}     # dags/06
 ```
 
 Un param string se convierte en un campo de texto, un number en uno numérico, un

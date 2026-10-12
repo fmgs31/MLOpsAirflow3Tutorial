@@ -1,21 +1,22 @@
-"""Lesson 3 - the DataOps Dag: extract -> validate -> transform -> validate.
+"""Lesson 3 - the DataOps Dag: extract & load -> validate -> transform -> validate.
 
-The first Dag that does real work. Every task is a slot you can swap for the
-vendor tool of a production stack, without changing the Dag's shape:
+The first Dag that does real work, and none of it happens inside Airflow:
+Airflow tells each tool when to run and checks the result.
 
-    extract_projects   -> AirbyteTriggerSyncOperator / FivetranOperator / an EL job
-    validate_*         -> GreatExpectationsOperator / SodaOperator / dbt test
-    transform          -> DbtCloudRunJobOperator / astronomer-cosmos task group
+    extract_and_load_*   Airbyte copies each CSV into a BigQuery table
+    validate_*           Great Expectations suites gate each raw table
+    transform            dbt builds `labeled_projects` (a join) and tests it
+    validate_transformed a final suite; only a pass emits the asset event
 
 Three things to watch for:
 
 * The Dag **produces Assets** (`outlets=[...]`). Finishing the producing task
   emits an asset event, and that event is what schedules the MLOps Dag - no
   cron guessing, no sensor, no polling.
-* Asset events carry metadata (`outlet_events[asset].extra`), so the consumer
-  can see the row count that triggered it.
-* Validation results move through XCom as small dicts; the dataframes never do.
-  Tasks exchange paths and counts, not payloads.
+* The Airbyte connection ids are **Variables**, read through a template at run
+  time, so the Dag file names no id that only exists in your Airbyte.
+* Validation results move through XCom as small dicts; the tables never do.
+  Tasks exchange names and counts, not payloads.
 
 Run it:
     airflow dags test dataops
@@ -26,6 +27,8 @@ from __future__ import annotations
 from typing import Any
 
 import pendulum
+from airflow.providers.airbyte.operators.airbyte import AirbyteTriggerSyncOperator
+from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import dag, task, task_group
 
 # Task code imports exceptions from the Task SDK. It is the namespace a remote
@@ -34,7 +37,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
-from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS
+from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -57,79 +60,101 @@ DEFAULT_ARGS = {
     doc_md=__doc__,
 )
 def dataops():
-    @task(outlets=[RAW_PROJECTS])
-    def extract_projects(*, outlet_events: OutletEventAccessorsProtocol) -> str:
-        """Land the source data. Returns a path, not a dataframe."""
-        config.ensure_dirs()
-        fp = data.extract()
-        df = data.load_raw(fp)
-        outlet_events[RAW_PROJECTS].extra = {"rows": len(df), "path": str(fp)}
-        return str(fp)
+    # Extract and load: Airbyte does the copying, Airflow only starts it and
+    # waits. `deferrable=True` hands the waiting to the triggerer, so no worker
+    # slot is held while the sync runs.
+    extract_and_load_projects = AirbyteTriggerSyncOperator(
+        task_id="extract_and_load_projects",
+        airbyte_conn_id="airbyte",
+        connection_id="{{ var.value.airbyte_projects_connection_id }}",
+        deferrable=True,
+        timeout=3600,
+        outlets=[RAW_PROJECTS],
+    )
+    extract_and_load_tags = AirbyteTriggerSyncOperator(
+        task_id="extract_and_load_tags",
+        airbyte_conn_id="airbyte",
+        connection_id="{{ var.value.airbyte_tags_connection_id }}",
+        deferrable=True,
+        timeout=3600,
+        outlets=[RAW_TAGS],
+    )
 
     @task
-    def validate_raw(fp: str) -> dict[str, Any]:
-        """Quality gate on the landing zone."""
-        result = validate.run_suite(data.load_raw(fp), "raw_projects")
+    def validate_projects() -> dict[str, Any]:
+        """Quality gate on the raw `projects` table."""
+        result = validate.run_suite(data.load_projects(), "projects")
         print(result.summary())
         if not result.passed:
             # AirflowFailException stops retries: a data-quality break will not
             # fix itself by running the same task again.
-            raise AirflowFailException(f"Raw data failed validation: {result.failures}")
+            raise AirflowFailException(f"projects failed validation: {result.failures}")
         return {"suite": result.suite, "results": result.results}
 
     @task
-    def transform(fp: str) -> str:
-        """Raw -> curated `labeled_projects` - the dbt model of a real stack, in pandas."""
-        df = data.transform(data.load_raw(fp))
-        out = data.save_labeled(df)
-        print(f"Wrote {len(df)} rows to {out}")
-        return str(out)
+    def validate_tags() -> dict[str, Any]:
+        """Quality gate on the raw `tags` table."""
+        result = validate.run_suite(data.load_tags(), "tags")
+        print(result.summary())
+        if not result.passed:
+            raise AirflowFailException(f"tags failed validation: {result.failures}")
+        return {"suite": result.suite, "results": result.results}
+
+    # Transform: dbt runs in its own virtualenv, so a BashOperator calls its
+    # executable. `dbt build` builds every model and then runs its tests; a
+    # failing test exits non-zero, and that fails the task.
+    transform = BashOperator(
+        task_id="transform",
+        bash_command=(
+            f"{config.DBT_BIN} build"
+            f" --project-dir {config.DBT_PROJECT_DIR}"
+            f" --profiles-dir {config.DBT_PROJECT_DIR}"
+        ),
+    )
 
     @task(outlets=[LABELED_PROJECTS])
-    def validate_transformed(
-        fp: str, *, outlet_events: OutletEventAccessorsProtocol
-    ) -> dict[str, Any]:
+    def validate_transformed(*, outlet_events: OutletEventAccessorsProtocol) -> dict[str, Any]:
         """Final gate. Only a passing run emits the asset event.
 
         Placing the outlet on the *validation* task, not the transform task, is
         the whole trick: downstream Dags are then scheduled on
         "good data arrived", never on "a task finished".
         """
-        df = data.load_labeled(fp)
+        df = data.load_labeled()
         result = validate.run_suite(df, "labeled_projects")
         print(result.summary())
         if not result.passed:
-            raise AirflowFailException(f"Labeled data failed validation: {result.failures}")
+            raise AirflowFailException(f"labeled_projects failed validation: {result.failures}")
 
         outlet_events[LABELED_PROJECTS].extra = {
             "rows": len(df),
             "tags": sorted(df["tag"].unique().tolist()),
-            "path": fp,
             "warnings": [r["expectation"] for r in result.failures],
         }
         return {"suite": result.suite, "rows": len(df), "results": result.results}
 
     @task_group(group_id="quality_report")
-    def quality_report(raw_report: dict[str, Any], curated_report: dict[str, Any]):
+    def quality_report(reports: list[dict[str, Any]]):
         """A task group nests tasks under one collapsible node in the UI."""
 
         @task
-        def summarize(raw: dict[str, Any], curated: dict[str, Any]) -> None:
-            for report in (raw, curated):
+        def summarize(reports: list[dict[str, Any]]) -> None:
+            for report in reports:
                 failed = [r["expectation"] for r in report["results"] if not r["passed"]]
                 print(f"{report['suite']}: {len(report['results'])} checks, failed={failed or 'none'}")
 
-        summarize(raw_report, curated_report)
+        summarize(reports)
 
-    raw_fp = extract_projects()
-    raw_report = validate_raw(raw_fp)
+    projects_report = validate_projects()
+    tags_report = validate_tags()
+    extract_and_load_projects >> projects_report
+    extract_and_load_tags >> tags_report
 
-    # `transform` waits on the raw gate even though it does not use its output.
-    curated_fp = transform(raw_fp)
-    raw_report >> curated_fp
+    # Fan-in: dbt joins the two tables, so it waits for both gates.
+    curated_report = validate_transformed()
+    [projects_report, tags_report] >> transform >> curated_report
 
-    curated_report = validate_transformed(curated_fp)
-    quality_report(raw_report, curated_report)
+    quality_report([projects_report, tags_report, curated_report])
 
 
 dataops()

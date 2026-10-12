@@ -1,82 +1,98 @@
-"""A filesystem stand-in for a model registry (MLflow, W&B, Vertex, SageMaker).
+"""The model registry: MLflow's, used through two aliases.
 
-The rule it exists to demonstrate: **big artifacts never travel through XCom.**
-Tasks write the model here and pass a run id - a short string - between them.
+Registering a model gives it a numbered *version* under one name
+(`project_tagger`). An *alias* is a movable label on one version:
+
+    champion            the version in production - what predict.py loads
+    previous_champion   the version champion pointed at before the last move
+
+Promoting moves `champion` to a new version; rolling back moves it back. No
+model file is copied: consumers ask for `models:/project_tagger@champion` and
+get whatever the alias points at.
+
+The rule this module exists to demonstrate: **big artifacts never travel
+through XCom.** Tasks pass a version number or a run id - short strings -
+and the model itself stays in MLflow.
 """
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
-
-import joblib
 
 from project_tagger import config
 
-PRODUCTION_POINTER = "production.json"
+
+def _client():
+    import mlflow
+    from mlflow import MlflowClient
+
+    mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+    return MlflowClient()
 
 
-def run_dir(run_id: str) -> Path:
-    return config.MODEL_REGISTRY / run_id
+def register(model_uri: str) -> str:
+    """Add the logged model as a new version. Returns the version number."""
+    import mlflow
+
+    mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+    version = mlflow.register_model(model_uri, config.REGISTERED_MODEL)
+    return str(version.version)
 
 
-def save_run(run_id: str, model, metrics: dict[str, Any]) -> str:
-    """Persist model + metrics under `run_id`. Returns the run id (the XCom payload)."""
-    directory = run_dir(run_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, directory / "model.joblib")
-    (directory / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    (directory / "meta.json").write_text(
-        json.dumps(
-            {"run_id": run_id, "created_at": datetime.now(timezone.utc).isoformat()}, indent=2
-        ),
-        encoding="utf-8",
-    )
-    return run_id
+def _version_by_alias(alias: str):
+    from mlflow.exceptions import MlflowException
+
+    try:
+        return _client().get_model_version_by_alias(config.REGISTERED_MODEL, alias)
+    except MlflowException:  # no such alias, or no such model yet
+        return None
 
 
-def load_metrics(run_id: str) -> dict[str, Any]:
-    return json.loads((run_dir(run_id) / "metrics.json").read_text(encoding="utf-8"))
-
-
-def load_model(run_id: str):
-    return joblib.load(run_dir(run_id) / "model.joblib")
-
-
-def list_runs() -> list[str]:
-    if not config.MODEL_REGISTRY.exists():
-        return []
-    return sorted(p.name for p in config.MODEL_REGISTRY.iterdir() if (p / "model.joblib").exists())
-
-
-def promote(run_id: str) -> dict[str, Any]:
-    """Point production at `run_id`, keeping the previous pointer for rollback."""
-    current = get_production()
-    pointer = {
-        "run_id": run_id,
-        "promoted_at": datetime.now(timezone.utc).isoformat(),
-        "previous_run_id": current.get("run_id") if current else None,
-        "metrics": load_metrics(run_id),
-    }
-    config.MODEL_REGISTRY.mkdir(parents=True, exist_ok=True)
-    (config.MODEL_REGISTRY / PRODUCTION_POINTER).write_text(
-        json.dumps(pointer, indent=2), encoding="utf-8"
-    )
-    return pointer
+def _describe(version) -> dict[str, Any]:
+    run = _client().get_run(version.run_id)
+    return {"version": str(version.version), "run_id": version.run_id, "metrics": dict(run.data.metrics)}
 
 
 def get_production() -> dict[str, Any] | None:
-    fp = config.MODEL_REGISTRY / PRODUCTION_POINTER
-    if not fp.exists():
-        return None
-    return json.loads(fp.read_text(encoding="utf-8"))
+    """The champion: its version, its run and the metrics it was promoted with."""
+    version = _version_by_alias(config.CHAMPION_ALIAS)
+    return _describe(version) if version else None
+
+
+def promote(version: str) -> dict[str, Any]:
+    """Point `champion` at `version`, keeping the old champion as `previous_champion`."""
+    client = _client()
+    current = _version_by_alias(config.CHAMPION_ALIAS)
+    if current is not None and str(current.version) != str(version):
+        client.set_registered_model_alias(config.REGISTERED_MODEL, config.PREVIOUS_ALIAS, current.version)
+    client.set_registered_model_alias(config.REGISTERED_MODEL, config.CHAMPION_ALIAS, version)
+    return {
+        **_describe(client.get_model_version(config.REGISTERED_MODEL, version)),
+        "previous_version": str(current.version) if current else None,
+    }
 
 
 def rollback() -> dict[str, Any] | None:
-    """Re-promote whatever production pointed at before the last promotion."""
-    current = get_production()
-    if not current or not current.get("previous_run_id"):
+    """Move `champion` back to `previous_champion`. None if there is nothing to go back to."""
+    previous = _version_by_alias(config.PREVIOUS_ALIAS)
+    if previous is None:
         return None
-    return promote(current["previous_run_id"])
+    return promote(str(previous.version))
+
+
+def load_model(alias: str = config.CHAMPION_ALIAS):
+    import mlflow.sklearn
+
+    from project_tagger.train import quiet_skops
+
+    _client()
+    with quiet_skops():
+        return mlflow.sklearn.load_model(f"models:/{config.REGISTERED_MODEL}@{alias}")
+
+
+def load_metrics(run_id: str) -> dict[str, Any]:
+    """The full nested metrics a training run logged as metrics.json."""
+    import mlflow
+
+    mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+    return mlflow.artifacts.load_dict(f"runs:/{run_id}/metrics.json")

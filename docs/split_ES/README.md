@@ -1,20 +1,29 @@
-# Aprende Apache Airflow 3 construyendo un pipeline de ML
+# Orquestación de MLOps con Apache Airflow 3
 
-Un tutorial práctico para **Airflow 3.3.1**. Vas a escribir siete Dags, un
-archivo cada vez, que crecen hasta formar un sistema que funciona: se extraen
-datos, se validan y se transforman, eso publica un **Asset**, el Asset dispara
-el entrenamiento del modelo, el mejor modelo se promociona a producción, y un
-Dag de monitorización decide si hay que reentrenar.
+Un tutorial práctico de MLOps: un sistema de machine learning construido con
+las herramientas que usa un equipo real, y orquestado con **Airflow 3.3.1**.
+Airbyte carga los datos en BigQuery, Great Expectations los comprueba, dbt los
+transforma, Optuna busca los hiperparámetros del modelo, MLflow lo registra y decide qué está en
+producción, y alibi-detect vigila el drift. Tú escribes los siete Dags que lo
+ejecutan todo, un archivo cada vez: el pipeline de datos publica un **Asset**,
+el Asset dispara el entrenamiento, el mejor modelo se promociona, y un Dag de
+monitorización decide si hay que reentrenar.
 
-Todo corre en tu máquina con Docker. Sin cuenta en la nube, sin warehouse, sin
-registrarte en ningún sitio. Cada comando de este tutorial se ejecutó contra un
-stack real de Airflow 3.3.1 — ver [Qué se verificó de verdad](../verified_ES.md).
+Sigue la [lección de orquestación](https://madewithml.com/courses/mlops/orchestration/)
+de Made With ML, reconstruida para Airflow 3 y preparada para ejecutarse, paso
+a paso, en tu máquina. Airflow, MLflow y Airbyte corren en local con Docker; el
+warehouse es BigQuery, en un proyecto de Google Cloud que creas en la §9. Los
+comandos se comprueban contra un stack real — ver [Qué se verificó de
+verdad](../verified_ES.md) para saber cuáles, y cuándo.
 
-**Se asume:** Python, la línea de comandos y Docker instalado. No hace falta
-experiencia con Airflow — esto enseña Airflow 3 tal y como es hoy, y nada sobre
-versiones anteriores.
+**Se asume:** Python, la línea de comandos, Docker instalado, y una cuenta de
+Google para el Free Trial de Google Cloud (pide una tarjeta, y no cobra nada
+salvo que pases a una cuenta de pago; la §9 lo explica). No hace falta experiencia
+con Airflow — esto enseña Airflow 3 tal y como es hoy, y nada sobre versiones
+anteriores.
 
-**Tiempo:** ~30 minutos hasta tu primer Dag run. Un día para los siete si los
+**Tiempo:** ~30 minutos hasta tu primer Dag run. Más o menos una hora para
+montar el stack de datos de la §9. Uno o dos días para los siete Dags si los
 escribes tú, que es la idea.
 
 ---
@@ -49,21 +58,24 @@ Material de referencia: [CLI cheatsheet](../cheatsheet.md) ·
 
 ```
 dags/                       your workspace - empty until you write the seven Dags
-solutions/                  the finished version of each, numbered in reading order
+dbt/                        your dbt workspace - empty until you create the dbt project (§9)
+solutions/                  the finished version of each Dag, and of the dbt project
 src/project_tagger/         the ML project Airflow orchestrates (imports no Airflow)
-  config.py                 paths and thresholds
-  data.py                   extract / clean / transform / split
-  validate.py               a tiny expectation-suite runner
-  train.py  evaluate.py     TF-IDF + SGD classifier, metrics and slices
-  registry.py               filesystem stand-in for a model registry
-  monitoring.py             drift and live-performance checks
+  config.py                 names and settings: tables, MLflow, Optuna, thresholds
+  data.py                   read the warehouse, snapshots, preprocessing, split
+  validate.py               Great Expectations suites and the split checks
+  train.py  evaluate.py     the classifier, the Optuna search, MLflow logging
+  registry.py               MLflow model registry: register, promote, roll back
+  monitoring.py  drift.py   drift windows, alibi-detect tests, live performance
   predict.py                inference against the promoted model
   assets.py                 the Airflow Assets the Dags share
   callbacks.py              deadline-alert callbacks
+datasets/                   the two source CSVs Airbyte loads
+secrets/                    where your GCP key goes (ignored by git)
 tests/                      Dag integrity (your dags/), unit tests, README checks
 docs/                       cheatsheet, troubleshooting, the Dag appendix (§16)
 scripts/                    up / reset / native setup / README sync
-docker-compose.yaml         LocalExecutor + Postgres + Simple auth
+docker-compose.yaml         Airflow (LocalExecutor) + Postgres + MLflow
 ```
 
 ## Para seguir leyendo
@@ -72,6 +84,13 @@ docker-compose.yaml         LocalExecutor + Postgres + Simple auth
 - [Referencia del Task SDK](https://airflow.apache.org/docs/task-sdk/stable/api.html)
 - [Assets y scheduling data-aware](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/assets.html)
 - [Índice de paquetes de providers](https://airflow.apache.org/docs/apache-airflow-providers/)
-- El pipeline de ML que orquesta este tutorial sigue la [lección de orquestación
-  de Made With ML](https://madewithml.com/courses/mlops/orchestration/) — útil
-  por el razonamiento de MLOps; su código de Airflow es de una versión anterior.
+- [El curso de MLOps de Made With ML](https://madewithml.com/courses/mlops/),
+  cuya lección de orquestación sigue este tutorial, y cuyas lecciones
+  anteriores (el stack de datos, testing, experiment tracking, monitorización)
+  profundizan en cada herramienta. Su código de Airflow es de una versión
+  anterior.
+- La documentación de cada herramienta: [Airbyte](https://docs.airbyte.com/),
+  [BigQuery](https://cloud.google.com/bigquery/docs), [dbt](https://docs.getdbt.com/),
+  [Great Expectations](https://docs.greatexpectations.io/),
+  [Optuna](https://optuna.readthedocs.io/), [MLflow](https://mlflow.org/docs/latest/),
+  [alibi-detect](https://docs.seldon.io/projects/alibi-detect/).

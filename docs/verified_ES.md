@@ -6,8 +6,59 @@
 
 El cuerpo del tutorial dice lo que vas a ver. Este documento dice cómo se
 sabe: cada cifra y afirmación de allí se leyó de un stack vivo, y esto es el
-registro de cuándo, y de cómo se midió. Nada de esto es un paso que ejecutar.
+registro de cuándo, y de cómo se midió — salvo lo que la primera sección de
+abajo lista como pendiente. Nada de esto es un paso que ejecutar.
 Sáltatelo, o vuelve cuando quieras saber hasta qué punto fiarte de un número.
+
+## Aún no verificado en un stack real: la reescritura del stack de datos (2026-10-12)
+
+Las secciones 9 a 12 se reescribieron para usar las herramientas reales —
+Airbyte, BigQuery, dbt, Great Expectations, Optuna, MLflow, alibi-detect — en
+lugar de sustitutos locales. El registro del 2026-09-09 de más abajo describe la
+versión anterior de esas secciones.
+
+Comprobado sin un stack real, el 2026-10-12:
+
+- La imagen se construye: `apache/airflow:3.3.1` (Python 3.13) más los
+  providers de Airbyte y Google, GX Core 1.24, Optuna 5.0, mlflow-skinny 3.17 y
+  skops, resueltos contra los constraints de 3.3.1; dbt-core 1.12.5 con
+  dbt-bigquery 1.12.1 en `/opt/venvs/dbt`; alibi-detect 0.13.0 sobre Python
+  3.12 en `/opt/venvs/alibi`.
+- En esa imagen, `pytest tests` con `DAGS_DIR=solutions`: 41 passed, 1 skipped
+  (el test de drift, que necesita alibi-detect). Eso incluye los tests de
+  integridad de Dags, el montaje de todos los bloques "Constrúyelo" en los dos
+  idiomas, y la comprobación de que los archivos de dbt que se teclean en la
+  §9 coinciden con `solutions/dbt_transforms/`.
+- Los pasos de dbt de la §9, ejecutados en esa imagen: `dbt init
+  --skip-profile-setup`, el cambio del bloque `models:` y los cuatro archivos
+  dan un proyecto que `dbt parse` acepta, con 1 model, 4 tests y 2 sources.
+- Los tests unitarios ejecutan Optuna y MLflow de verdad, sobre SQLite: crear
+  un study, añadir trials desde dos "workers", entrenar, registrar dos
+  versiones, promocionar, hacer rollback, cargar el champion.
+- El test de drift pasa dentro de un entorno con alibi-detect 0.13.
+- Las cifras de la §12 — label drift p ≈ 7.7e-05, length drift p ≈ 0.92,
+  `mlops` de ~6 % a ~16 %, NLP del 44 % al 30 % — salen de ejecutar
+  `drift.detect_drift` sobre `datasets/projects.csv` unido a `tags.csv`.
+- `datasets/tags.csv` coincide con el `dataset.csv` original en las 764 filas
+  una vez agrupados los tres tags más raros.
+
+Pendiente del primer recorrido real:
+
+- Los pasos de Google Cloud y Airbyte de la §9, incluidas todas las etiquetas
+  de la consola y de la UI que se citan, los comandos de `abctl`, y que la
+  Connection de Airbyte llegue a `host.docker.internal:8000` con el par
+  `client-id` / `client-secret`.
+- La afirmación de que el sandbox de BigQuery no admite las escrituras de
+  Airbyte, que se apoya en la descripción del sandbox de Google y en informes
+  de la comunidad de Airbyte.
+- Las URLs de origen, que necesitan que este repo sea público.
+- Todas las comprobaciones de la §9 a la §12: recuentos de las suites, el
+  `PASS=5` de dbt, las tasks deferrable de Airbyte bajo `airflow dags test`,
+  los 21 runs de MLflow, la demo del sensor con `labeled_projects_copy`,
+  `@task.external_python` en el Dag de monitorización.
+- `abctl local uninstall` (§15).
+
+## 2026-09-09
 
 Contra un stack vivo de `apache/airflow:3.3.1` (Postgres 16, LocalExecutor,
 api-server + scheduler + dag-processor + triggerer), el 2026-09-09:

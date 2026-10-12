@@ -1,39 +1,78 @@
 ## 10. The MLOps Dag
 
-`dags/04_mlops.py` — no time schedule: each `labeled_projects` asset event
+`dags/04_mlops.py` has no time schedule: each `labeled_projects` asset event
 triggers it.
 
 ```
 prepare_data ─► validate_training_data ─┐
-                            candidates ─┴─► train_candidate×N ─► select_best
+create_study ───────────────────────────┤
+trial_budget ───────────────────────────┴─► run_trials×N ─► best_params ─► train_best
 ─► evaluate_best ─► promotion_gate ─► promote_model ──────► done
                                   └─► keep_current_model ─┘
 ```
 
-| Task | Production option |
-|---|---|
-| the asset trigger + `prepare_data` | your warehouse client — or, as here, let the asset event carry the data's path |
-| `validate_training_data` | Great Expectations / Pandera / Soda, plus split checks |
-| `candidates` + `train_candidate` (one per hyperparameter set) | Optuna / Ray Tune / a service that distributes the hyperparameter search |
-| `select_best` + `evaluate_best` | your experiment tracker (MLflow, W&B) |
-| `promotion_gate` → `promote_model` | the move to production in your model registry (MLflow, say) |
+| Task | Tool | What it does |
+|---|---|---|
+| `prepare_data` | BigQuery | copies `labeled_projects` to a file this run will use throughout |
+| `validate_training_data` | Great Expectations | the §9 suite again, plus checks on the train/test split |
+| `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna** | searches the hyperparameters, spread over several tasks |
+| `train_best`, `evaluate_best` | **MLflow** tracking | fits the final model and records it: parameters, metrics, the model file |
+| `promotion_gate` → `promote_model` | **MLflow** Model Registry | decides whether the new model goes to production |
+
+### The ML stack
+
+Two more tools, both running in the compose stack, need no account.
+
+**Optuna** searches hyperparameters. A **study** is one search, with one goal
+(here: maximise f1). A **trial** is one attempt: Optuna picks a value for each
+hyperparameter, the code trains and scores a model with them, and the score
+goes back to the study. Optuna does not try every combination: it uses the
+scores so far to choose the next values. The study is stored in a database, here
+the `optuna` database on the stack's Postgres, so several processes can add
+trials to the same study at the same time. That is what lets Airflow spread
+the search over several tasks.
+
+**MLflow** records experiments. Each training is a **run**, with its
+**parameters** (the hyperparameters used), its **metrics** (f1, precision...)
+and its **artifacts** (files: here a `metrics.json` and the model itself). Runs
+belong to an **experiment**, `project_tagger`. The **Model Registry**, also in
+MLflow, gives a model a name and numbered **versions**. An **alias** is a label
+you move from one version to another. This project uses two:
+
+```
+champion             the version in production: what predict.py loads
+previous_champion    the version champion pointed at before its last move
+```
+
+Promoting a model means moving `champion`; rolling back means moving it back.
+No file is copied: consumers ask for `models:/project_tagger@champion` and get
+whatever version the alias points at.
+
+The MLflow server is the `mlflow` service in the compose file. It stores runs
+and the registry in a SQLite file and the model files in a folder of its own,
+on a Docker volume, and the tasks reach it at `http://mlflow:5000`
+(`MLFLOW_TRACKING_URI`). Open its UI:
+
+**Checkpoint.** <http://localhost:5000> shows MLflow with one experiment,
+`Default`, and no runs. `project_tagger` appears with the first run.
 
 ### Build it
 
-New workload functions: `data.split(df)` returns a `(train, test)` pair with
-the same share of each tag in both; `validate.check_split(train, test)` is a
-second suite, on the split; `train_module.SEARCH_SPACE` is a list of
-hyperparameter dicts and `train_module.train_from_files(hparams)` fits one
-model, returning `(model, metrics)`; `registry.save_run`, `load_metrics`,
-`promote` and `get_production` are the repo's *model registry*, on the
-filesystem: it stores each trained model with its metrics and records which
-one is in production; `config.MIN_F1_TO_PROMOTE` is the minimum f1 for moving a
-model to production (0.65, or the value of `PROJECT_TAGGER_MIN_F1` if set).
+New workload functions: `data.save_snapshot(df, key)` writes a dataframe to
+`data/snapshots/<key>/` and `data.load_snapshot(fp)` reads it back;
+`data.preprocess(df)` cleans the text and collapses the rarest tags into
+`other`; `data.split(df)` returns a `(train, test)` pair with the same share of
+each tag in both; `validate.check_split(train, test)` is a second suite, on the
+split. In `train_module` (`train.py`): `create_study`, `run_trials`,
+`best_trial` and `train_model`. In `registry`: `register`, `load_metrics`,
+`get_production` and `promote`. `config.MIN_F1_TO_PROMOTE` is the minimum f1
+for moving a model to production (0.65, or the value of `PROJECT_TAGGER_MIN_F1`
+if set).
 
 Create `dags/04_mlops.py`:
 
 ```python dags/04_mlops.py
-"""Lesson 4 - the MLOps Dag: asset-triggered training, tuning, and promotion."""
+"""Lesson 4 - the MLOps Dag: asset-triggered tuning, training, and promotion."""
 
 from __future__ import annotations
 
@@ -42,7 +81,7 @@ from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import Asset, dag, task
+from airflow.sdk import Asset, Param, dag, task
 from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
@@ -56,6 +95,10 @@ DEFAULT_ARGS = {
 }
 
 
+def run_key(run_id: str) -> str:
+    return run_id.replace(":", "-").replace("+", "-")
+
+
 @dag(
     dag_id="mlops",
     schedule=[LABELED_PROJECTS],
@@ -65,6 +108,10 @@ DEFAULT_ARGS = {
     default_args=DEFAULT_ARGS,
     tags=["tutorial", "mlops"],
     doc_md=__doc__,
+    params={
+        "n_trials": Param(20, type="integer", minimum=1, description="Optuna trials in total."),
+        "n_workers": Param(4, type="integer", minimum=1, description="Tasks the trials are spread over."),
+    },
 )
 def mlops():
 ```
@@ -73,30 +120,35 @@ def mlops():
 runs when they update. Several assets in the list mean *all* of them;
 `AssetAny(a, b)` means either.
 
+`params` declares the search budget as two Dag params (§4): 20 trials in
+total, spread over 4 tasks. `run_key` turns a run id such as
+`manual__2026-02-01T03:00:00+00:00` into something safe in a file name and a
+study name.
+
 **Validate before you train.** `dataops` validated `labeled_projects` when it
-wrote it to the warehouse, and this Dag validates it again before training on
-it. That is not
+built it, and this Dag validates it again before training on it. That is not
 redundant: it was a different Dag run, possibly hours ago, this run may have been
-triggered by hand, and what the model is fitted on is the snapshot on disk *now*.
+triggered by hand, and what the model is fitted on is the data as it is *now*.
 Add the first two tasks:
 
 ```python dags/04_mlops.py
     @task
     def prepare_data(
-        *, triggering_asset_events: Mapping[Asset, Sequence[Any]]
-    ) -> dict[str, int]:
+        *, triggering_asset_events: Mapping[Asset, Sequence[Any]], run_id: str
+    ) -> str:
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
-        df = data.load_labeled()
-        train_df, test_df = data.split(df)
-        return {"num_train": len(train_df), "num_test": len(test_df)}
+        config.ensure_dirs()
+        fp = data.save_snapshot(data.load_labeled(), run_key(run_id))
+        print(f"snapshot: {fp}")
+        return str(fp)
 
     @task
-    def validate_training_data(split_sizes: dict[str, int]) -> dict[str, Any]:
-        df = data.load_labeled()
+    def validate_training_data(snapshot_fp: str) -> dict[str, Any]:
+        df = data.load_snapshot(snapshot_fp)
         table = validate.run_suite(df, "labeled_projects")
-        split = validate.check_split(*data.split(df))
+        split = validate.check_split(*data.split(data.preprocess(df)))
         print(f"{table.summary()} {split.summary()}")
         if not (table.passed and split.passed):
             raise AirflowFailException(
@@ -104,17 +156,23 @@ Add the first two tasks:
             )
         return {
             "rows": len(df),
-            "split_sizes": split_sizes,
             "warnings": [r["expectation"] for r in table.failures + split.failures],
-            "results": table.results + split.results,
         }
 ```
 
 `triggering_asset_events` works as in §8 (hence the `Mapping`, `Sequence` and
-`Asset` imports); on a run you start by hand it is empty. `validate_training_data` re-reads the table
-rather than receiving it from `prepare_data`: XComs are for metadata, not
-payloads (§6). The second half of its check is one a table-level suite cannot do at
-all — it looks at the **split**:
+`Asset` imports); on a run you start by hand it is empty. `run_id` is another
+context key (§4), received by name.
+
+`prepare_data` reads the warehouse table once and writes it to a **snapshot**,
+a file named after the run, and every later task reads that file. The table can
+change while a run is in flight (a `dataops` run can finish in the middle), and
+the snapshot keeps every task of this run on the same rows, including a task
+that is retried an hour later. The task returns the file's path: XComs carry a
+pointer to the data, not the data itself (§6).
+
+The second half of `validate_training_data`'s check is one a table-level suite
+cannot do at all. It looks at the **split**:
 
 ```python
 # src/project_tagger/validate.py — check_split()
@@ -129,71 +187,100 @@ Each problem in those comments — a class only in train, three rows of a class,
 the same project in both splits — passes a column-level suite without a
 warning, and still produces a model whose f1 on the test set means nothing. That f1 is
 exactly what `promotion_gate`, later in this section, compares against the
-production model.
+production model. These checks span two dataframes, which a GX suite (one
+batch of data at a time) does not express, so they are plain Python returning
+the same result shape.
 
-**Dynamic task mapping** creates, while the Dag runs, one task instance per
-hyperparameter set, and a later task gathers all the results. Three tasks:
+**Distributed tuning.** One Optuna study for the run, then **dynamic task
+mapping**: while the Dag runs, Airflow creates one task instance per item of a
+list, and each adds trials to the same study. Four tasks:
 
 ```python dags/04_mlops.py
     @task
-    def candidates() -> list[dict[str, Any]]:
-        return train_module.SEARCH_SPACE
-
-    @task(max_active_tis_per_dag=2)
-    def train_candidate(hparams: dict[str, Any], **context: Any) -> dict[str, Any]:
-        config.ensure_dirs()
-        run_id = f"{context['run_id']}__{context['ti'].map_index}".replace(":", "-").replace("+", "-")
-        model, metrics = train_module.train_from_files(hparams)
-        registry.save_run(run_id, model, metrics)
-        print(f"run={run_id} hparams={hparams} f1={metrics['f1']:.4f}")
-        return {"run_id": run_id, "f1": metrics["f1"], "hparams": hparams}
+    def create_study(*, run_id: str) -> str:
+        return train_module.create_study(f"{config.REGISTERED_MODEL}-{run_key(run_id)}")
 
     @task
-    def select_best(results: list[dict[str, Any]]) -> dict[str, Any]:
-        best = max(results, key=lambda r: r["f1"])
-        print(f"best={best['run_id']} f1={best['f1']:.4f} of {len(results)} candidates")
+    def trial_budget(*, params: Mapping[str, Any]) -> list[int]:
+        base, extra = divmod(params["n_trials"], params["n_workers"])
+        return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
+
+    @task(max_active_tis_per_dag=2)
+    def run_trials(n_trials: int, study_name: str, snapshot_fp: str) -> list[dict[str, Any]]:
+        train_df, _ = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+        results = train_module.run_trials(study_name, n_trials, train_df)
+        print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
+        return results
+
+    @task
+    def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
+        best = train_module.best_trial(study_name)
+        print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
         return best
 ```
 
-`candidates` returns a list; in the wiring below,
-`train_candidate.expand(hparams=candidates())` creates one task instance per
-item when the Dag runs — four here, one per hyperparameter set — and each is
-retried, logged and inspected on its own. `context['ti'].map_index` tells the
-task which of the four it is (0 to 3). The task that gathers the results,
-`select_best`, just takes a `list` of the four return values. Note the return value of `train_candidate`: a run id, an
-f1 and the hparams — small and JSON-serialisable. The model itself stays in the
-registry.
+`create_study` creates the study with `load_if_exists=True` (in `train.py`),
+so a retried task loads the study instead of failing on it.
 
-**How many of the four train at once is a choice, and it is written in
-`train_candidate`'s decorator.**
+`trial_budget` reads the Dag params through the `params` context key and splits
+the trials over the workers: 20 over 4 gives `[5, 5, 5, 5]`. In the wiring
+below, `run_trials.partial(...).expand(n_trials=trial_budget())` creates one
+`run_trials` instance per item of that list, when the Dag runs. Each instance
+is retried, logged and inspected on its own. `.partial()` takes the arguments
+every instance shares; `.expand()` the one that differs.
+
+`run_trials` scores each trial on a validation split carved out of the
+training data, and logs every trial to MLflow as a run of its own. The test
+split is never seen during the search, so the final model's test score is
+still an honest estimate.
+
+`best_params` asks the study for its best trial. It takes the mapped results
+anyway: that argument is what makes it wait for every `run_trials` instance,
+and it arrives as a list, one item per instance.
+
+**How many workers run at once is a choice, and it is written in
+`run_trials`' decorator.**
 Nothing about `.expand()` says "in parallel"; it says "these are four separate
 task instances". Whether they overlap is the executor's business, bounded by the
 narrowest of the limits from §3 — and `max_active_tis_per_dag=2` on that task is
 deliberately the narrowest one here. So the fan-out runs **two at a time, in two
 waves**. Raise the cap and all four overlap; remove it and `[core]
 max_active_tasks_per_dag` (16) is the next limit up. A cap on a training task
-is not a toy setting: four models fitting at once is four copies of the data in
+is not a toy setting: four searches at once is four copies of the data in
 memory. When the limited resource is shared — say, a database that accepts only
 a few connections — a `pool` (§3) sets the same kind of cap across every task
 and Dag that uses it.
 
-> **Gotcha:** the parameter is named `hparams`, not `params`. A `@task`
-> receives context keys by parameter name (§4), and `params` is reserved — a task argument
-> called `params` gets the Dag's params, not your data.
+> **`params` is reserved.** A `@task` receives context keys by parameter name
+> (§4), and `params` is one of them: `trial_budget` gets the Dag's params
+> because its argument is called `params`. Name a data argument `params` by
+> mistake and it receives the Dag's params instead of your data.
 
-The **promotion gate**, `promotion_gate`, decides whether the best candidate
-goes to production. Unlike the gates in §9, it does not fail the task when the
+Now the final model, and the **promotion gate**, which decides whether it goes
+to production. Unlike the gates in §9, the gate does not fail the task when the
 answer is no: it is a *branch task*, a task that picks which of the Dag's two
-**branches** continues. Add `evaluate_best`, `promotion_gate`, `promote_model`
-and the two `EmptyOperator`s the branches need:
+**branches** continues. Add `train_best`, `evaluate_best`, `promotion_gate`,
+`promote_model` and the two `EmptyOperator`s the branches need:
 
 ```python dags/04_mlops.py
     @task
-    def evaluate_best(best: dict[str, Any]) -> dict[str, Any]:
-        metrics = registry.load_metrics(best["run_id"])
+    def train_best(best: dict[str, Any], snapshot_fp: str, *, run_id: str) -> dict[str, Any]:
+        train_df, test_df = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+        trained = train_module.train_model(
+            best["params"], train_df, test_df,
+            run_name=f"final-{run_key(run_id)}",
+            tags={"airflow_run_id": run_id},
+        )
+        version = registry.register(trained["model_uri"])
+        print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
+        return {"run_id": trained["run_id"], "version": version, "f1": trained["metrics"]["f1"]}
+
+    @task
+    def evaluate_best(trained: dict[str, Any]) -> dict[str, Any]:
+        metrics = registry.load_metrics(trained["run_id"])
         for name, slice_metrics in metrics.get("slices", {}).items():
             print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
-        return {"run_id": best["run_id"], "metrics": metrics}
+        return {**trained, "metrics": metrics}
 
     @task.branch
     def promotion_gate(evaluation: dict[str, Any]) -> str:
@@ -214,28 +301,36 @@ and the two `EmptyOperator`s the branches need:
     def promote_model(
         evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
     ) -> dict[str, Any]:
-        pointer = registry.promote(evaluation["run_id"])
+        champion = registry.promote(evaluation["version"])
         outlet_events[PRODUCTION_MODEL].extra = {
-            "run_id": pointer["run_id"],
-            "f1": pointer["metrics"]["f1"],
-            "previous_run_id": pointer["previous_run_id"],
+            "version": champion["version"],
+            "f1": champion["metrics"]["f1"],
+            "previous_version": champion["previous_version"],
         }
-        print(f"promoted {pointer['run_id']} (was {pointer['previous_run_id']})")
-        return pointer
+        print(f"champion -> version {champion['version']} (was {champion['previous_version']})")
+        return champion
 
     keep_current_model = EmptyOperator(task_id="keep_current_model")
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 ```
 
-`evaluate_best` prints the best candidate's f1 on each **evaluation slice**: a
-subgroup of the test set picked out by a rule in `evaluate.py` (short texts,
-and texts that mention transformers, BERT or LLMs). These are not the time slices of
-§7; they catch a model whose overall f1 looks fine while one kind of input
-fails.
+`train_best` fits the final model on the whole training split with the best
+trial's hyperparameters, scores it on the test split, and logs it to MLflow,
+model file included. Then it **registers** it: every final model becomes a new
+version of `project_tagger`, promoted or not, so a rejected candidate is still
+there to inspect. The task returns a run id, a version number and an f1, small
+and JSON-serialisable. The model itself stays in MLflow.
+
+`evaluate_best` reads back the `metrics.json` the run logged and prints the f1
+on each **evaluation slice**: a subgroup of the test set picked out by a rule
+in `evaluate.py` (short texts, and texts that mention transformers, BERT or
+LLMs). These are not the time slices of §7; they catch a model whose overall f1
+looks fine while one kind of input fails.
 
 A `@task.branch` returns the `task_id` to run; the other branch is **skipped**,
-not failed. A candidate that misses the threshold is a normal outcome — the run
-succeeds and production is left alone. `promote_model` emits the second asset,
+not failed. A candidate that misses the threshold, or scores below the current
+champion, is a normal outcome: the run succeeds and production is left alone.
+`promote_model` moves the `champion` alias and emits the second asset,
 `production_model`, which nothing consumes yet; point a Dag's `schedule` at it
 and the edge appears in the Assets graph.
 
@@ -252,23 +347,28 @@ and `always`.
 Finish the file with the wiring:
 
 ```python dags/04_mlops.py
-    snapshot = validate_training_data(prepare_data())
-    results = train_candidate.expand(hparams=candidates())
-    snapshot >> results
+    snapshot = prepare_data()
+    gate = validate_training_data(snapshot)
+    study = create_study()
+    results = run_trials.partial(study_name=study, snapshot_fp=snapshot).expand(
+        n_trials=trial_budget()
+    )
+    gate >> results
 
-    evaluation = evaluate_best(select_best(results))
-    gate = promotion_gate(evaluation)
+    evaluation = evaluate_best(train_best(best_params(study, results), snapshot))
+    decision = promotion_gate(evaluation)
 
-    gate >> promote_model(evaluation) >> done
-    gate >> keep_current_model >> done
+    decision >> promote_model(evaluation) >> done
+    decision >> keep_current_model >> done
 
 
 mlops()
 ```
 
-`snapshot >> results` wires `validate_training_data` upstream of *every*
-mapped instance of `train_candidate`, carrying no data, only the order. The two
-`gate >>` lines give `promotion_gate` its two branches and join them at `done`.
+`gate >> results` wires `validate_training_data` upstream of *every* mapped
+instance of `run_trials`, carrying no data, only the order: no trial starts on
+data that failed its checks. The two `decision >>` lines give `promotion_gate`
+its two branches and join them at `done`.
 
 ### See the wiring
 
@@ -294,11 +394,11 @@ production_model`.
 `mlops`'s own page can show the same connections. Open it, switch to **Graph**,
 and change **Options → Dependencies** (§5):
 
-- **Only tasks** — the ten tasks you just wrote, nothing else.
+- **Only tasks** — the twelve tasks you just wrote, nothing else.
 - **External conditions** — the same tasks, plus `labeled_projects` flowing
   into the Dag and `production_model` coming out of `promote_model`.
 - **All Dag Dependencies** — the chain the Assets page draws: `dataops` with
-  the two assets it produces, then `mlops` with its tasks inside it, then
+  the assets it produces, then `mlops` with its tasks inside it, then
   `production_model`.
 
 ### Watch the whole chain fire
@@ -315,8 +415,7 @@ Nothing happens on the first line: `mlops`'s schedule is an asset, and no
 event has arrived. The second line is enough to start everything, and you did not
 trigger anything — that is the §7 rule: `dataops` has a cron and a 2025
 `start_date`, so the moment it is un-paused the scheduler creates the run for
-the most recent 03:00 UTC it missed, and starts it. Give it about half a
-minute, then:
+the most recent 03:00 UTC it missed, and starts it. Give it a few minutes, then:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs dataops -o plain
@@ -325,23 +424,23 @@ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 
 **Checkpoint.** `dataops` has a run whose id begins `scheduled__` and ends in
 `T03:00:00+00:00` — today's date, or yesterday's if it is before 03:00 UTC —
-with that as its `logical_date` and a `start_date` of a moment ago. (The
+with that as its `logical_date` and a `start_date` of a few minutes ago. (The
 `manual__` run from `airflow dags test` in §9 is there too.) And `mlops` has a
 run nobody triggered: id beginning `asset_triggered__`, `running` if you were
-quick, `success` once its four candidates have trained, with an **empty**
+quick, `success` once its trials and the final model are done, with an **empty**
 `logical_date` — asset-triggered runs have no logical date, like a run
 triggered from the CLI without one (§7). In the UI, open **Assets** and you will see the edge that
 caused it.
 
-Know where the wait comes from. Almost all of it is `dataops` itself running
-its five tasks — `extract_projects` downloads the source file, so that part depends on
-your connection. The Airflow part is small: one scheduler loop to create the
-`dataops` run after the un-pause, and one more to create the `mlops` run once
-the asset event is recorded (§3, §8). If nothing has appeared after a minute, check that both Dags
-are un-paused and that the `dataops` run succeeded — a failed
+Know where the wait comes from. Almost all of it is the tools: the two Airbyte
+syncs in `dataops`, then twenty trials and a final fit in `mlops`. The Airflow
+part is small: one scheduler loop to create the `dataops` run after the
+un-pause, and one more to create the `mlops` run once the asset event is
+recorded (§3, §8). If nothing has appeared after a few minutes, check that both
+Dags are un-paused and that the `dataops` run succeeded — a failed
 `validate_transformed` emits no event, by design.
 
-Now the two waves of `train_candidate`. Open that `mlops` run in the UI, click `train_candidate`,
+Now the two waves of `run_trials`. Open that `mlops` run in the UI, click `run_trials`,
 and read its **Task Instances** tab — four rows, map index 0 to 3, each with
 its own start and end time. Two start together; each of the other two starts
 only when one of the first pair has finished. The *Show Gantt* view (§5),
@@ -352,11 +451,21 @@ available now that a run is selected, draws the same thing as two waves of bars.
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain
 ```
 
-Four `train_candidate` rows with `map_index` 0–3; 2 and 3 each start after one
+Four `run_trials` rows with `map_index` 0–3; 2 and 3 each start after one
 of 0 and 1 has ended. And `keep_current_model` is `skipped`
 while `promote_model` is `success`: `promotion_gate` took the `promote_model`
 branch, because
-the best f1 cleared the threshold and there was no production model to beat.
+the f1 cleared the threshold and there was no production model to beat.
+
+Then look at what the run left in MLflow, at <http://localhost:5000>:
+
+**Checkpoint.** The `project_tagger` experiment has 21 runs: twenty named
+`project_tagger-asset_triggered__…-trial-0` to `-trial-19`, and one named
+`final-asset_triggered__…`. Sort by the `f1` column to see the search at work.
+Open the final run: its parameters are the best trial's, its metrics include
+the per-tag and per-slice f1, and under **Artifacts** are `metrics.json` and
+the model. Under **Models**, `project_tagger` has version 1, with the alias
+`champion`.
 
 > **Try it, once more by hand:**
 >
@@ -365,9 +474,12 @@ the best f1 cleared the threshold and there was no production model to beat.
 > ```
 >
 > A `manual__` run this time. When it succeeds, one more event, one more
-> `asset_triggered__` run of `mlops`. Every success of the producer emits an
-> event, whichever way the producer was started — and the consumer runs on it
-> (events that arrive while `mlops` is busy share its next run, §8).
+> `asset_triggered__` run of `mlops`, and one more model version in MLflow.
+> Every success of the producer emits an event, whichever way the producer
+> was started — and the consumer runs on it (events that arrive while `mlops`
+> is busy share its next run, §8). Whether version 2 becomes `champion`
+> depends on its f1 against version 1's: same data, a different search, so it
+> can go either way, and `promotion_gate`'s log says which.
 
 > **Try it, the other branch.** Set the bar impossibly high and watch
 > `promotion_gate` take the `keep_current_model` branch. The threshold is read from an environment variable inside
@@ -379,7 +491,8 @@ the best f1 cleared the threshold and there was no production model to beat.
 > ```
 >
 > `promotion_gate` logs `below threshold 0.99 - not promoting`, `promote_model`
-> is skipped, `keep_current_model` runs, and the Dag run still succeeds.
+> is skipped, `keep_current_model` runs, and the Dag run still succeeds. In
+> MLflow the new version is registered, and `champion` has not moved.
 
 Stuck anywhere? [`solutions/04_mlops.py`](../../solutions/04_mlops.py).
 

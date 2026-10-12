@@ -9,8 +9,14 @@ simple_auth_manager_passwords.json.generated
 # Tutorial artifacts
 data/
 !data/.gitkeep
-model_registry/
-!model_registry/.gitkeep
+dbt/*/target/
+dbt/*/logs/
+solutions/dbt_transforms/target/
+solutions/dbt_transforms/logs/
+
+# Credentials: the GCP service-account key lives here (§9). Never commit it.
+secrets/*
+!secrets/.gitkeep
 
 # Python
 __pycache__/

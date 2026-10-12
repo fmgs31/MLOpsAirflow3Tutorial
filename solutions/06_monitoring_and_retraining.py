@@ -10,6 +10,9 @@ explicit branches:
 
 Pieces on show:
 
+* `@task.external_python` - the drift checks run alibi-detect, which needs
+  libraries Airflow's own environment cannot have, so they run in a separate
+  virtualenv baked into the image.
 * `@task.branch` picking one arm of the response.
 * `ApprovalOperator` (human-in-the-loop): retraining waits for a person to
   click Approve in the UI. `defaults` + `response_timeout` mean an unattended
@@ -31,18 +34,17 @@ from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
 
-from project_tagger import monitoring, registry
+from project_tagger import config, monitoring, registry
 
 DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 
 # Thresholds that turn a measurement into a decision. Exposed as Dag params so
 # the policy is visible in the UI, overridable per run, and recorded with the
 # run that used it:
-#     airflow dags test monitoring --conf '{"max_label_tvd": 0.0}'
+#     airflow dags test monitoring --conf '{"drift_p_val": 1.0}'
 POLICY_PARAMS = {
-    "max_label_tvd": Param(0.15, type="number", description="Label-drift budget."),
-    "max_length_shift": Param(
-        0.25, type="number", description="Input-drift budget: relative change in mean text length."
+    "drift_p_val": Param(
+        0.05, type="number", description="A drift test with a p-value below this reports drift."
     ),
     "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
@@ -62,40 +64,57 @@ POLICY_PARAMS = {
 )
 def monitoring_dag():
     @task
-    def measure() -> dict[str, Any]:
-        report = monitoring.monitor()
-        drift = report["drift"]
-        print(
-            f"label TVD={drift['label_tvd']:.4f} new_labels={drift['new_labels']} "
-            f"length shift={drift['mean_length_shift']:+.4f}"
-        )
-        if report["performance"]:
-            perf = report["performance"]
-            print(f"f1 at promotion={perf['f1_at_promotion']:.4f} now={perf['f1_now']:.4f}")
-        return report
+    def prepare_windows(*, run_id: str) -> dict[str, str]:
+        """Read the warehouse once and write the two windows drift is measured on."""
+        key = run_id.replace(":", "-").replace("+", "-")
+        windows = monitoring.prepare_windows(f"monitoring-{key}")
+        print(f"windows: {windows}")
+        return windows
+
+    # Runs with alibi-detect's interpreter, not Airflow's. The function body is
+    # shipped to that interpreter, so everything it uses is imported inside it,
+    # and its arguments and return value must be plain data. `expect_airflow=False`:
+    # that virtualenv has no Airflow, and the function needs none.
+    @task.external_python(python=config.ALIBI_PYTHON, expect_airflow=False)
+    def detect_drift(windows: dict, p_val: str) -> dict:
+        from project_tagger import drift
+
+        return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
+
+    @task
+    def check_performance(windows: dict[str, str]) -> dict[str, Any] | None:
+        performance = monitoring.production_performance(windows["current"])
+        if performance:
+            print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        return performance
 
     @task.branch
-    def decide(report: dict[str, Any], **context: Any) -> str:
-        drift, performance = report["drift"], report["performance"]
-        policy = context["params"]
+    def decide(
+        drift: dict[str, Any], performance: dict[str, Any] | None, *, params: dict[str, Any]
+    ) -> str:
+        label, length = drift["label_drift"], drift["length_drift"]
+        print(
+            f"label drift p={label['p_val']:.4g} length drift p={length['p_val']:.4g} "
+            f"new_labels={drift['new_labels']} policy={dict(params)}"
+        )
 
         if performance is None:
             print("No production model yet - train one.")
             return "request_retraining"
 
         f1_drop = performance["f1_at_promotion"] - performance["f1_now"]
-        print(f"f1_drop={f1_drop:.4f} label_tvd={drift['label_tvd']:.4f} policy={dict(policy)}")
+        print(f"f1_drop={f1_drop:.4f}")
 
-        if f1_drop >= policy["critical_f1_drop"]:
+        if f1_drop >= params["critical_f1_drop"]:
             return "rollback"
         if drift["new_labels"]:
             # An unseen label means the schema/label space moved. Retraining on
             # data you do not understand yet is how you ship a worse model.
             return "inspect"
         if (
-            f1_drop >= policy["max_f1_drop"]                                 # concept drift
-            or drift["label_tvd"] >= policy["max_label_tvd"]                 # target drift
-            or abs(drift["mean_length_shift"]) >= policy["max_length_shift"] # data drift
+            f1_drop >= params["max_f1_drop"]                    # concept drift
+            or label["p_val"] < params["drift_p_val"]           # target drift
+            or length["p_val"] < params["drift_p_val"]          # data drift
         ):
             return "request_retraining"
         return "continue_serving"
@@ -103,16 +122,16 @@ def monitoring_dag():
     continue_serving = EmptyOperator(task_id="continue_serving")
 
     @task
-    def inspect(report: dict[str, Any]) -> None:
+    def inspect(drift: dict[str, Any]) -> None:
         print("MANUAL INSPECTION NEEDED")
-        print(f"  new labels: {report['drift']['new_labels']}")
-        print(f"  current distribution: {report['drift']['current_distribution']}")
+        print(f"  new labels: {drift['new_labels']}")
+        print(f"  current distribution: {drift['current_distribution']}")
 
     @task
     def rollback() -> dict[str, Any] | None:
-        pointer = registry.rollback()
-        print(f"rolled back to {pointer['run_id']}" if pointer else "nothing to roll back")
-        return pointer
+        champion = registry.rollback()
+        print(f"champion -> version {champion['version']}" if champion else "nothing to roll back to")
+        return champion
 
     # Human-in-the-loop gate. The task sits in `awaiting_input` and shows a
     # prompt in the UI; on Reject, everything downstream is skipped.
@@ -138,11 +157,12 @@ def monitoring_dag():
         reset_dag_run=True,
     )
 
-    report = measure()
-    branch = decide(report)
+    windows = prepare_windows()
+    drift = detect_drift(windows, "{{ params.drift_p_val }}")
+    branch = decide(drift, check_performance(windows))
 
     branch >> continue_serving
-    branch >> inspect(report)
+    branch >> inspect(drift)
     branch >> rollback()
     branch >> request_retraining >> trigger_retraining
 

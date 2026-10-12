@@ -87,6 +87,23 @@ object storage y el modelo en un registry. Airflow serializa el valor al
 guardarlo y acepta más que JSON — un `datetime`, un `set`, incluso un dataframe
 —, pero que quepa no significa que convenga.
 
+**Toda task tiene que poder ejecutarse dos veces sin problema.** `"retries": 1`
+en `DEFAULT_ARGS` significa que una task que falla se vuelve a ejecutar. Así
+que escribe cada task para que sea **idempotente**: ejecutarla dos veces deja
+el mismo resultado que ejecutarla una. Una task que añade filas, incrementa un
+contador o envía un email en cada intento no lo es: un reintento duplica las
+filas, la cuenta o el email. Las formas habituales de conseguirlo:
+
+- **Sobrescribe, no añadas.** Reemplaza la tabla o el archivo entero, o borra
+  primero lo que vas a escribir.
+- **Incluye el run en el nombre de las salidas.** Un archivo cuya ruta contiene el run
+  id es el mismo archivo en cada intento.
+- **Crea solo si no existe.** `CREATE TABLE IF NOT EXISTS`, por ejemplo. El
+  servicio `extra-databases` del archivo de compose (§2) funciona así: crea su
+  base de datos solo si todavía no está.
+
+La §9 y la §10 señalan dónde hacen esto sus tasks.
+
 Ahora la cabecera del Dag y los tres primeros operators:
 
 ```python dags/02_operators_and_xcoms.py
@@ -526,7 +543,8 @@ Las dos se definen de tres maneras:
   este stack, que no define ninguna.
 - **Como variable de entorno** `AIRFLOW_CONN_<ID>` / `AIRFLOW_VAR_<CLAVE>`. No
   pasan por la base de datos ni aparecen en la UI. Así define el archivo de
-  compose `fs_default`, la Connection que usa el `FileSensor` de la §11.
+  compose `google_cloud_default`, la Connection que usa el sensor de BigQuery
+  de la §11, y `fs_default`, la que usa por defecto un `FileSensor`.
 - **En un secrets backend** (Vault, AWS Secrets Manager…), lo habitual en
   producción (§15).
 
@@ -535,7 +553,7 @@ Las plantillas acceden a ellas con `{{ conn.warehouse.host }}` y
 
 > Una task que consulta cualquiera de las dos no toca la metadata database.
 > Primero mira las variables de entorno `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` — así
-> encuentra `fs_default` sin preguntar a nadie — y, si no está ahí, se la pide
+> encuentra `google_cloud_default` sin preguntar a nadie — y, si no está ahí, se la pide
 > al API server por la Task Execution API, que es lo que permite a un worker
 > remoto resolver una Connection sin tener acceso a la metadata database.
 >

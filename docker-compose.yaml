@@ -9,6 +9,12 @@
 #   airflow-scheduler      scheduling + LocalExecutor task slots
 #   airflow-dag-processor  parses Dag files - its own mandatory process
 #   airflow-triggerer      runs async triggers for deferrable tasks
+#   extra-databases        one-shot: creates the `optuna` database on postgres
+#   mlflow                 experiment tracking + model registry, UI on :5000
+#
+# Airbyte is NOT in this file: it runs in its own Kubernetes-in-Docker cluster,
+# installed with `abctl` (§9), and the Airflow containers reach it on the host
+# at host.docker.internal:8000.
 ---
 x-airflow-common: &airflow-common
   build: .
@@ -46,7 +52,25 @@ x-airflow-common: &airflow-common
     # dag-processor (parsing) and the scheduler (LocalExecutor runs tasks there).
     PYTHONPATH: /opt/airflow/src
     PROJECT_TAGGER_DATA_DIR: /opt/airflow/data
-    PROJECT_TAGGER_MODEL_REGISTRY: /opt/airflow/model_registry
+    # --- The data stack (§9) -------------------------------------------------
+    # Your GCP project and the service-account key you downloaded in §9. Every
+    # Google client in the containers (BigQuery, dbt, the Airflow connection)
+    # reads the same key file.
+    GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+    BQ_DATASET: mlops_course
+    BQ_LOCATION: ${BQ_LOCATION:-US}
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/secrets/gcp-key.json
+    AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: '{"conn_type": "google_cloud_platform", "extra": {"key_path": "/opt/airflow/secrets/gcp-key.json", "project": "${GCP_PROJECT_ID:-}"}}'
+    # Great Expectations and dbt send usage statistics unless told not to.
+    GX_ANALYTICS_ENABLED: "false"
+    DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+    # --- The ML stack (§10) --------------------------------------------------
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+    # Silences a hint MLflow prints for coding assistants on every import.
+    MLFLOW_DISABLE_AGENT_HINT: "1"
+    # Optuna keeps every trial of a study here, so tasks running in parallel
+    # can share one study.
+    OPTUNA_STORAGE: postgresql+psycopg2://airflow:airflow@postgres/optuna
   volumes:
     # `dags/` is the Dag folder Airflow parses - the one you write into.
     # `solutions/` is the finished version of every lesson, mounted read-only
@@ -56,7 +80,6 @@ x-airflow-common: &airflow-common
     - ./solutions:/opt/airflow/solutions:ro
     - ./src:/opt/airflow/src
     - ./data:/opt/airflow/data
-    - ./model_registry:/opt/airflow/model_registry
     - ./logs:/opt/airflow/logs
     - ./config:/opt/airflow/config
     - ./tests:/opt/airflow/tests
@@ -68,10 +91,22 @@ x-airflow-common: &airflow-common
     # it those tests skip themselves and prove nothing.
     - ./docs:/opt/airflow/docs:ro
     - ./scripts:/opt/airflow/scripts:ro
+    # Your dbt workspace: you create the dbt project in it in §9, the way you
+    # create Dag files in dags/. Read-write, because dbt also writes target/
+    # and logs/ next to the project.
+    - ./dbt:/opt/airflow/dbt
+    # The GCP service-account key (§9). Git ignores this folder.
+    - ./secrets:/opt/airflow/secrets:ro
+  # host.docker.internal is how the containers reach Airbyte on the host. Docker
+  # Desktop defines it already; this line defines it on Linux too.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
+    extra-databases:
+      condition: service_completed_successfully
 
 services:
   postgres:
@@ -87,6 +122,50 @@ services:
       interval: 10s
       retries: 5
       start_period: 5s
+    restart: always
+
+  # Creates the database Optuna keeps next to Airflow's. Runs on every `up` and
+  # does nothing if it already exists - an idempotent task, the property §6
+  # asks of every task you write.
+  extra-databases:
+    image: postgres:16
+    environment:
+      PGPASSWORD: airflow
+    command:
+      - bash
+      - -c
+      - >-
+        psql -h postgres -U airflow -tAc "SELECT 1 FROM pg_database WHERE datname = 'optuna'" | grep -q 1
+        || psql -h postgres -U airflow -c "CREATE DATABASE optuna"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Experiment tracking and the model registry (§10). Runs, metrics and
+  # registered models live in a SQLite file; model files in an artifact folder
+  # the server hands out, so the Airflow containers need no shared volume.
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.17.0
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=sqlite:////mlflow/mlflow.db
+      - --artifacts-destination=/mlflow/artifacts
+      - --serve-artifacts
+      # The server rejects requests whose Host header it does not know. The
+      # Airflow containers call it `mlflow`; your browser calls it `localhost`.
+      - --allowed-hosts=mlflow:*,localhost:*,127.0.0.1:*
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - mlflow-volume:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 15s
+      retries: 5
+      start_period: 15s
     restart: always
 
   airflow-init:
@@ -173,3 +252,4 @@ services:
 
 volumes:
   postgres-db-volume:
+  mlflow-volume:

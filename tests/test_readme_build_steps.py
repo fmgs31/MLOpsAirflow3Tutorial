@@ -81,6 +81,33 @@ def test_assembled_files_import_without_errors(assembled) -> None:
     assert set(dagbag.dag_ids) == set(EXPECTED_FILES.values())
 
 
+DBT_BLOCK = re.compile(
+    r"^```\w+ (?P<path>dbt/dbt_transforms/[\w./-]+)\n(?P<body>.*?)^```", re.DOTALL | re.MULTILINE
+)
+DBT_SOLUTION = REPO_ROOT / "solutions" / "dbt_transforms"
+
+
+@pytest.mark.parametrize("tutorial", TUTORIALS, ids=lambda p: p.name)
+def test_dbt_files_typed_in_the_tutorial_match_the_solution(tutorial: Path) -> None:
+    """§9 has the reader create the dbt project's files, one fenced block each.
+
+    A block fenced as ```sql dbt/dbt_transforms/models/... is a whole file;
+    the files must be exactly the finished ones in solutions/dbt_transforms/,
+    which the dataops Dag's `transform` task was tested against.
+    """
+    if not sections(tutorial) or not DBT_SOLUTION.is_dir():
+        pytest.skip(f"{tutorial.name} or solutions/dbt_transforms not available here")
+    files: dict[str, str] = {}
+    for section in sections(tutorial):
+        for match in DBT_BLOCK.finditer(section.read_text(encoding="utf-8")):
+            files[match["path"]] = files.get(match["path"], "") + match["body"]
+    assert files, "no dbt file blocks found"
+    for path, body in files.items():
+        solution = DBT_SOLUTION / path.removeprefix("dbt/dbt_transforms/")
+        assert solution.is_file(), f"{path} has no counterpart in solutions/dbt_transforms/"
+        assert body == solution.read_text(encoding="utf-8"), f"{path} differs from {solution}"
+
+
 def test_each_file_defines_its_dag(assembled) -> None:
     folder, files = assembled
     for path, dag_id in EXPECTED_FILES.items():

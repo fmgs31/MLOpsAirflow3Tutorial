@@ -39,8 +39,8 @@ between them. At the other end of that row are the controls worth knowing:
   than one kind of operator — so on `hello_airflow3` you see it once you open a
   run. It filters by state, task group,
   duration, and **Min. map index** — "shows mapped tasks expanded to at least
-  this index". A mapped task like `train_candidate` (§10) is one collapsed node
-  until you raise it; raise it and each hyperparameter set gets its own.
+  this index". A mapped task like `run_trials` (§10) is one collapsed node
+  until you raise it; raise it and each mapped instance gets its own.
 - **Download graph image**, the arrow at the bottom right of the Graph.
 
 The tabs on the right follow what you select:
@@ -86,7 +86,7 @@ worth declaring with types:
 
 ```python
 params={"greeting": Param("hello", type="string")}              # dags/01
-POLICY_PARAMS = {"max_label_tvd": Param(0.15, type="number")}   # dags/06
+POLICY_PARAMS = {"drift_p_val": Param(0.05, type="number")}     # dags/06
 ```
 
 A string param becomes a text field, a number a numeric one, an enum a dropdown,

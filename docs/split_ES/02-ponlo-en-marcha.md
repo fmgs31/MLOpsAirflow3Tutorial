@@ -1,6 +1,17 @@
 ## 2. Ponlo en marcha
 
-### Docker (recomendado, y en Windows la única opción fuera de WSL2)
+Hay dos formas de instalarlo, y la elección decide hasta dónde puedes llegar:
+
+| Instalación | Cubre | Ejecuta |
+|---|---|---|
+| **Docker** | el tutorial entero, de la §3 a la §16 | Airflow, Postgres y MLflow, más los virtualenvs de dbt y alibi-detect, todo desde `docker-compose.yaml` |
+| **Nativa** | solo de la §3 a la §8 | solo Airflow, en un virtualenv de Python en tu máquina |
+
+A partir de la §9, el pipeline necesita más que Airflow: el servidor de MLflow,
+la base de datos de Optuna y dos virtualenvs más, que solo monta el stack de
+Docker. Si piensas hacer el tutorial entero, usa Docker.
+
+### Docker (recomendado, y obligatorio a partir de la §9)
 
 Airflow no tiene soporte nativo en Windows. En Windows usa Docker Desktop, o haz
 la instalación nativa dentro de WSL2.
@@ -48,15 +59,22 @@ Simple auth manager en vez de FAB — Flask-AppBuilder, el provider que da a
 Airflow usuarios, roles y una página de login. Menos piezas en juego mientras
 aprendes.
 
+Dos servicios de la lista no son Airflow. `mlflow` es MLflow (§1), con su UI
+en <http://localhost:5000>; lo usas en la §10. `extra-databases` se ejecuta una
+vez al arrancar, crea en el mismo Postgres una base de datos para Optuna
+(§10), y termina. El resto del stack de datos,
+un proyecto de Google Cloud y Airbyte, lo montas en la §9; nada antes de la §9
+necesita ninguno de los dos.
+
 > **Auth:** está activado `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true`, así
 > que la UI no tiene login, y el puerto 8080 se publica solo en `127.0.0.1` — la
 > dirección de loopback — así que nada de fuera de tu máquina puede llegar a él.
 > No despliegues esta configuración en ningún otro sitio.
 
 Un script más, para más adelante. Todo lo que el stack acumula — runs, logs de
-tasks, los datos y modelos que escriben los Dags — sobrevive a un reinicio de
-los contenedores, porque vive en un volumen de Docker y en las carpetas
-`data/`, `model_registry/` y `logs/` de este repo (la §3 vuelve sobre esto).
+tasks, los snapshots que escriben los Dags, los runs y modelos de MLflow —
+sobrevive a un reinicio de los contenedores, porque vive en volúmenes de Docker
+y en las carpetas `data/` y `logs/` de este repo (la §3 vuelve sobre esto).
 Para tirarlo todo y empezar de cero, en Linux, macOS, WSL2 o Git Bash:
 
 ```bash
@@ -70,7 +88,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
 Te pregunta antes de borrar, y `up.sh` / `up.ps1` vuelve a levantar el stack. No
-toca `dags/` — los archivos que escribas sobreviven a un reset. Ningún paso de
+toca `dags/` — los archivos que escribas sobreviven a un reset — ni nada fuera
+del stack de este repo: tus tablas de BigQuery y Airbyte se quedan como están. Ningún paso de
 este tutorial lo necesita; está aquí para el día en que algo se atasque y
 [troubleshooting](../troubleshooting.md) no haya ayudado.
 
@@ -91,11 +110,20 @@ este tutorial lo necesita; está aquí para el día en que algo se atasque y
 > archivo guardado en tu máquina es un archivo dentro de Airflow un momento
 > después. No hay que copiar nada.
 
-### Nativo (Linux / macOS / WSL2)
+### Nativo (Linux / macOS / WSL2; solo de la §3 a la §8)
 
 ```bash
 ./scripts/setup-native.sh
 ```
+
+> **La instalación nativa cubre Airflow, y por tanto de la §3 a la §8.** A
+> partir de la §9, el pipeline necesita también los servicios del archivo de
+> compose (MLflow, la base de datos de Optuna en Postgres) y los dos
+> virtualenvs que la imagen construye para dbt y alibi-detect (§9, §12).
+> Recrearlos a mano es posible, y las rutas son ajustes de `config.py`
+> (`PROJECT_TAGGER_DBT_BIN`, `PROJECT_TAGGER_ALIBI_PYTHON`,
+> `MLFLOW_TRACKING_URI`, `OPTUNA_STORAGE`), pero este tutorial no lo recorre:
+> de la §9 en adelante, usa el stack de Docker.
 
 Lo que hace ese script, y por qué importa cada línea:
 
@@ -158,8 +186,8 @@ del entorno en vez de editar `airflow.cfg`. El stack de Docker usa el mismo
 mecanismo en [`docker-compose.yaml`](../../docker-compose.yaml).
 
 > **Las connections por defecto no se crean solas.** `fs_default` se añade a mano
-> arriba porque `FileSensor` (§11) la necesita. En Docker el archivo de compose
-> la aporta como `AIRFLOW_CONN_FS_DEFAULT`.
+> arriba porque un `FileSensor` la usa salvo que se le indique otra (§6). En
+> Docker el archivo de compose la aporta como `AIRFLOW_CONN_FS_DEFAULT`.
 
 Y después, o bien el proceso todo-en-uno:
 

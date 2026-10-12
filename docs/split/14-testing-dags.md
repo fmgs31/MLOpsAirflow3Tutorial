@@ -1,6 +1,7 @@
 ## 14. Testing Dags
 
-Four levels — and the first of them checks the seven files you wrote.
+Five levels of tests on the code — the first of them checks the seven files
+you wrote — and one more on the data.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
 These catch, before the file reaches Airflow, the failures that would otherwise
@@ -26,7 +27,7 @@ def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag):
 They test **your `dags/` folder**, and they encode what this tutorial expects:
 seven specific `dag_id`s; every Dag with tags, a `doc_md` and an owner that is
 not `airflow`; `retries` of at least one on every Dag that does real work;
-`dataops` producing both assets; `mlops` scheduled on `labeled_projects` and
+`dataops` producing its three assets; `mlops` scheduled on `labeled_projects` and
 validating before it trains; no cycles. The suite also greps the sources for
 constructs from older Airflow versions — `schedule_interval=`, `days_ago(`,
 `airflow.operators.`, `execution_date`, `SubDagOperator`, `sla=`. Most Airflow
@@ -41,6 +42,22 @@ Apart from `assets.py`, which defines the Asset objects, nothing in
 `src/project_tagger/` imports Airflow, so the ML code is testable without a scheduler
 in the loop. That separation is deliberate: Airflow orchestrates the
 code, it does not contain it.
+
+They do not need the warehouse or the MLflow server either, and that is
+deliberate too. A test that queries BigQuery is slow, needs credentials and
+fails when the network does. So each test builds the dataframe a query would
+have returned and passes it in: the GX suites, the split checks and the drift
+windows all take a dataframe, not a table name. Optuna and MLflow run for
+real, but against SQLite files in a temporary folder: the test points
+`config.OPTUNA_STORAGE` and `config.MLFLOW_TRACKING_URI` there with pytest's
+`monkeypatch`, which replaces a value for the length of one test, then tunes, trains, registers, promotes and rolls back. The
+drift test needs alibi-detect, which lives only in its own virtualenv (§12),
+so in Airflow's environment it is **skipped**, not failed.
+
+**Data tests** — the GX suites and dbt's tests (§9). They are tests too, but on
+the data instead of the code, so they run where the data is: in every pipeline
+run, as gates, not in CI. A code test proves the pipeline does what you meant;
+a data test proves today's data is what the pipeline expects. You need both.
 
 **Whole-run tests** — `airflow dags test <dag_id>` executes a real Dag run
 inside the command itself (§4), and `airflow tasks test <dag_id> <task_id>`
@@ -64,19 +81,22 @@ The integrity, unit and documentation tests are one `pytest` run:
 docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 ```
 
-`airflow-cli` is not one of the five services `docker compose ps` lists: it is
+`airflow-cli` is not one of the services `docker compose ps` lists: it is
 a one-off container the compose file defines under a profile, which `run`
 creates for that command and `--rm` removes afterwards.
 
-**Checkpoint.** A row of dots and `36 passed`, in well under a minute:
+**Checkpoint.** A row of dots, one `s`, and `41 passed, 1 skipped`, in
+well under a minute:
 
 ```
-....................................                                     [100%]
-36 passed in 7.11s
+............................s.............                               [100%]
+41 passed, 1 skipped in 20.75s
 ```
 
-No scheduler was involved and no Dag ran. That is the point: every one of those
-36 tests is fast enough to run on every commit, which is what makes them worth having.
+The `s` is the drift test, skipped as described above. No scheduler was
+involved, no Dag ran, and nothing reached BigQuery or the MLflow server. That
+is the point: every one of those tests is fast enough to run on every commit,
+which is what makes them worth having.
 
 When one fails, the message says which file and what is missing — `mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`,

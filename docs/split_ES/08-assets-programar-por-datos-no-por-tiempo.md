@@ -1,7 +1,8 @@
 ## 8. Assets: programar por datos, no por tiempo
 
 Un **Asset** es un nombre que le das a un conjunto de datos; por ejemplo,
-`labeled_projects`, la tabla limpia que escribe `dataops`. Airflow no lee esos
+`labeled_projects`, la tabla de entrenamiento que construye `dataops` en el
+warehouse. Airflow no lee esos
 datos: solo conoce el nombre y registra cada vez que se actualizan.
 
 Los assets que usa este tutorial ya están definidos, en
@@ -13,14 +14,17 @@ from airflow.sdk import Asset
 
 LABELED_PROJECTS = Asset(
     name="labeled_projects",
+    uri=_bigquery_uri("labeled_projects"),   # bigquery://<project>/mlops_course/labeled_projects
     group="dataset",
     extra={"layer": "warehouse", "owner": "data-engineering"},
 )
 ```
 
-`name` es lo que identifica al asset. `group` y `extra` son descripciones que
-la UI enseña en la página del asset; este `extra` describe el asset en sí, no
-un evento concreto.
+`name` es lo que identifica al asset en tus Dags. `uri` es la dirección de los
+datos reales: aquí la tabla de BigQuery, con tu Project ID (§9), en el esquema
+`bigquery://` que registra el provider de Google.
+`group` y `extra` son descripciones que la UI enseña en la página del asset;
+este `extra` describe el asset en sí, no un evento concreto.
 
 En el código de un Dag, el asset se nombra con ese objeto, `LABELED_PROJECTS`.
 Usarlo tiene dos lados.
@@ -58,9 +62,9 @@ task que falla no escribe evento, y en eso consiste toda la garantía de
 seguridad: a un consumidor no lo puede arrancar un productor que no terminó.
 
 En este tutorial, el productor de `labeled_projects` es `validate_transformed`,
-la última de las cuatro tasks de `dataops` del diagrama de la §1, que escribirás
-en la §9. El outlet va en esa task de **validación**, no en `transform`, la task
-anterior, que es la que escribe los datos: si la validación falla, la task no
+el último paso de `dataops` en el diagrama de la §1, que escribirás en la §9.
+El outlet va en esa task de **validación**, no en `transform`, la task
+anterior, que es la que construye la tabla: si la validación falla, la task no
 escribe evento, así que a `mlops` no lo pueden arrancar datos que no la
 pasaron. Esa es la idea en una línea: **el consumidor se
 programa con "llegaron datos buenos", no con un cron que adivina cuándo habrá
@@ -71,19 +75,19 @@ cuando la task termina con éxito. **`outlet_events`** es lo que permite a la
 task preparar ese evento antes. Funciona como un dict con una clave por cada
 outlet de la task: `outlet_events[LABELED_PROJECTS]` representa el evento que la
 task va a emitir para `labeled_projects`, y el dict que asignes a su `.extra`
-se guarda dentro de ese evento — aquí, cuántas filas validó la task y dónde
-están. Una task que no toca
+se guarda dentro de ese evento — aquí, cuántas filas validó la task y qué tags
+encontró. Una task que no toca
 `outlet_events` emite sus eventos igualmente, con el `extra` vacío. La task lo
 recibe declarando un parámetro con ese nombre, igual que recibe `ti` en la §6:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
-def validate_transformed(fp: str, *, outlet_events: OutletEventAccessorsProtocol) -> dict:
-    df = data.load_labeled(fp)
+def validate_transformed(*, outlet_events: OutletEventAccessorsProtocol) -> dict:
+    df = data.load_labeled()
     result = validate.run_suite(df, "labeled_projects")
     if not result.passed:
         raise AirflowFailException(...)
-    outlet_events[LABELED_PROJECTS].extra = {"rows": len(df), "path": fp}
+    outlet_events[LABELED_PROJECTS].extra = {"rows": len(df), "tags": sorted(df["tag"].unique())}
     return {...}
 ```
 
@@ -128,12 +132,11 @@ salen más adelante en este tutorial:
 
 Hay más; la §15 explica cómo se usan cuatro de ellas.
 
-Aquí los assets **solo tienen nombre**. Un asset también puede tener una **URI**,
-la dirección de sus datos reales (`s3://bucket/labeled_projects.csv`, por
-ejemplo). Este tutorial no le pone ninguna porque la ruta de `data/` no es la
-misma dentro del contenedor que en la instalación nativa de la §2. En
-producción dale a cada asset la URI de sus datos, para que la UI diga dónde
-están.
+La URI es opcional. `production_model`, el asset que emite `mlops` cuando
+promociona un modelo (§10), solo tiene nombre: el modelo vive en el registry de
+MLflow, y no hay ningún esquema de URI que Airflow conozca para él. Cuando lo
+haya, pónsela: la UI dice entonces exactamente dónde viven los datos de cada
+asset, y las herramientas que leen el linaje de Airflow pueden seguirlo.
 
 Para Airflow, un asset solo existe cuando un Dag parseado se refiere a él —
 como outlet o como schedule. Ahora mismo `airflow assets list` imprime `No data
