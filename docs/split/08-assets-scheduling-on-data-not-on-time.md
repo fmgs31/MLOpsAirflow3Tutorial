@@ -1,7 +1,7 @@
 ## 8. Assets: scheduling on data, not on time
 
 An **Asset** is a name you give to a piece of data; for example,
-`labeled_projects`, the clean table `dataops` writes. Airflow does not read
+`labeled_projects`, the training table `dataops` builds in the warehouse. Airflow does not read
 that data: it only knows the name, and records each time the data is updated.
 
 The assets this tutorial uses are already defined, in
@@ -13,14 +13,17 @@ from airflow.sdk import Asset
 
 LABELED_PROJECTS = Asset(
     name="labeled_projects",
+    uri=_bigquery_uri("labeled_projects"),   # bigquery://<project>/mlops_course/labeled_projects
     group="dataset",
     extra={"layer": "warehouse", "owner": "data-engineering"},
 )
 ```
 
-`name` is what identifies the asset. `group` and `extra` are descriptions the
-UI shows on the asset's page; this `extra` describes the asset itself, not any
-one event.
+`name` is what identifies the asset in your Dags. `uri` is the address of the
+real data: here the BigQuery table, in the `bigquery://` scheme the Google
+provider registers, built from your Project ID (§9). `group` and `extra` are
+descriptions the UI shows on the asset's page; this `extra` describes the
+asset itself, not any one event.
 
 In Dag code you refer to the asset by that object, `LABELED_PROJECTS`. Using
 it takes two sides.
@@ -58,9 +61,9 @@ writes no event, and that is the entire safety property: a consumer cannot be
 started by a producer that did not finish.
 
 In this tutorial the producer of `labeled_projects` is `validate_transformed`,
-the last of the four `dataops` tasks in §1's diagram, which you write in §9.
+the last step of `dataops` in §1's diagram, which you write in §9.
 The outlet goes on that **validation** task, not on `transform`, the task
-before it that writes the data: if the validation fails, the task writes no
+before it that builds the table: if the validation fails, the task writes no
 event, so `mlops` cannot be started by data that did not pass it. That is the
 idea in one line: **the consumer is scheduled on "good
 data arrived", not on a cron that guesses when the producer's Dag will have
@@ -71,18 +74,19 @@ the task succeeds. **`outlet_events`** is how the task prepares that event
 beforehand. It works like a dict with one key per outlet of the task:
 `outlet_events[LABELED_PROJECTS]` stands for the event the task is about to
 emit for `labeled_projects`, and the dict you assign to its `.extra` is stored
-inside that event — here, how many rows the task validated and where they are. A task that never touches `outlet_events`
+inside that event — here, how many rows the task validated and which tags it
+found. A task that never touches `outlet_events`
 still emits its events, with an empty `extra`. The task receives it by
 declaring a parameter with that name, the way it receives `ti` in §6:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
-def validate_transformed(fp: str, *, outlet_events: OutletEventAccessorsProtocol) -> dict:
-    df = data.load_labeled(fp)
+def validate_transformed(*, outlet_events: OutletEventAccessorsProtocol) -> dict:
+    df = data.load_labeled()
     result = validate.run_suite(df, "labeled_projects")
     if not result.passed:
         raise AirflowFailException(...)
-    outlet_events[LABELED_PROJECTS].extra = {"rows": len(df), "path": fp}
+    outlet_events[LABELED_PROJECTS].extra = {"rows": len(df), "tags": sorted(df["tag"].unique())}
     return {...}
 ```
 
@@ -127,11 +131,11 @@ tutorial:
 
 There are more; §15 shows how to use four of them.
 
-Assets here are **name-only**. An asset can also have a **URI**, the address
-of its real data (`s3://bucket/labeled_projects.csv`, say). This tutorial
-gives them none because the path of `data/` is not the same inside the
-container as in §2's native install. In production give each asset the URI of
-its data, so the UI says where it lives.
+A URI is optional. `production_model`, the asset `mlops` emits when it
+promotes a model (§10), has only a name: the model lives in MLflow's registry,
+and there is no URI scheme Airflow knows for it. When there is one, give it:
+the UI then says exactly where each asset's data lives, and tools that read
+Airflow's lineage can follow it.
 
 An asset exists in Airflow's eyes only once a parsed Dag refers to it — as an
 outlet or a schedule. Right now `airflow assets list` prints `No data found`,

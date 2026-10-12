@@ -1,4 +1,4 @@
-"""Lesson 4 - the MLOps Dag: asset-triggered training, tuning, and promotion.
+"""Lesson 4 - the MLOps Dag: asset-triggered tuning, training, and promotion.
 
 The payoff of data-aware scheduling. This Dag has no cron. It runs when
 `dataops` emits the `labeled_projects` asset event - which only happens when
@@ -6,16 +6,19 @@ the data passed validation.
 
 Also shown:
 
-* **A validation gate before training** - `dataops` validated the warehouse
-  table; this validates the *training snapshot*, including the split, which no
-  table-level suite can see.
-* **Dynamic task mapping** - one `train_candidate` task instance per
-  hyperparameter set, fanned out at runtime, then reduced by `select_best`.
+* **A snapshot and a validation gate before training** - the warehouse table
+  is copied once per run, and that copy is what gets validated and trained on,
+  including the split, which no table-level suite can see.
+* **Distributed tuning with dynamic task mapping** - one Optuna study, stored
+  in a database, and one `run_trials` task instance per worker, fanned out at
+  runtime. Every worker adds trials to the same study.
+* **Experiment tracking** - every trial and the final model are MLflow runs;
+  the final model is registered as a new version.
 * **Branching as a promotion gate** - a model that misses the f1 threshold does
   not reach production, and the Dag run still succeeds (a rejected candidate is
   a normal outcome, not a failure).
-* **XCom discipline** - tasks exchange run ids and metric dicts. The models and
-  dataframes live in the registry and on disk.
+* **XCom discipline** - tasks exchange paths, run ids and metric dicts. The
+  models live in MLflow and the data in the warehouse and on disk.
 
 Deadline alerts live in `07_deadline_alerts.py` - see the note there for why
 they are not attached to this Dag.
@@ -31,7 +34,7 @@ from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.sdk import Asset, dag, task
+from airflow.sdk import Asset, Param, dag, task
 from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
@@ -45,6 +48,11 @@ DEFAULT_ARGS = {
 }
 
 
+def run_key(run_id: str) -> str:
+    """A Dag run id made safe for file names and study names."""
+    return run_id.replace(":", "-").replace("+", "-")
+
+
 @dag(
     dag_id="mlops",
     # The whole point: schedule on data, not on time. Pass several assets for
@@ -56,37 +64,40 @@ DEFAULT_ARGS = {
     default_args=DEFAULT_ARGS,
     tags=["tutorial", "mlops"],
     doc_md=__doc__,
+    # The tuning budget, overridable per run from the Trigger form.
+    params={
+        "n_trials": Param(20, type="integer", minimum=1, description="Optuna trials in total."),
+        "n_workers": Param(4, type="integer", minimum=1, description="Tasks the trials are spread over."),
+    },
 )
 def mlops():
     @task
     def prepare_data(
-        *, triggering_asset_events: Mapping[Asset, Sequence[Any]]
-    ) -> dict[str, int]:
-        """Inspect what triggered us, then materialise the train/test split."""
+        *, triggering_asset_events: Mapping[Asset, Sequence[Any]], run_id: str
+    ) -> str:
+        """Inspect what triggered us, then pin the rows this run will use."""
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
 
-        df = data.load_labeled()
-        train_df, test_df = data.split(df)
-        return {"num_train": len(train_df), "num_test": len(test_df)}
+        config.ensure_dirs()
+        fp = data.save_snapshot(data.load_labeled(), run_key(run_id))
+        print(f"snapshot: {fp}")
+        return str(fp)
 
     @task
-    def validate_training_data(split_sizes: dict[str, int]) -> dict[str, Any]:
+    def validate_training_data(snapshot_fp: str) -> dict[str, Any]:
         """The gate between the warehouse and the trainer.
 
         `dataops` already validated `labeled_projects` - but that was a
         different Dag run, possibly hours ago, and this run may have been
-        triggered by hand. What the model is fitted on is the snapshot on disk
-        *now*, plus a split that no single-frame suite can inspect, so both are
+        triggered by hand. What the model is fitted on is the snapshot,
+        plus a split that no single-table suite can inspect, so both are
         checked here.
-
-        The dataframe is re-read rather than passed from `prepare_data`: XComs
-        carry metadata, never payloads.
         """
-        df = data.load_labeled()
+        df = data.load_snapshot(snapshot_fp)
         table = validate.run_suite(df, "labeled_projects")
-        split = validate.check_split(*data.split(df))
+        split = validate.check_split(*data.split(data.preprocess(df)))
         print(f"{table.summary()} {split.summary()}")
 
         if not (table.passed and split.passed):
@@ -97,45 +108,60 @@ def mlops():
             )
         return {
             "rows": len(df),
-            "split_sizes": split_sizes,
             "warnings": [r["expectation"] for r in table.failures + split.failures],
-            "results": table.results + split.results,
         }
 
     @task
-    def candidates() -> list[dict[str, Any]]:
-        """The search space. Returning a list is what `.expand()` maps over."""
-        return train_module.SEARCH_SPACE
-
-    @task(max_active_tis_per_dag=2)
-    def train_candidate(hparams: dict[str, Any], **context: Any) -> dict[str, Any]:
-        """One task instance per hyperparameter set.
-
-        The argument is named `hparams`, not `params`: TaskFlow injects context
-        keys by parameter name, and `params` is a reserved context key.
-        """
-        config.ensure_dirs()
-        run_id = f"{context['run_id']}__{context['ti'].map_index}".replace(":", "-").replace("+", "-")
-        model, metrics = train_module.train_from_files(hparams)
-        registry.save_run(run_id, model, metrics)
-        print(f"run={run_id} hparams={hparams} f1={metrics['f1']:.4f}")
-        # Small, JSON-serialisable payload. The model itself stays in the registry.
-        return {"run_id": run_id, "f1": metrics["f1"], "hparams": hparams}
+    def create_study(*, run_id: str) -> str:
+        """One Optuna study per Dag run. Safe to retry: an existing study is loaded."""
+        return train_module.create_study(f"{config.REGISTERED_MODEL}-{run_key(run_id)}")
 
     @task
-    def select_best(results: list[dict[str, Any]]) -> dict[str, Any]:
-        """The reduce step: every mapped instance's return value arrives as a list."""
-        best = max(results, key=lambda r: r["f1"])
-        print(f"best={best['run_id']} f1={best['f1']:.4f} of {len(results)} candidates")
+    def trial_budget(*, params: Mapping[str, Any]) -> list[int]:
+        """Split the trials over the workers. Returning a list is what `.expand()` maps over."""
+        base, extra = divmod(params["n_trials"], params["n_workers"])
+        return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
+
+    @task(max_active_tis_per_dag=2)
+    def run_trials(n_trials: int, study_name: str, snapshot_fp: str) -> list[dict[str, Any]]:
+        """One task instance per worker; each adds `n_trials` trials to the shared study."""
+        train_df, _ = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+        results = train_module.run_trials(study_name, n_trials, train_df)
+        print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
+        return results
+
+    @task
+    def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
+        """The reduce step: every mapped instance's return value arrives as a list.
+
+        The study already knows its best trial; `results` is taken so this task
+        waits for every worker.
+        """
+        best = train_module.best_trial(study_name)
+        print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
         return best
 
     @task
-    def evaluate_best(best: dict[str, Any]) -> dict[str, Any]:
+    def train_best(best: dict[str, Any], snapshot_fp: str, *, run_id: str) -> dict[str, Any]:
+        """Fit on the full training split, score on the test split, log and register in MLflow."""
+        train_df, test_df = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+        trained = train_module.train_model(
+            best["params"], train_df, test_df,
+            run_name=f"final-{run_key(run_id)}",
+            tags={"airflow_run_id": run_id},
+        )
+        version = registry.register(trained["model_uri"])
+        print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
+        # Small, JSON-serialisable payload. The model itself stays in MLflow.
+        return {"run_id": trained["run_id"], "version": version, "f1": trained["metrics"]["f1"]}
+
+    @task
+    def evaluate_best(trained: dict[str, Any]) -> dict[str, Any]:
         """Re-read the full metrics, including per-class and slice performance."""
-        metrics = registry.load_metrics(best["run_id"])
+        metrics = registry.load_metrics(trained["run_id"])
         for name, slice_metrics in metrics.get("slices", {}).items():
             print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
-        return {"run_id": best["run_id"], "metrics": metrics}
+        return {**trained, "metrics": metrics}
 
     @task.branch
     def promotion_gate(evaluation: dict[str, Any]) -> str:
@@ -157,14 +183,15 @@ def mlops():
     def promote_model(
         evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
     ) -> dict[str, Any]:
-        pointer = registry.promote(evaluation["run_id"])
+        """Move the registry's `champion` alias to the new version."""
+        champion = registry.promote(evaluation["version"])
         outlet_events[PRODUCTION_MODEL].extra = {
-            "run_id": pointer["run_id"],
-            "f1": pointer["metrics"]["f1"],
-            "previous_run_id": pointer["previous_run_id"],
+            "version": champion["version"],
+            "f1": champion["metrics"]["f1"],
+            "previous_version": champion["previous_version"],
         }
-        print(f"promoted {pointer['run_id']} (was {pointer['previous_run_id']})")
-        return pointer
+        print(f"champion -> version {champion['version']} (was {champion['previous_version']})")
+        return champion
 
     keep_current_model = EmptyOperator(task_id="keep_current_model")
 
@@ -172,17 +199,21 @@ def mlops():
     # the default `all_success` would skip it after any branch skip.
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 
-    snapshot = validate_training_data(prepare_data())
-    results = train_candidate.expand(hparams=candidates())
-    # No data flows from the gate to the trainer, only permission to run: every
+    snapshot = prepare_data()
+    gate = validate_training_data(snapshot)
+    study = create_study()
+    results = run_trials.partial(study_name=study, snapshot_fp=snapshot).expand(
+        n_trials=trial_budget()
+    )
+    # No data flows from the gate to the trainers, only permission to run: every
     # mapped instance waits on it.
-    snapshot >> results
+    gate >> results
 
-    evaluation = evaluate_best(select_best(results))
-    gate = promotion_gate(evaluation)
+    evaluation = evaluate_best(train_best(best_params(study, results), snapshot))
+    decision = promotion_gate(evaluation)
 
-    gate >> promote_model(evaluation) >> done
-    gate >> keep_current_model >> done
+    decision >> promote_model(evaluation) >> done
+    decision >> keep_current_model >> done
 
 
 mlops()

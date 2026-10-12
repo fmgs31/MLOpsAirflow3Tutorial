@@ -16,18 +16,39 @@ Dag run concreto — lo que de verdad tiene un estado, una duración, un log y u
 número de intentos. Tú escribes tasks; tú depuras task instances. La §3 sigue una
 a lo largo de toda su vida.
 
-Tres Dags hacen el trabajo de verdad aquí, y lo interesante es cómo se conectan:
+Este es un tutorial de MLOps: construyes un pequeño sistema de machine
+learning, desde los datos en bruto hasta un modelo en producción que se
+reentrena cuando hace falta, y Airflow lo ejecuta. Cada paso lo hace la herramienta que usaría un equipo real;
+Airflow decide cuándo se ejecuta cada una:
+
+| Herramienta | Su trabajo aquí | Sección |
+|---|---|---|
+| **Airbyte** | copia los datos de origen al warehouse, la base de datos donde se guardan los datos para analizarlos | §9 |
+| **BigQuery** | el warehouse, en Google Cloud | §9 |
+| **dbt** | convierte las tablas en bruto en la tabla de entrenamiento, en SQL | §9 |
+| **Great Expectations** (GX) | comprueba los datos antes de que los use cada paso | §9, §10 |
+| **Optuna** | busca los mejores hiperparámetros: los ajustes del modelo que se fijan antes de entrenar | §10 |
+| **MLflow** | registra cada entrenamiento, y lleva el model registry: las versiones numeradas del modelo entrenado, y cuál está en producción | §10, §12 |
+| **alibi-detect** | detecta drift: datos nuevos que ya no se parecen a aquellos con los que aprendió el modelo | §12 |
+
+Todas salvo BigQuery son open source y corren en tu máquina. BigQuery necesita
+una cuenta de Google Cloud con facturación activada; los datos de este
+tutorial quedan muy por dentro del free tier (la §9 lo explica).
+
+Tres Dags hacen el trabajo de verdad, y lo interesante es cómo se conectan:
 
 ```
-dataops:   extract ─► validate_raw ─► transform ─► validate_transformed ──┐
-                                                                          │ emite
-                                                            Asset: labeled_projects
-                                                                          │ dispara
-mlops:                  prepare ─► validate ─► train×N ─► select ─► gate ─┴─► promote
-                                                                          │ emite
-                                                            Asset: production_model
+dataops:  extract & load ─► validate ─► transform ─► validate_transformed ─┐
+          (Airbyte)          (GX)       (dbt)         (GX)                  │ emite
+                                                              Asset: labeled_projects
+                                                                            │ dispara
+mlops:    prepare ─► validate ─► tune×N ─► train ─► evaluate ─► gate ───────┴─► promote
+                     (GX)        (Optuna)  (MLflow)                             (registry de MLflow)
+                                                                            │ emite
+                                                              Asset: production_model
 
 monitoring:  measure ─► decide ─► {continue | inspect | rollback | approve ─► retrain}
+             (alibi-detect)
 ```
 
 Un **asset** es un conjunto de datos con nombre: `labeled_projects` son los datos
@@ -36,8 +57,7 @@ promueve `mlops`. Cada vez que la task que produce un asset tiene éxito, Airflo
 registra un evento, y cualquier Dag que tenga ese asset como schedule arranca un
 run (§8). Por eso `mlops` **no tiene un schedule de tiempo**: su schedule es un
 asset, y se ejecuta cuando `dataops` publica datos buenos.
-Eso es scheduling data-aware, y es la idea sobre la que está construido todo este
-tutorial.
+Eso es scheduling data-aware, y es lo que une los tres Dags.
 
 Hay cuatro Dags más, cada uno para enseñar una cosa: `hello_airflow3` (un primer
 Dag), `operators_and_xcoms` (tipos de task y cómo hablan entre ellas),
@@ -46,8 +66,9 @@ avisen cuando un run va demasiado lento).
 
 ### Cómo funciona este tutorial
 
-Los siete Dags los escribes tú. La carpeta que lee Airflow, `dags/`, está
-**vacía** cuando clonas este repo. Cada sección explica una pieza de Airflow y
+Los siete Dags los escribes tú, y en la §9 también el proyecto de dbt. La
+carpeta que lee Airflow, `dags/`, está **vacía** cuando clonas este repo, y
+`dbt/` también. Cada sección explica una pieza de Airflow y
 después te hace construir el Dag que la usa — unas pocas líneas cada vez, con el
 porqué de cada fragmento al lado — y luego ejecutarlo y comprobar qué ha pasado.
 El código te lo damos; tu trabajo es teclearlo, comprobar que Airflow lo parsea
@@ -63,9 +84,10 @@ Dos redes de seguridad:
   escritos, te dicen si construiste lo que el tutorial pretendía.
 
 Las lecciones se apoyan unas en otras a partir de la §9 — `mlops` se programa con
-un asset que produce `dataops`, `sensors_and_events` espera un archivo que
-escribe `dataops` — así que hazlas en orden, o copia antes las soluciones
-anteriores.
+un asset que produce `dataops`, `sensors_and_events` espera una tabla que
+construye `dataops` — así que hazlas en orden, o copia antes las soluciones
+anteriores. La §9 monta además el stack de datos del que depende el resto: un
+proyecto de Google Cloud, Airbyte, y las conexiones entre ellos.
 
 ### Por qué Airflow
 
@@ -89,27 +111,34 @@ Airflow orquesta código; no lo contiene. El código que orquesta este tutorial
 es un pequeño proyecto de ML en `src/project_tagger/`. No lo escribes tú; los
 Dags lo llaman.
 
-**Los datos** son un [CSV público](https://github.com/GokuMohandas/Made-With-ML/blob/main/datasets/dataset.csv)
-con 764 proyectos de ML que recopiló Made With ML entre febrero y octubre de
-2020, una fila por proyecto. Cada fila tiene un título, una descripción, la
-fecha en que se añadió y un **tag** — la etiqueta que el modelo aprende a
-predecir —, que es uno de `natural-language-processing`, `computer-vision`,
-`mlops` u `other`. Una fila:
+**Los datos** son 764 proyectos de ML que recopiló Made With ML entre febrero y
+octubre de 2020, en dos tablas, como los guardaría un sistema de origen
+([`datasets/`](../../datasets/)): `projects.csv`, con el título, la descripción
+y la fecha de alta de cada proyecto, y `tags.csv`, con el **tag** de cada
+proyecto — la etiqueta que el modelo aprende a predecir. Unidas por `id`, una
+fila:
 
 | title | description | tag |
 |---|---|---|
 | Rethinking Batch Normalization in Transformers | We found that NLP batch statistics exhibit large variance throughout training, which leads to poor BN performance. | `natural-language-processing` |
 
+Hay seis tags. Los tres más raros (`reinforcement-learning`,
+`graph-learning`, `time-series`) tienen muy pocos proyectos para aprender de
+ellos, así que el modelo los ve como una sola clase, `other`, junto a
+`natural-language-processing`, `computer-vision` y `mlops`.
+
 **El modelo** lee el título y la descripción de un proyecto y predice su tag.
 Es un clasificador de texto de scikit-learn (features TF-IDF y un clasificador
-lineal SGD) que entrena en segundos. `dataops` (§9) descarga y comprueba los
-datos; `mlops` (§10) entrena varias versiones del modelo y se queda con la
-mejor.
+lineal SGD) que entrena en más o menos un segundo, así que una búsqueda sobre
+decenas de combinaciones de hiperparámetros cabe en un Dag run. `dataops` (§9)
+carga, comprueba y une los datos en el warehouse; `mlops` (§10) busca los
+hiperparámetros, entrena el mejor modelo y decide si sustituye al que está en
+producción.
 
 **El modelo en producción** es el modelo entrenado que se usa ahora mismo para
-etiquetar texto nuevo. Aquí nada lo sirve por red: `registry.py` apunta qué
-modelo guardado está en producción, y `predict.py` lo carga y etiqueta el texto
-que le des:
+etiquetar texto nuevo. Aquí nada lo sirve por red: el model registry de MLflow
+marca una versión como `champion`, y `predict.py` carga esa versión y etiqueta
+el texto que le des:
 
 ```
 "Transfer learning with BERT for text classification"  →  natural-language-processing
@@ -126,17 +155,18 @@ Los módulos, de los que solo `assets.py` importa Airflow:
 
 | Módulo | Papel |
 |---|---|
-| `data.py` | extract, clean, transform, split train/test |
-| `validate.py` | expectations de calidad de datos, lo que ejecutan los gates |
-| `train.py`, `evaluate.py` | clasificador TF-IDF + SGD, métricas globales y por slices de evaluación (§10) |
-| `registry.py` | sustituto en sistema de archivos de un model registry |
-| `monitoring.py` | comprobaciones de drift y de rendimiento en vivo |
+| `config.py` | nombres y ajustes: tablas, MLflow, Optuna, umbrales |
+| `data.py` | leer el warehouse, snapshots, preprocesado del texto, split train/test |
+| `validate.py` | las suites de Great Expectations que ejecutan los gates, y las comprobaciones del split |
+| `train.py`, `evaluate.py` | el clasificador, la búsqueda con Optuna, el registro en MLflow; métricas globales y por slices de evaluación (§10) |
+| `registry.py` | el model registry de MLflow: registrar, promocionar, hacer rollback |
+| `monitoring.py`, `drift.py` | las ventanas sobre las que se mide el drift, los tests de alibi-detect, el rendimiento en vivo |
 | `predict.py` | etiqueta texto nuevo con lo que esté promocionado ahora mismo |
 | `assets.py` | los Assets de Airflow que comparten los Dags |
 | `callbacks.py` | callbacks de deadline alerts |
 
-Cada uno es una pieza que puedes sustituir por una herramienta real — las tablas
-de la §9 y de la §10 dicen cuál.
+El SQL no está en ese paquete: es el proyecto de dbt que creas en la §9, en
+`dbt/`.
 
 ---
 

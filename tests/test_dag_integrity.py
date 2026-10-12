@@ -120,13 +120,13 @@ def test_dataops_produces_the_labeled_projects_asset(dagbag: DagBag) -> None:
         for outlet in getattr(task, "outlets", [])
         if hasattr(outlet, "name")
     }
-    assert {"raw_projects", "labeled_projects"} <= produced
+    assert {"raw_projects", "raw_tags", "labeled_projects"} <= produced
 
 
 def test_mlops_validates_before_it_trains(dagbag: DagBag) -> None:
     """No model is fitted on a snapshot nobody checked."""
     mlops = _dag(dagbag, "mlops")
-    trainer = mlops.get_task("train_candidate")
+    trainer = mlops.get_task("run_trials")
     assert "validate_training_data" in trainer.upstream_task_ids
 
 

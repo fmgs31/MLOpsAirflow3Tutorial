@@ -88,6 +88,23 @@ the model in a registry. Airflow serialises the value when it stores it and
 accepts more than JSON — a `datetime`, a `set`, even a dataframe —, but that
 it fits does not mean it belongs there.
 
+**Every task must be safe to run twice.** `"retries": 1` in `DEFAULT_ARGS`
+means a task that fails runs again. So write every task to be **idempotent**:
+running it twice leaves the same result as running it once. A task that
+appends rows, increments a counter or sends an email on every try is not: a
+retry duplicates the rows, the count or the email. The usual ways to get
+there:
+
+- **Overwrite, do not append.** Replace the whole table or file, or delete what
+  you are about to write first.
+- **Name outputs after the run.** A file whose path contains the run id is the
+  same file on every try.
+- **Create only if missing.** `CREATE TABLE IF NOT EXISTS`, for example. The
+  compose file's `extra-databases` service (§2) works this way: it creates its
+  database only if it is not there yet.
+
+§9 and §10 point out where their tasks do each of these.
+
 Now the Dag header and the first three operators:
 
 ```python dags/02_operators_and_xcoms.py
@@ -512,8 +529,8 @@ in one of three ways:
   happens on this stack, since it sets none.
 - **As an environment variable**, `AIRFLOW_CONN_<ID>` / `AIRFLOW_VAR_<KEY>`.
   These never go through the database and do not show in the UI. That is how
-  the compose file defines `fs_default`, the Connection the `FileSensor` in §11
-  uses.
+  the compose file defines `google_cloud_default`, the Connection the BigQuery
+  sensor in §11 uses, and `fs_default`, the one a `FileSensor` uses by default.
 - **In a secrets backend** (Vault, AWS Secrets Manager…), the usual choice in
   production (§15).
 
@@ -521,7 +538,7 @@ Templates read them as `{{ conn.warehouse.host }}` and `{{ var.value.min_rows }}
 
 > A task fetching either one does not touch the metadata database. It first
 > looks at the `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` environment variables — that
-> is how it finds `fs_default` without asking anyone — and, if it is not there,
+> is how it finds `google_cloud_default` without asking anyone — and, if it is not there,
 > asks the API server over the Task Execution API, which is what lets a remote
 > worker resolve a Connection without access to the metadata database.
 >

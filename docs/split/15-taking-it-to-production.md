@@ -7,11 +7,17 @@ task), or **multiple executors** configured together. There is also the **Edge
 executor**, for workers outside your cluster, which the Task Execution API (§3)
 makes possible.
 
-**Isolation.** Do not install your ML dependencies next to Airflow's. Use
-`KubernetesPodOperator`, or `@task.virtualenv` / `@task.external_python` for
-lighter isolation. The heavy compute belongs on a cluster (Ray, Spark, EMR,
-Dataproc) with Airflow triggering and tracking it — Airflow is an orchestrator,
-not a compute engine.
+**Isolation.** Do not install your ML dependencies next to Airflow's. This
+stack already met the problem twice: dbt (§9) and alibi-detect (§12) pin
+versions Airflow's environment cannot accept, so each got a virtualenv of its
+own in the image, one called from a `BashOperator`, the other through
+`@task.external_python`. That works for a few tools and one team. With many
+teams, each with its own libraries, give each task its own container image
+with `KubernetesPodOperator` (or `DockerOperator`): Airflow's image then holds
+only Airflow, and a team upgrades its libraries without touching anyone
+else's. The heavy compute belongs on a cluster (Ray, Spark, EMR, Dataproc)
+with Airflow triggering and tracking it — Airflow is an orchestrator, not a
+compute engine.
 
 **Dag bundles.** The Dag processor reads *bundles*; the default is one
 `LocalDagBundle` named `dags-folder`, which reads the `dags_folder` setting. Switching to
@@ -47,15 +53,15 @@ def export(*, outlet_events: OutletEventAccessorsProtocol, ds: str) -> None:
 *A Dag that exists only to produce one asset.* `@asset` builds the asset, the
 Dag and its single task from one function, and all three take the function's
 name. The result is an asset like any other, so another Dag can put
-`raw_projects` in its `schedule=`. `@asset.multi(outlets=[...])` does the same
+`project_counts` in its `schedule=`. `@asset.multi(outlets=[...])` does the same
 for a function that produces several.
 
 ```python
 from airflow.sdk import asset
 
 @asset(schedule="@daily")
-def raw_projects() -> str:
-    return str(data.extract())
+def project_counts() -> dict:
+    return {"projects": data.count_rows("projects")}
 ```
 
 *Setting an event's `extra` without `outlet_events`.* The task `yield`s one
@@ -65,8 +71,8 @@ def raw_projects() -> str:
 from airflow.sdk import Metadata
 
 @task(outlets=[LABELED_PROJECTS])
-def validate_transformed(fp: str):
-    df = data.load_labeled(fp)
+def validate_transformed():
+    df = data.load_labeled()
     ...
     yield Metadata(LABELED_PROJECTS, {"rows": len(df)})
 ```
@@ -96,7 +102,15 @@ and burns CPU for nothing.
 
 **Secrets.** Never in Dag code, never in bundle `kwargs`, never in an asset's
 `uri` or `extra` — asset extras are stored in cleartext. Use Connections,
-Variables, or a secrets backend.
+Variables, or a secrets backend (HashiCorp Vault, AWS Secrets Manager, Google
+Secret Manager), which Airflow then reads Connections and Variables from, so
+they never sit in its database at all. Set `AIRFLOW_FERNET_KEY` (§6) so that
+whatever is in the database is encrypted. Two things this stack does that a
+production one should not: the GCP service-account key is a file mounted into
+every container, where a platform such as GKE would give the workers an
+identity of their own instead (Workload Identity), with no key to leak; and
+the Airbyte credentials are typed into a CLI command, where a secrets backend
+would hold them.
 
 **Auth.** Swap the Simple auth manager for FAB (§2) or a real identity provider
 before anyone else can reach the UI.
@@ -119,6 +133,13 @@ Then the ordinary hygiene: `airflow db clean` on a schedule (the metadata
 database grows forever otherwise), deadline alerts on the Dags that matter (§13), and
 Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — wired to
 `on_failure_callback` or an `AsyncCallback`.
+
+**When you are done with the tutorial.** Three things keep running or
+existing after you stop: the Airflow stack (`scripts/reset.sh`, §2), Airbyte,
+which `abctl local uninstall` removes, and the Google Cloud project. To remove
+the project and everything in it, including the service account and its key,
+open **IAM & Admin → Settings** in the console and choose **Shut down**. Google
+deletes it after 30 days.
 
 ---
 

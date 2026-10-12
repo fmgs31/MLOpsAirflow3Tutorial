@@ -1,7 +1,7 @@
 ## 14. Testear Dags
 
-Cuatro niveles — y el primero de ellos comprueba los siete archivos que
-escribiste.
+Cinco niveles de tests sobre el código — el primero de ellos comprueba los
+siete archivos que escribiste — y uno más sobre los datos.
 
 **Tests de integridad de Dags** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
 Detectan, antes de que el archivo llegue a Airflow, los fallos que de otro modo
@@ -28,7 +28,7 @@ def test_mlops_is_scheduled_on_the_labeled_projects_asset(dagbag):
 Comprueban **tu carpeta `dags/`**, y codifican lo que este tutorial espera:
 siete `dag_id` concretos; todos los Dags con tags, un `doc_md` y un owner que no
 sea `airflow`; `retries` de al menos uno en todo Dag que haga trabajo de verdad;
-`dataops` produciendo ambos assets; `mlops` programado con `labeled_projects` y
+`dataops` produciendo sus tres assets; `mlops` programado con `labeled_projects` y
 validando antes de entrenar; sin ciclos. La suite también hace grep en el código buscando
 construcciones de versiones anteriores de Airflow — `schedule_interval=`,
 `days_ago(`, `airflow.operators.`, `execution_date`, `SubDagOperator`, `sla=`.
@@ -43,6 +43,26 @@ falla cuando corre la task.
 Salvo `assets.py`, que define los objetos Asset, nada en `src/project_tagger/` importa
 Airflow, así que el código de ML es testeable sin un scheduler de por medio. Esa separación es deliberada: Airflow orquesta el
 código, no lo contiene.
+
+Tampoco necesitan el warehouse ni el servidor de MLflow, y eso también es
+deliberado. Un test que consulta BigQuery es lento, necesita credenciales y
+falla cuando falla la red. Así que cada test construye el dataframe que habría
+devuelto una consulta y se lo pasa: las suites de GX, las comprobaciones del
+split y las ventanas de drift reciben un dataframe, no un nombre de tabla.
+Optuna y MLflow corren de verdad, pero contra archivos SQLite en una carpeta
+temporal: el test apunta allí `config.OPTUNA_STORAGE` y
+`config.MLFLOW_TRACKING_URI` con el `monkeypatch` de pytest, que sustituye un
+valor mientras dura un test, y después ejecuta
+la búsqueda, entrena, registra, promociona y hace rollback. El test de drift necesita
+alibi-detect, que solo está instalado en su propio virtualenv (§12), así que en el
+entorno de Airflow se **salta** (skip), no falla.
+
+**Tests de datos** — las suites de GX y los tests de dbt (§9). También son
+tests, pero sobre los datos en vez de sobre el código, así que corren donde
+están los datos: en cada ejecución del pipeline, como gates, no en CI. Un test
+de código demuestra que el pipeline hace lo que pretendías; un test de datos
+demuestra que los datos de hoy son los que el pipeline espera. Hacen falta los
+dos.
 
 **Tests de run completo** — `airflow dags test <dag_id>` ejecuta un Dag run real
 dentro del propio comando (§4), y `airflow tasks test <dag_id> <task_id>`
@@ -68,21 +88,23 @@ Los tests de integridad, unitarios y de documentación son una sola ejecución d
 docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 ```
 
-`airflow-cli` no es uno de los cinco servicios que lista `docker compose ps`: es
+`airflow-cli` no es uno de los servicios que lista `docker compose ps`: es
 un contenedor de usar y tirar que el archivo de compose define bajo un profile,
 que `run` crea para ese comando y que `--rm` elimina después.
 
-**Comprobación.** Una fila de puntos y `36 passed`, en bastante menos de
-un minuto:
+**Comprobación.** Una fila de puntos, una `s`, y `41 passed, 1 skipped`,
+en bastante menos de un minuto:
 
 ```
-....................................                                     [100%]
-36 passed in 7.51s
+............................s.............                               [100%]
+41 passed, 1 skipped in 20.75s
 ```
 
-No intervino ningún scheduler y no corrió ningún Dag. De eso se trata: cada
-uno de esos 36 es lo bastante rápido para ejecutarse en cada commit, y eso es
-lo que hace que merezca la pena tenerlos.
+La `s` es el test de drift, que se salta como se ha explicado arriba. No
+intervino ningún scheduler, no corrió ningún Dag, y nada llegó a BigQuery ni al
+servidor de MLflow. De eso se trata: cada uno de esos tests es lo bastante
+rápido para ejecutarse en cada commit, y eso es lo que hace que merezca la
+pena tenerlos.
 
 Cuando uno falla, el mensaje dice qué archivo y qué falta — `mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`, a

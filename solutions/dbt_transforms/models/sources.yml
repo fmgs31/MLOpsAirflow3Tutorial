@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: mlops_course
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: "{{ env_var('BQ_DATASET', 'mlops_course') }}"
+    tables:
+      - name: projects
+      - name: tags

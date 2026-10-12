@@ -1,32 +1,28 @@
-"""A tiny expectation-suite runner.
+"""Data-quality gates, written as Great Expectations suites.
 
-A real project would use Great Expectations, Pandera or Soda here. This
-tutorial is about the *gate*, not the library, so it keeps the same shape - a
-named suite of expectations, a pass/fail result per expectation, and a task
-that fails the Dag run when a critical expectation breaks - with zero extra
-dependencies.
+An *expectation* is one assertion about the data ("`id` is unique"); a *suite*
+is a named list of them; *validating* a batch of data against a suite returns
+a pass/fail result per expectation. The Dags run a suite and fail the task
+when a critical expectation breaks.
 
-Swap `run_suite` for a `GreatExpectationsOperator` (or Pandera / Soda / dbt
-tests) and the Dag structure is unchanged. That substitutability is the point.
+GX's own Airflow operators (`airflow-provider-great-expectations`) are not
+used: the 1.x provider pins an older `structlog` than Airflow 3.3.1 ships
+with, so it cannot be installed next to it. Calling GX Core from a `@task`
+does the same job with no extra dependency.
+
+Each expectation carries `meta={"critical": ...}`. A non-critical failure is
+reported but does not fail the gate - a new tag appearing is a signal to
+inspect, not a reason to stop the line.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
 
 from project_tagger import config
-
-
-@dataclass
-class Expectation:
-    name: str
-    check: Callable[[pd.DataFrame], bool]
-    critical: bool = True
-    details: str = ""
 
 
 @dataclass
@@ -44,88 +40,83 @@ class SuiteResult:
         return f"suite={self.suite} passed={ok}/{len(self.results)}"
 
 
-def expect_columns(columns: Sequence[str]) -> Expectation:
-    return Expectation(
-        name=f"columns_to_exist:{','.join(columns)}",
-        check=lambda df: set(columns).issubset(df.columns),
-    )
-
-
-def expect_not_null(column: str) -> Expectation:
-    return Expectation(
-        name=f"not_null:{column}",
-        check=lambda df: bool(df[column].notna().all()),
-    )
-
-
-def expect_unique(column: str) -> Expectation:
-    return Expectation(
-        name=f"unique:{column}",
-        check=lambda df: bool(df[column].is_unique),
-    )
-
-
-def expect_min_rows(n: int) -> Expectation:
-    return Expectation(name=f"min_rows:{n}", check=lambda df: len(df) >= n)
-
-
-def expect_values_in_set(column: str, allowed: Sequence[str]) -> Expectation:
-    return Expectation(
-        name=f"values_in_set:{column}",
-        check=lambda df: set(df[column].dropna().unique()).issubset(set(allowed)),
-    )
-
-
 # --- Suites -----------------------------------------------------------------
 
-RAW_PROJECTS_SUITE: list[Expectation] = [
-    expect_columns(["id", "created_on", "title", "description", "tag"]),
-    expect_unique("id"),
-    expect_not_null("title"),
-    expect_min_rows(500),
-]
 
-LABELED_PROJECTS_SUITE: list[Expectation] = [
-    expect_columns(["id", "text", "tag"]),
-    expect_unique("id"),
-    expect_not_null("text"),
-    expect_not_null("tag"),
-    expect_min_rows(500),
-    # Non-critical: a new tag appearing is a signal to inspect, not to stop the line.
-    Expectation(
-        name="values_in_set:tag",
-        check=lambda df: set(df["tag"].unique()).issubset(set(config.ACCEPTED_TAGS)),
-        critical=False,
-        details="An unexpected tag means the label space drifted - inspect before retraining.",
-    ),
-]
+def build_suite(name: str):
+    """The expectation suite for one warehouse table."""
+    import great_expectations as gx
 
-SUITES: dict[str, list[Expectation]] = {
-    "raw_projects": RAW_PROJECTS_SUITE,
-    "labeled_projects": LABELED_PROJECTS_SUITE,
-}
+    e = gx.expectations
+    warn = {"critical": False}
+    suites = {
+        "projects": [
+            e.ExpectTableColumnsToMatchSet(column_set=config.PROJECTS_COLUMNS),
+            e.ExpectColumnValuesToBeUnique(column="id"),
+            e.ExpectColumnValuesToNotBeNull(column="id"),
+            e.ExpectColumnValuesToNotBeNull(column="title"),
+            # The same project submitted twice under two ids.
+            e.ExpectCompoundColumnsToBeUnique(column_list=["title", "description"]),
+            e.ExpectTableRowCountToBeBetween(min_value=500),
+        ],
+        "tags": [
+            e.ExpectTableColumnsToMatchSet(column_set=config.TAGS_COLUMNS),
+            e.ExpectColumnValuesToBeUnique(column="id"),
+            e.ExpectColumnValuesToNotBeNull(column="id"),
+            e.ExpectColumnValuesToNotBeNull(column="tag"),
+            e.ExpectColumnValuesToBeInSet(column="tag", value_set=config.KNOWN_RAW_TAGS, meta=warn),
+        ],
+        "labeled_projects": [
+            e.ExpectTableColumnsToMatchSet(column_set=config.LABELED_PROJECTS_COLUMNS),
+            e.ExpectColumnValuesToBeUnique(column="id"),
+            e.ExpectColumnValuesToNotBeNull(column="title"),
+            e.ExpectColumnValuesToNotBeNull(column="tag"),
+            e.ExpectTableRowCountToBeBetween(min_value=500),
+            e.ExpectColumnValuesToBeInSet(column="tag", value_set=config.KNOWN_RAW_TAGS, meta=warn),
+        ],
+    }
+    return gx.ExpectationSuite(name=name, expectations=suites[name])
+
+
+def _ephemeral_context():
+    """A GX context that lives in memory for one validation and writes nothing."""
+    import great_expectations as gx
+    from great_expectations.data_context.types.base import ProgressBarsConfig
+
+    context = gx.get_context(mode="ephemeral")
+    # Progress bars are for a terminal; in a task log they are noise.
+    context.variables.progress_bars = ProgressBarsConfig(globally=False)
+    return context
 
 
 def run_suite(df: pd.DataFrame, suite_name: str) -> SuiteResult:
-    """Run every expectation, collecting results instead of raising on the first."""
-    suite = SUITES[suite_name]
+    """Validate a dataframe against a suite, collecting every result."""
+    context = _ephemeral_context()
+    batch = (
+        context.data_sources.add_pandas("pandas")
+        .add_dataframe_asset(name=suite_name)
+        .add_batch_definition_whole_dataframe("whole_table")
+        .get_batch(batch_parameters={"dataframe": df})
+    )
+    validation = batch.validate(build_suite(suite_name))
+
     result = SuiteResult(suite=suite_name, passed=True)
-    for expectation in suite:
-        try:
-            passed = bool(expectation.check(df))
-            error = ""
-        except Exception as exc:  # a broken expectation is a failed expectation
-            passed, error = False, f"{type(exc).__name__}: {exc}"
+    for r in validation.results:
+        cfg = r.expectation_config
+        kwargs = dict(cfg.kwargs)
+        target = kwargs.get("column") or ",".join(kwargs.get("column_list", [])) or "table"
+        critical = (cfg.meta or {}).get("critical", True)
+        passed = bool(r.success)
         result.results.append(
             {
-                "expectation": expectation.name,
+                "expectation": f"{cfg.type}:{target}",
                 "passed": passed,
-                "critical": expectation.critical,
-                "details": expectation.details,
-                "error": error,
+                "critical": critical,
+                # A few failing values, so the log says *what* broke.
+                "details": str((r.result or {}).get("partial_unexpected_list", ""))[:200],
             }
         )
-        if not passed and expectation.critical:
+        if not passed and critical:
             result.passed = False
     return result
 
@@ -142,6 +133,9 @@ def check_split(
     set with three rows of one, or two sets sharing ids. Each produces a model
     whose held-out metric means nothing - and the promotion gate downstream
     compares exactly that metric against production.
+
+    These checks span two dataframes, which a GX suite (one batch at a time)
+    does not express, so they are plain Python returning the same result shape.
     """
     train_tags, test_tags = set(train_df["tag"]), set(test_df["tag"])
     scarce = {
@@ -186,13 +180,7 @@ def check_split(
     result = SuiteResult(suite="training_split", passed=True)
     for name, passed, critical, details in checks:
         result.results.append(
-            {
-                "expectation": name,
-                "passed": bool(passed),
-                "critical": critical,
-                "details": details,
-                "error": "",
-            }
+            {"expectation": name, "passed": bool(passed), "critical": critical, "details": details}
         )
         if not passed and critical:
             result.passed = False

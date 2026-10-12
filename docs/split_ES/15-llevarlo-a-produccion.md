@@ -7,11 +7,17 @@ o **varios executors** configurados a la vez. También existe el **Edge
 executor**, para workers fuera de tu clúster, algo que es posible gracias a la
 Task Execution API (§3).
 
-**Aislamiento.** No instales tus dependencias de ML junto a las de Airflow. Usa
-`KubernetesPodOperator`, o `@task.virtualenv` / `@task.external_python` para un
-aislamiento más ligero. El cómputo pesado pertenece a un clúster (Ray, Spark,
-EMR, Dataproc) con Airflow disparándolo y siguiéndolo — Airflow es un
-orquestador, no un motor de cómputo.
+**Aislamiento.** No instales tus dependencias de ML junto a las de Airflow.
+Este stack ya se ha topado con el problema dos veces: dbt (§9) y alibi-detect (§12)
+fijan versiones que el entorno de Airflow no puede aceptar, así que cada uno
+tiene su propio virtualenv en la imagen, uno llamado desde un `BashOperator` y
+el otro a través de `@task.external_python`. Eso funciona para unas pocas
+herramientas y un equipo. Con muchos equipos, cada uno con sus librerías, dale
+a cada task su propia imagen de contenedor con `KubernetesPodOperator` (o
+`DockerOperator`): la imagen de Airflow solo contiene Airflow, y un equipo
+actualiza sus librerías sin tocar las de nadie más. El cómputo pesado
+pertenece a un clúster (Ray, Spark, EMR, Dataproc) con Airflow disparándolo y
+siguiéndolo — Airflow es un orquestador, no un motor de cómputo.
 
 **Dag bundles.** El Dag processor lee *bundles*; el de por defecto es un
 `LocalDagBundle` llamado `dags-folder`, que lee el ajuste `dags_folder`.
@@ -48,15 +54,15 @@ def export(*, outlet_events: OutletEventAccessorsProtocol, ds: str) -> None:
 *Un Dag que solo existe para producir un asset.* `@asset` construye el asset,
 el Dag y su única task a partir de una función, y los tres llevan el nombre de
 la función. El resultado es un asset como cualquier otro, así que otro Dag
-puede poner `raw_projects` en su `schedule=`. `@asset.multi(outlets=[...])` hace
+puede poner `project_counts` en su `schedule=`. `@asset.multi(outlets=[...])` hace
 lo mismo para una función que produce varios.
 
 ```python
 from airflow.sdk import asset
 
 @asset(schedule="@daily")
-def raw_projects() -> str:
-    return str(data.extract())
+def project_counts() -> dict:
+    return {"projects": data.count_rows("projects")}
 ```
 
 *Rellenar el `extra` de un evento sin `outlet_events`.* La task hace `yield` de
@@ -66,8 +72,8 @@ un `Metadata` por asset en vez de asignar `outlet_events[…].extra`:
 from airflow.sdk import Metadata
 
 @task(outlets=[LABELED_PROJECTS])
-def validate_transformed(fp: str):
-    df = data.load_labeled(fp)
+def validate_transformed():
+    df = data.load_labeled()
     ...
     yield Metadata(LABELED_PROJECTS, {"rows": len(df)})
 ```
@@ -97,7 +103,16 @@ vuelve a parsear archivos que no cambiaron y gasta CPU para nada.
 
 **Secretos.** Nunca en el código del Dag, nunca en los `kwargs` de un bundle,
 nunca en la `uri` o el `extra` de un asset — los extras de asset se guardan en
-texto plano. Usa Connections, Variables o un secrets backend.
+texto plano. Usa Connections, Variables o un secrets backend (HashiCorp Vault,
+AWS Secrets Manager, Google Secret Manager), del que Airflow lee entonces las
+Connections y Variables, así que nunca llegan a estar en su base de datos.
+Define `AIRFLOW_FERNET_KEY` (§6) para que lo que sí esté en la base de datos
+vaya cifrado. Dos cosas que hace este stack y que uno de producción no
+debería: la clave de la service account de GCP es un archivo montado en todos
+los contenedores, cuando una plataforma como GKE les daría a los workers una
+identidad propia (Workload Identity), sin clave que se pueda filtrar; y las
+credenciales de Airbyte se teclean en un comando de la CLI, cuando las
+guardaría un secrets backend.
 
 **Auth.** Cambia el Simple auth manager por FAB (§2) o por un proveedor de
 identidad real antes de que nadie más pueda llegar a la UI.
@@ -121,6 +136,13 @@ Y luego el mantenimiento de siempre: `airflow db clean` programado (si no, la me
 database crece indefinidamente), deadline alerts en los Dags que importan (§13), y
 Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — conectados a
 `on_failure_callback` o a un `AsyncCallback`.
+
+**Cuando termines el tutorial.** Al terminar, tres cosas siguen en marcha o
+siguen existiendo: el stack de Airflow (`scripts/reset.sh`, §2), Airbyte, que se
+elimina con `abctl local uninstall`, y el proyecto de Google Cloud. Para
+eliminar el proyecto y todo lo que contiene, incluida la service account y su
+clave, abre **IAM & Admin → Settings** en la consola y elige **Shut down**.
+Google lo borra a los 30 días.
 
 ---
 
