@@ -1,7 +1,7 @@
 ## 14. Testear Dags
 
-Cinco niveles de tests sobre el código — el primero de ellos comprueba los
-siete archivos que escribiste — y uno más sobre los datos.
+Cuatro niveles de tests sobre el código — el primero de ellos comprueba los
+siete archivos que escribiste — y uno sobre los datos.
 
 **Tests de integridad de Dags** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
 Detectan, antes de que el archivo llegue a Airflow, los fallos que de otro modo
@@ -100,7 +100,8 @@ en bastante menos de un minuto:
 41 passed, 1 skipped in 20.75s
 ```
 
-La `s` es el test de drift, que se salta como se ha explicado arriba. No
+La `s` es el test de drift, que se salta por el motivo que da «Tests unitarios sobre la carga
+de trabajo». No
 intervino ningún scheduler, no corrió ningún Dag, y nada llegó a BigQuery ni al
 servidor de MLflow. De eso se trata: cada uno de esos tests es lo bastante
 rápido para ejecutarse en cada commit, y eso es lo que hace que merezca la

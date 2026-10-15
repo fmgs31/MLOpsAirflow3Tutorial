@@ -12,6 +12,62 @@ fails.
 | `validate_projects`, `validate_tags`, `validate_transformed` | **Great Expectations** | checks a table against a list of rules |
 | `transform` | **dbt** | builds the training table from the two raw tables, in SQL |
 
+How the pieces talk to each other when the Dag runs. Each column is one
+system, and what is written in a column happens in that system. An arrow is
+one system calling another, or data going from one to the other:
+
+```
+ Airflow (Docker)              │ Airbyte (abctl)       │ BigQuery (Google Cloud)
+ dataops Dag                   │ localhost:8000        │ dataset mlops_course
+───────────────────────────────┼───────────────────────┼───────────────────────────
+                               │                       │
+ 1 extract_and_load_projects ───► sync projects        │
+   extract_and_load_tags ───────► sync tags            │
+                               │  each sync reads its  │
+                               │  CSV from GitHub and ──► tables projects, tags
+                               │  writes it            │
+                               │                       │
+ 2 validate_projects (GX) ◄────────────────────────────── rows of projects
+   validate_tags (GX) ◄────────────────────────────────── rows of tags
+                               │                       │
+ 3 transform: dbt build ────────────────────────────────► runs the model's SQL:
+   dbt runs here, in the       │                       │  a JOIN that writes the
+   Airflow container           │                       │  table labeled_projects
+   then it sends the tests ─────────────────────────────► runs the tests
+                               │                       │
+ 4 validate_transformed (GX) ◄─────────────────────────── rows of labeled_projects
+   │ Asset event (§8)          │                       │
+   ▼                           │                       │
+ mlops Dag (§10)               │                       │
+```
+
+Airflow starts each step and waits for it to finish. Only the GX tasks bring
+data into Airflow:
+
+1. Airflow asks Airbyte's API to run a sync. Airbyte downloads the CSV and
+   writes it to BigQuery; the rows never pass through Airflow.
+2. Each GX task reads a table from BigQuery into the Airflow container, as a
+   pandas DataFrame, and checks it there.
+3. dbt wraps your `SELECT` in a `CREATE TABLE … AS` and sends it to BigQuery,
+   which joins its own two tables and writes the third. Then dbt sends the
+   project's tests, also as SQL. You create that dbt project below.
+4. The same check as in step 2, on the new table. When it passes, Airflow
+   records the Asset event that starts `mlops`.
+
+GX and dbt are in Airflow's column, and Airbyte has its own, because they are
+different kinds of software:
+
+- **Airbyte** is a server, with its own API. Airflow does not run it; it asks
+  it to do the work.
+- **GX Core** is a Python library, installed in the Airflow image like pandas.
+  The task imports it and validates inside its own process.
+- **dbt Core** is a command-line program, also installed in the Airflow image.
+  The task runs it as a command, and BigQuery does the heavy work.
+
+GX and dbt also have paid, hosted versions, GX Cloud and dbt Cloud, that are
+services. With those, the task would call an API, as it does with Airbyte
+(see "Alternatives" at the end of this section).
+
 Loading the raw data first and transforming it inside the warehouse is called
 **ELT** (extract, load, transform). Because the raw tables are kept, a buggy
 transformation can be fixed and re-run without extracting again.
@@ -41,8 +97,8 @@ call them. You do this once, in order: each step checks the one before it.
    a billing account: the Free Trial's or your own.
 
 2. **Create a project.** In the console's project picker, at the top of the
-   page, choose **New project** and name it `made-with-ml`. Google appends a
-   suffix to make the **Project ID** unique, for example `made-with-ml-123456`.
+   page, choose **New project** and name it `mlops-tutorial`. Google appends a
+   suffix to make the **Project ID** unique, for example `mlops-tutorial-123456`.
    Every tool asks for that ID, not the name.
 
 3. **Create a service account**: an identity for programs, so the tools do not
@@ -51,8 +107,10 @@ call them. You do this once, in order: each step checks the one before it.
    **BigQuery Data Editor** (create datasets and tables, write rows) and
    **BigQuery Job User** (run queries).
 
-4. **Download its key.** Open the service account, then **Keys → Add key →
-   Create new key → JSON**. The browser downloads a file. Move it into this
+4. **Download its key.** In **IAM & Admin → Service Accounts**, click the
+   service account's email, `airflow-tutorial@<project id>.iam.gserviceaccount.com`,
+   to open it. Then open its **Keys** tab and choose **Add key → Create new
+   key → JSON**. The browser downloads a file. Move it into this
    repo as `secrets/gcp-key.json`. Git ignores everything in `secrets/` except
    `.gitkeep`, so the key cannot be committed by accident.
 
@@ -62,9 +120,13 @@ call them. You do this once, in order: each step checks the one before it.
    > create a new one.
 
 5. **Tell the stack which project.** Set `GCP_PROJECT_ID` in `.env` to your
-   Project ID. Leave `BQ_LOCATION` as `US`, or set it to `EU` to keep the data
-   in Europe and use `EU` in Airbyte below too. Then recreate the containers so
-   they read the new value:
+   Project ID. `BQ_LOCATION` says where BigQuery keeps the data: `US` (the
+   default), `EU`, or a single region near you, such as
+   `australia-southeast1` ([the full list](https://cloud.google.com/bigquery/docs/locations)).
+   This tutorial's data is small enough that any of them works. Whichever you
+   pick, the Airbyte destination you create in "2. Airbyte" needs the same
+   value in its **Dataset location** field. Choose before the first sync: it
+   creates the dataset, and a dataset's location cannot change. Then recreate the containers so they read the new value:
 
    ```bash
    docker compose up -d
@@ -76,16 +138,42 @@ call them. You do this once, in order: each step checks the one before it.
    `google_cloud_default` Connection the compose file defines
    (`AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT`).
 
-Step 4 checks that the key works.
+`dbt debug`, in "4. Create the dbt project", checks that the key works.
 
 #### 2. Airbyte
 
 Airbyte does not run from this repo's compose file. Its installer, `abctl`,
 runs it in a small Kubernetes cluster that it creates inside Docker. Airbyte
-asks for 4 CPUs and 8 GB of memory on top of what Airflow uses, so give Docker
-the room first, in Docker Desktop's **Settings → Resources**. (On Windows with
-the WSL2 backend, Docker gets what WSL2 allows: half the machine's memory by
-default.)
+asks for 4 CPUs and 8 GB of memory on top of what the Airflow stack uses
+(about 4 GB), so Docker needs about 12 GB in all. See what it has now, in the
+`CPUs` and `Total Memory` lines:
+
+```bash
+docker info
+```
+
+If it is short, where to raise it depends on how Docker runs:
+
+- **Docker Desktop on macOS or Linux:** **Settings → Resources → Advanced**,
+  the CPU and memory limits.
+- **Docker Desktop on Windows with the WSL2 backend** (the default): that page
+  has no limits to set, because Docker gets what WSL2 gets: every CPU, and half
+  the machine's memory. To give WSL2 more, create or edit the file
+  `.wslconfig` in your Windows user folder (`%UserProfile%`):
+
+  ```ini
+  [wsl2]
+  memory=12GB
+  ```
+
+  Then stop WSL2 so it restarts with the new limit, and start Docker Desktop
+  again:
+
+  ```powershell
+  wsl --shutdown
+  ```
+- **Docker Engine on Linux:** there is no limit; containers can use the whole
+  machine.
 
 1. **Install `abctl`.** On Linux or macOS:
 
@@ -107,15 +195,19 @@ default.)
    Airbyte is then at <http://localhost:8000>. On a machine short of memory,
    `abctl local install --low-resource-mode` runs it with 2 CPUs.
 
-3. **Get the credentials:**
+3. **Get the credentials and log in:**
 
    ```bash
    abctl local credentials
    ```
 
-   Of the four values it prints, `email` and `password` log you in to the UI,
-   and `client-id` and `client-secret` let Airflow use Airbyte's API (step 3).
-   Log in.
+   It prints four values. `Password` is the UI's password. `Client-Id` and
+   `Client-Secret` let Airflow use Airbyte's API ("3. Tell Airflow how to
+   reach Airbyte"). `Email` says `[not set]` until the first login sets it.
+
+   Open <http://localhost:8000>. The first time, Airbyte asks for an email and
+   an organization name: enter your email and any name, and choose **Get
+   Started**. Then log in with that email and the `Password` value.
 
 4. **Create two sources**, one per CSV. A *source* is where Airbyte reads data
    from. **Sources → New source → File**, then:
@@ -137,7 +229,7 @@ default.)
    | Field | Value |
    |---|---|
    | Project ID | your Project ID |
-   | Dataset location | `US` (or `EU`, matching `BQ_LOCATION`) |
+   | Dataset location | the same value as `BQ_LOCATION` |
    | Default dataset ID | `mlops_course` |
    | Loading method | Batched Standard Inserts |
    | Service account key JSON | the whole content of `secrets/gcp-key.json` |
@@ -147,11 +239,16 @@ default.)
 
 6. **Create two connections**: a *connection* links one source to one
    destination, and each run of it is a *sync*. Create `projects → BigQuery`
-   and `tags → BigQuery`, each with:
-   - schedule **Manual**, so that Airflow decides when it runs;
-   - sync mode **Full refresh | Overwrite**, so that each sync replaces the
-     table instead of appending to it;
-   - the destination's default namespace, so the tables land in `mlops_course`.
+   and `tags → BigQuery`, the same way: **Connections → New connection**,
+   choose the source, then the BigQuery destination. Two screens follow:
+   - **The streams screen.** A *stream* is one table the source offers; a
+     File source offers one, named after its dataset. Leave it selected and
+     set its sync mode to **Full Refresh Overwrite**, so that each sync
+     replaces the table instead of appending to it. Choose **Next**.
+   - **Configure connection.** Set **Schedule type** to **Manual**, so that
+     Airflow decides when it runs, and **Destination Namespace** to
+     **Destination-defined**, so the table lands in `mlops_course`. Leave the
+     rest as it is, and choose **Set up connection**.
 
 7. **Sync each connection once by hand**, with **Sync now**. Then open BigQuery
    in the Google Cloud console: `mlops_course` has a `projects` table and a
@@ -159,16 +256,20 @@ default.)
    beginning `_airbyte_`, which Airbyte uses to track loads; this repo's code
    reads only the CSV's columns.
 
-8. **Copy each connection's ID** from its URL, the UUID after `/connections/`:
+8. **Copy each connection's ID.** Airbyte does not show it on the page: it
+   is in the browser's address bar. Open the connection from **Connections**,
+   and the ID is the UUID right after `/connections/`:
 
    ```
    http://localhost:8000/workspaces/<workspace id>/connections/<connection id>/status
    ```
 
+   Keep both IDs, `projects → BigQuery`'s and `tags → BigQuery`'s, for step 3.
+
 #### 3. Tell Airflow how to reach Airbyte
 
-Airflow reaches Airbyte through a Connection (§6), with the `client-id` and
-`client-secret` from step 2:
+Airflow reaches Airbyte through a Connection (§6), with the `Client-Id` and
+`Client-Secret` that `abctl local credentials` printed:
 
 ```bash
 docker compose exec airflow-scheduler airflow connections add airbyte \
@@ -177,11 +278,18 @@ docker compose exec airflow-scheduler airflow connections add airbyte \
     --conn-login <client-id> --conn-password <client-secret>
 ```
 
+**Checkpoint.** The last line is ``Successfully added `conn_id`=airbyte``.
+Above it come many lines of warnings. Most are `DeprecatedImportWarning` and
+`SyntaxWarning`, raised while the CLI loads every provider in the image; they
+are noise. The one before the last, `empty cryptography key - values will not
+be stored encrypted`, is the missing Fernet key from §6: on this stack,
+Connections are stored unencrypted.
+
 Inside a container, `localhost` is the container itself;
 `host.docker.internal` is your machine. Docker Desktop defines that name, and
 the compose file's `extra_hosts` line defines it on Linux.
 
-The two connection IDs go in Variables (§6), so the Dag file contains no ID
+The two connection IDs you copied in step 8 of "2. Airbyte" go in Variables (§6), so the Dag file contains no ID
 that exists only in your Airbyte:
 
 ```bash
@@ -194,7 +302,9 @@ docker compose exec airflow-scheduler airflow variables set airbyte_tags_connect
 **dbt** runs SQL `SELECT` statements, called **models**, and saves each result
 as a table in the warehouse. A **dbt project** is the folder dbt works from:
 the models, plus files saying how to connect and what to check. You create one
-now, in `dbt/`, the folder the compose file mounts for it.
+now, in `dbt/`, the folder the compose file mounts for it. Here you write it and run it once by hand; when
+the Dag runs, its `transform` task runs the same `dbt build` (step 3 in the
+diagram at the start of §9).
 
 dbt is installed in its own virtualenv in the image, `/opt/venvs/dbt`, because
 its dependencies pin versions that clash with Airflow's (the
@@ -233,7 +343,9 @@ models:
 
 A model can be saved as a *view* (a stored query, re-run each time it is read)
 or a *table* (the result, stored). A table is rebuilt from scratch on every
-run, so running dbt twice leaves the same table.
+run, so running dbt twice leaves the same table. A third option, *incremental*,
+adds only the new rows to the existing table instead of replacing it; this
+tutorial does not use it.
 
 **Say how to connect.** dbt reads its connection from a *profile*. Create
 `dbt/dbt_transforms/profiles.yml`:
@@ -255,7 +367,8 @@ dbt_transforms:
 The top key, `dbt_transforms`, is the profile name `dbt_project.yml` asks for.
 `{{ env_var(...) }}` is Jinja, the same templating Airflow uses (§6): each value
 is read from the container's environment, so the file holds no secret and no
-project ID. Check the connection, which also checks your key from step 1:
+project ID. Check the connection, which also checks your key,
+`secrets/gcp-key.json`:
 
 ```bash
 MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt debug \
@@ -266,8 +379,10 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
 cause: a wrong project ID, no file at `secrets/gcp-key.json`, or a service
 account missing a role.
 
-**Declare the raw tables.** A *source* in dbt is a table that something else
-loads, here Airbyte. Declaring it once lets models refer to it by name. Create
+**Declare the raw tables.** A *source* in dbt is a table already in BigQuery
+that dbt reads but does not build. Here the sources are `projects` and `tags`
+in the `mlops_course` dataset, the tables you loaded in step 2. Declaring them
+once lets models refer to them by name. Create
 `dbt/dbt_transforms/models/sources.yml`:
 
 ```yaml dbt/dbt_transforms/models/sources.yml
@@ -300,8 +415,10 @@ LEFT JOIN {{ source('mlops_course', 'tags') }} AS t
 ```
 
 `{{ source('mlops_course', 'projects') }}` compiles to the full table name,
-`` `<project id>.mlops_course.projects` ``. The `LEFT JOIN` keeps a project
-whose tag is missing, with an empty `tag`, so the test below catches it.
+`` `<project id>.mlops_course.projects` ``. In this data every project has a
+tag. If a later load brings one without a tag, a plain `JOIN` would drop it
+without a trace; the `LEFT JOIN` keeps it with `tag` set to `NULL`, so the
+`not_null` test below fails.
 
 **Add tests.** A dbt *test* is a check on a model's columns, run after the
 model is built. Create `dbt/dbt_transforms/models/labeled_projects/schema.yml`:
@@ -333,7 +450,8 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
 
 **Checkpoint.** `Done. PASS=5 WARN=0 ERROR=0 SKIP=0 TOTAL=5`: one model and
 four tests. BigQuery has a third table, `labeled_projects`, with 764 rows. Run
-the command again: same result, same table. A failing test makes `dbt build`
+the command again: same result, same table, because `+materialized: table`
+makes dbt replace the table on every run. A failing test makes `dbt build`
 exit with an error, which is what will fail the Dag's `transform` task.
 
 Stuck? The finished project is in
@@ -454,7 +572,8 @@ worker slot (§11 covers deferral in full). Add them inside `dataops()`:
     )
 ```
 
-`airbyte_conn_id` names the Connection from step 3. `connection_id` is the
+`airbyte_conn_id` names the `airbyte` Connection you added with
+`airflow connections add`. `connection_id` is the
 Airbyte connection to sync, read from a Variable by a template (§6), rendered
 when the task runs. A failed sync fails the task. Each task's outlet is a raw
 table's asset (§8); no Dag is scheduled on those, because raw data has not
@@ -557,15 +676,16 @@ receives the three results as arguments, and that data flow draws its edges.
 
 ### See the assets appear
 
-Save the file. Within seconds `airflow dags list` has a third row. And:
+Save the file. Within seconds `airflow dags list` has a third row, and the
+asset list has changed too:
 
 ```bash
 docker compose exec airflow-scheduler airflow assets list -o plain
 ```
 
 **Checkpoint.** Three rows, `labeled_projects`, `raw_projects` and `raw_tags`,
-each with a URI such as `bigquery://made-with-ml-123456/mlops_course/projects`:
-the table it stands for. Nothing has run; parsing a file with `outlets=` was
+each with a URI such as `bigquery://mlops-tutorial-123456/mlops_course/projects`:
+the table that asset stands for. Nothing has run; parsing a file with `outlets=` was
 enough. `production_model`, also in `assets.py`, is missing because no Dag
 refers to it yet. The Assets page shows the three, produced by `dataops`, with
 no consumer.
@@ -586,8 +706,9 @@ the other because `airflow dags test` runs one task at a time.
 `projects: 6 checks, failed=none` and the same for the other two.
 
 `airflow dags test` has no triggerer, so it runs the Airbyte tasks' triggers
-itself and logs `[DAG TEST] running trigger in line` (§4). Run by the
-scheduler, those tasks sit in `deferred` while Airbyte works.
+itself and logs `[DAG TEST] running trigger in line` (§4). In a normal
+run the triggerer runs those triggers, and the tasks sit in `deferred` while
+Airbyte works.
 
 A failed task? Compare with [`solutions/03_dataops.py`](../../solutions/03_dataops.py).
 A failed Airbyte task usually means a wrong Connection or Variable: check with

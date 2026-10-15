@@ -34,6 +34,35 @@ Un evento de monitorización tiene cuatro respuestas sensatas, y
 | **inspect** | apareció una etiqueta no vista | parar y avisar a alguien — el espacio de etiquetas cambió |
 | **rollback** | el rendimiento se desplomó | volver a apuntar producción al modelo anterior |
 
+Cómo se hablan las piezas cuando se ejecuta el Dag. Cada columna es un
+sistema, como en el diagrama de la §9:
+
+```
+ Airflow (Docker)               │ BigQuery          │ MLflow (Docker)
+ Dag monitoring                 │ mlops_course      │ localhost:5000
+────────────────────────────────┼───────────────────┼───────────────────────
+                                │                   │
+ 1 prepare_windows ◄────────────── labeled_projects │
+   escribe reference.csv y      │                   │
+   current.csv en data/         │                   │
+ 2 detect_drift (alibi-detect,  │                   │
+   en su propio virtualenv)     │                   │
+   lee los dos archivos         │                   │
+ 3 check_performance ◄──────────────────────────────── el modelo champion
+   lo puntúa sobre current.csv  │                   │
+ 4 decide: una rama de          │                   │
+   continue_serving             │                   │
+   inspect                      │                   │
+   rollback ─────────────────────────────────────────► devuelve champion
+   request_retraining:          │                   │  a previous_champion
+     una persona aprueba en     │                   │
+     la UI, y luego             │                   │
+     trigger_retraining         │                   │
+       │ arranca un run del     │                   │
+       ▼                        │                   │
+     Dag mlops (§10)            │                   │
+```
+
 ### Constrúyelo
 
 La carga de trabajo: `monitoring.prepare_windows(key)` lee

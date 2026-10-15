@@ -104,7 +104,7 @@ and burns CPU for nothing.
 `uri` or `extra` — asset extras are stored in cleartext. Use Connections,
 Variables, or a secrets backend (HashiCorp Vault, AWS Secrets Manager, Google
 Secret Manager), which Airflow then reads Connections and Variables from, so
-they never sit in its database at all. Set `AIRFLOW_FERNET_KEY` (§6) so that
+they never sit in its database at all. Set `AIRFLOW_FERNET_KEY` in `.env` (`env.example` shows how to generate one) so that
 whatever is in the database is encrypted. Two things this stack does that a
 production one should not: the GCP service-account key is a file mounted into
 every container, where a platform such as GKE would give the workers an
