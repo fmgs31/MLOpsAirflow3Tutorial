@@ -133,9 +133,10 @@ There are more; §15 shows how to use four of them.
 
 A URI is optional. `production_model`, the asset `mlops` emits when it
 promotes a model (§10), has only a name: the model lives in MLflow's registry,
-and there is no URI scheme Airflow knows for it. When there is one, give it:
-the UI then says exactly where each asset's data lives, and tools that read
-Airflow's lineage can follow it.
+and Airflow knows no URI scheme (like `bigquery://` or `gs://`) that points
+there. When an asset's data does sit somewhere with a known scheme, give the
+asset a URI: the UI then shows where that data lives, and tools that read
+Airflow's lineage can trace it.
 
 An asset exists in Airflow's eyes only once a parsed Dag refers to it — as an
 outlet or a schedule. Right now `airflow assets list` prints `No data found`,

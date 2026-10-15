@@ -56,6 +56,39 @@ on a Docker volume, and the tasks reach it at `http://mlflow:5000`
 **Checkpoint.** <http://localhost:5000> shows MLflow with one experiment,
 `Default`, and no runs. `project_tagger` appears with the first run.
 
+### How the pieces talk to each other
+
+Each column is one system, as in the §9 diagram:
+
+```
+ Airflow (Docker)            │ Postgres          │ MLflow (Docker)     │ BigQuery
+ mlops Dag                   │ optuna database   │ localhost:5000      │ mlops_course
+─────────────────────────────┼───────────────────┼─────────────────────┼───────────────────
+                             │                   │                     │
+ 1 prepare_data ◄──────────────────────────────────────────────────────── labeled_projects
+   saves a snapshot file     │                   │                     │
+   in data/snapshots/        │                   │                     │
+ 2 validate_training_data    │                   │                     │
+   (GX, on the snapshot)     │                   │                     │
+ 3 create_study ──────────────► a new study      │                     │
+ 4 run_trials ×N ─────────────► asks for params, │                     │
+   each task trains a few    │  stores scores    │                     │
+   models and logs each ──────────────────────────► one run per trial  │
+ 5 best_params ◄─────────────── the best trial   │                     │
+ 6 train_best ────────────────────────────────────► final run, with    │
+                             │                   │  the model file;    │
+                             │                   │  registered as a    │
+                             │                   │  new version        │
+ 7 evaluate_best ◄───────────────────────────────── its metrics.json   │
+ 8 promotion_gate ◄──────────────────────────────── champion's f1      │
+ 9 promote_model ─────────────────────────────────► moves champion     │
+   (or keep_current_model)   │                   │  to the new version │
+```
+
+BigQuery is read once, in step 1; every later task reads the snapshot file, so
+the whole run works on the same data. MLflow ends up with one run per trial
+plus the final one, and the model file is uploaded only with the final run.
+
 ### Build it
 
 New workload functions: `data.save_snapshot(df, key)` writes a dataframe to
@@ -223,7 +256,7 @@ list, and each adds trials to the same study. Four tasks:
 so a retried task loads the study instead of failing on it.
 
 `trial_budget` reads the Dag params through the `params` context key and splits
-the trials over the workers: 20 over 4 gives `[5, 5, 5, 5]`. In the wiring
+the trials over `n_workers` tasks: 20 over 4 gives `[5, 5, 5, 5]`. In the wiring
 below, `run_trials.partial(...).expand(n_trials=trial_budget())` creates one
 `run_trials` instance per item of that list, when the Dag runs. Each instance
 is retried, logged and inspected on its own. `.partial()` takes the arguments
@@ -238,7 +271,7 @@ still an honest estimate.
 anyway: that argument is what makes it wait for every `run_trials` instance,
 and it arrives as a list, one item per instance.
 
-**How many workers run at once is a choice, and it is written in
+**How many `run_trials` instances run at once is a choice, and it is written in
 `run_trials`' decorator.**
 Nothing about `.expand()` says "in parallel"; it says "these are four separate
 task instances". Whether they overlap is the executor's business, bounded by the
@@ -246,7 +279,7 @@ narrowest of the limits from §3 — and `max_active_tis_per_dag=2` on that task
 deliberately the narrowest one here. So the fan-out runs **two at a time, in two
 waves**. Raise the cap and all four overlap; remove it and `[core]
 max_active_tasks_per_dag` (16) is the next limit up. A cap on a training task
-is not a toy setting: four searches at once is four copies of the data in
+is not a toy setting: four instances at once is four copies of the data in
 memory. When the limited resource is shared — say, a database that accepts only
 a few connections — a `pool` (§3) sets the same kind of cap across every task
 and Dag that uses it.
@@ -455,7 +488,7 @@ Four `run_trials` rows with `map_index` 0–3; 2 and 3 each start after one
 of 0 and 1 has ended. And `keep_current_model` is `skipped`
 while `promote_model` is `success`: `promotion_gate` took the `promote_model`
 branch, because
-the f1 cleared the threshold and there was no production model to beat.
+the final model's f1 cleared the threshold and there was no production model to beat.
 
 Then look at what the run left in MLflow, at <http://localhost:5000>:
 

@@ -34,6 +34,31 @@ thing (a moment in time, a table, a message) and fire an event when it happens.
 "Deferrable" means the task hands the triggerer such a trigger, exits, and is
 resumed when the event arrives. `TriggerDagRunOperator` (§12) is the verb again.
 
+Here is where each step of `dags/05_sensors_and_events.py` waits. Each column
+is one system, as in the §9 diagram; the first two are both parts of Airflow:
+
+```
+ Airflow: task process          │ Airflow: the triggerer │ BigQuery
+ sensors_and_events Dag         │ (§3)                   │ mlops_course
+────────────────────────────────┼────────────────────────┼──────────────────
+                                │                        │
+ 1 settle (deferrable) ──────────► waits 5 seconds       │
+   resumes ◄────────────────────── fires the event       │
+                                │                        │
+ 2 wait_for_table (deferrable) ──► every 10 s, asks ──────► does the table
+                                │                        │  exist yet?
+   resumes ◄────────────────────── fires the event       │
+                                │                        │
+ 3 enough_rows (reschedule)     │                        │
+   every 10 s, a new try ─────────────────────────────────► counts its rows
+   exits between tries          │                        │
+ 4 proceed: 500+ rows           │                        │
+```
+
+While `settle` and `wait_for_table` wait, the waiting happens in the
+triggerer, and no task process exists. `enough_rows` does its own checking: a
+new try every 10 seconds, with the process gone in between.
+
 ### Build it
 
 Create `dags/05_sensors_and_events.py` with the header and the two sensors that
@@ -120,7 +145,7 @@ sensors_and_events()
 a value downstream — `proceed` receives the row count. `data.count_rows` runs a
 `SELECT COUNT(*)` in BigQuery; while the table does not exist, BigQuery answers
 `NotFound`, and the poke reports not done instead of failing. `enough_rows` is
-in `reschedule` mode, the second kind.
+in `reschedule` mode, the second option in the list that opens §11.
 
 Read the wiring: `enough_rows` has no upstream task, so it starts at once,
 alongside `settle`, and `proceed` waits for both `wait_for_table` and

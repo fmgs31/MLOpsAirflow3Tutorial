@@ -59,6 +59,41 @@ una carpeta propia, en un volumen de Docker, y las tasks lo encuentran en
 **Comprobación.** <http://localhost:5000> muestra MLflow con un experiment,
 `Default`, y ningún run. `project_tagger` aparece con el primer run.
 
+### Cómo se hablan las piezas
+
+Cada columna es un sistema, como en el diagrama de la §9:
+
+```
+ Airflow (Docker)            │ Postgres          │ MLflow (Docker)     │ BigQuery
+ Dag mlops                   │ base de datos     │ localhost:5000      │ mlops_course
+                             │ optuna            │                     │
+─────────────────────────────┼───────────────────┼─────────────────────┼───────────────────
+                             │                   │                     │
+ 1 prepare_data ◄──────────────────────────────────────────────────────── labeled_projects
+   guarda un snapshot en     │                   │                     │
+   data/snapshots/           │                   │                     │
+ 2 validate_training_data    │                   │                     │
+   (GX, sobre el snapshot)   │                   │                     │
+ 3 create_study ──────────────► un study nuevo   │                     │
+ 4 run_trials ×N ─────────────► pide params,     │                     │
+   cada task entrena unos    │  guarda scores    │                     │
+   modelos y registra cada ───────────────────────► un run por trial   │
+ 5 best_params ◄─────────────── el mejor trial   │                     │
+ 6 train_best ────────────────────────────────────► run final, con     │
+                             │                   │  el modelo;         │
+                             │                   │  registrado como    │
+                             │                   │  versión nueva      │
+ 7 evaluate_best ◄───────────────────────────────── su metrics.json    │
+ 8 promotion_gate ◄──────────────────────────────── f1 del champion    │
+ 9 promote_model ─────────────────────────────────► mueve champion     │
+   (o keep_current_model)    │                   │  a la versión nueva │
+```
+
+BigQuery se lee una sola vez, en el paso 1; todas las tasks siguientes leen el
+archivo del snapshot, así que el run entero trabaja con los mismos datos. En
+MLflow queda un run por trial más el final, y el archivo del modelo solo se
+sube con el run final.
+
 ### Constrúyelo
 
 Funciones nuevas de la carga de trabajo: `data.save_snapshot(df, key)` escribe
@@ -228,7 +263,7 @@ elemento de una lista, y cada una añade trials al mismo study. Cuatro tasks:
 una task reintentada carga el study en vez de fallar porque ya existe.
 
 `trial_budget` lee los params del Dag a través de la clave de contexto `params`
-y reparte los trials entre los workers: 20 entre 4 da `[5, 5, 5, 5]`. Al
+y reparte los trials entre `n_workers` tasks: 20 entre 4 da `[5, 5, 5, 5]`. Al
 conectar las tasks, más abajo, `run_trials.partial(...).expand(n_trials=trial_budget())`
 crea una instancia de `run_trials` por cada elemento de esa lista, cuando corre
 el Dag. Cada instancia se reintenta, tiene su propio log y se inspecciona por
@@ -245,14 +280,14 @@ de las instancias mapeadas: ese argumento es lo que la obliga a esperar a todas
 las instancias de `run_trials`, y llega como una lista, un elemento por
 instancia.
 
-**Cuántos workers corren a la vez es una decisión, y está escrita en el
+**Cuántas instancias de `run_trials` corren a la vez es una decisión, y está escrita en el
 decorador de `run_trials`.** Nada en `.expand()` dice "en paralelo"; dice "estas son cuatro task
 instances separadas". Que se solapen o no es asunto del executor, acotado por el
 más restrictivo de los límites de la §3 — y `max_active_tis_per_dag=2` en esa task es
 deliberadamente el más restrictivo aquí. Así que el fan-out corre **de dos en dos,
 en dos oleadas**. Sube el tope y las cuatro se solapan; quítalo y `[core]
 max_active_tasks_per_dag` (16) es el siguiente límite. Un tope en una task de
-entrenamiento no es un ajuste de juguete: cuatro búsquedas a la vez son cuatro
+entrenamiento no es un ajuste de juguete: cuatro instancias a la vez son cuatro
 copias de los datos en memoria. Cuando el recurso limitado es compartido
 — por ejemplo, una base de datos que solo acepta unas pocas conexiones —, un
 `pool` (§3) pone el mismo tipo de tope a todas las tasks y Dags que lo usan.
@@ -468,8 +503,8 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 Cuatro filas de `run_trials` con `map_index` de 0 a 3; la 2 y la 3 arrancan
 cada una después de que haya terminado una de la 0 y la 1. Y
 `keep_current_model` está `skipped` mientras `promote_model` está `success`:
-`promotion_gate` eligió la rama de `promote_model`, porque el f1 superó el
-umbral y no había modelo en producción al que batir.
+`promotion_gate` eligió la rama de `promote_model`, porque el f1 del modelo final
+superó el umbral y no había modelo en producción al que batir.
 
 Después mira lo que el run ha dejado en MLflow, en <http://localhost:5000>:
 

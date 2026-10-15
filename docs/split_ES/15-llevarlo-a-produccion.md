@@ -106,7 +106,7 @@ nunca en la `uri` o el `extra` de un asset — los extras de asset se guardan en
 texto plano. Usa Connections, Variables o un secrets backend (HashiCorp Vault,
 AWS Secrets Manager, Google Secret Manager), del que Airflow lee entonces las
 Connections y Variables, así que nunca llegan a estar en su base de datos.
-Define `AIRFLOW_FERNET_KEY` (§6) para que lo que sí esté en la base de datos
+Define `AIRFLOW_FERNET_KEY` en `.env` (`env.example` explica cómo generar una) para que lo que sí esté en la base de datos
 vaya cifrado. Dos cosas que hace este stack y que uno de producción no
 debería: la clave de la service account de GCP es un archivo montado en todos
 los contenedores, cuando una plataforma como GKE les daría a los workers una

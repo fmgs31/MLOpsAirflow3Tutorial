@@ -36,6 +36,33 @@ mensaje) y lanzan un evento cuando ocurre. "Deferrable" significa que la task le
 entrega al triggerer uno de esos triggers, termina su proceso, y se reanuda
 cuando llega el evento. `TriggerDagRunOperator` (§12) vuelve a ser el verbo.
 
+Aquí se ve dónde espera cada paso de `dags/05_sensors_and_events.py`. Cada
+columna es un sistema, como en el diagrama de la §9; las dos primeras son
+partes de Airflow:
+
+```
+ Airflow: proceso de la task    │ Airflow: el triggerer  │ BigQuery
+ Dag sensors_and_events         │ (§3)                   │ mlops_course
+────────────────────────────────┼────────────────────────┼──────────────────
+                                │                        │
+ 1 settle (deferrable) ──────────► espera 5 segundos     │
+   se reanuda ◄─────────────────── dispara el evento     │
+                                │                        │
+ 2 wait_for_table (deferrable) ──► cada 10 s pregunta ────► ¿existe ya la
+                                │                        │  tabla?
+   se reanuda ◄─────────────────── dispara el evento     │
+                                │                        │
+ 3 enough_rows (reschedule)     │                        │
+   cada 10 s, un intento ─────────────────────────────────► cuenta sus filas
+   sale entre intentos          │                        │
+ 4 proceed: 500+ filas          │                        │
+```
+
+Mientras `settle` y `wait_for_table` esperan, la espera ocurre en el
+triggerer, y no existe ningún proceso de la task. `enough_rows` hace sus
+propias comprobaciones: un intento nuevo cada 10 segundos, sin proceso entre
+uno y otro.
+
 ### Constrúyelo
 
 Crea `dags/05_sensors_and_events.py` con la cabecera y los dos sensors que son
@@ -123,7 +150,8 @@ sensors_and_events()
 un valor aguas abajo — `proceed` recibe el recuento de filas. `data.count_rows`
 ejecuta un `SELECT COUNT(*)` en BigQuery; mientras la tabla no existe, BigQuery
 responde `NotFound`, y el poke indica que aún no ha terminado, en lugar de
-fallar. `enough_rows` está en modo `reschedule`, el segundo tipo.
+fallar. `enough_rows` está en modo `reschedule`, la segunda opción de la lista con
+que empieza la §11.
 
 Fíjate en las conexiones: `enough_rows` no tiene ninguna task aguas arriba, así que
 arranca enseguida, a la vez que `settle`, y `proceed` espera tanto a

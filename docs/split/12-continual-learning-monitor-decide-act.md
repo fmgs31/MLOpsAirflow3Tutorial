@@ -32,6 +32,35 @@ A monitoring event has four sensible responses, and
 | **inspect** | an unseen label appeared | stop and page someone — the label space changed |
 | **rollback** | performance collapsed | re-point production at the previous model |
 
+How the pieces talk to each other when the Dag runs. Each column is one
+system, as in the §9 diagram:
+
+```
+ Airflow (Docker)               │ BigQuery          │ MLflow (Docker)
+ monitoring Dag                 │ mlops_course      │ localhost:5000
+────────────────────────────────┼───────────────────┼───────────────────────
+                                │                   │
+ 1 prepare_windows ◄────────────── labeled_projects │
+   writes reference.csv and     │                   │
+   current.csv in data/         │                   │
+ 2 detect_drift (alibi-detect,  │                   │
+   in its own virtualenv)       │                   │
+   reads the two files          │                   │
+ 3 check_performance ◄──────────────────────────────── the champion model
+   scores it on current.csv     │                   │
+ 4 decide: one branch of        │                   │
+   continue_serving             │                   │
+   inspect                      │                   │
+   rollback ─────────────────────────────────────────► moves champion back
+   request_retraining:          │                   │  to previous_champion
+     a person approves in       │                   │
+     the UI, then               │                   │
+     trigger_retraining         │                   │
+       │ starts a run of        │                   │
+       ▼                        │                   │
+     mlops Dag (§10)            │                   │
+```
+
 ### Build it
 
 The workload: `monitoring.prepare_windows(key)` reads `labeled_projects`,

@@ -1,7 +1,7 @@
 ## 14. Testing Dags
 
-Five levels of tests on the code — the first of them checks the seven files
-you wrote — and one more on the data.
+Four levels of tests on the code — the first of them checks the seven files
+you wrote — and one on the data.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
 These catch, before the file reaches Airflow, the failures that would otherwise
@@ -93,7 +93,7 @@ well under a minute:
 41 passed, 1 skipped in 20.75s
 ```
 
-The `s` is the drift test, skipped as described above. No scheduler was
+The `s` is the drift test, skipped for the reason given under "Unit tests on the workload". No scheduler was
 involved, no Dag ran, and nothing reached BigQuery or the MLflow server. That
 is the point: every one of those tests is fast enough to run on every commit,
 which is what makes them worth having.
