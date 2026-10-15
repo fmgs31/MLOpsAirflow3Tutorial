@@ -30,8 +30,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# The listings live in the appendices, not in the tutorial: §16 of each language
-# (docs/split*/16-*.md) links here instead of carrying ~37 kB of injected code inline.
+# The listings live in the appendices, not in the tutorial: §17 of each language
+# (docs/split*/17-*.md) links here instead of carrying ~37 kB of injected code inline.
 APPENDICES = [ROOT / "docs" / "appendix-dags.md", ROOT / "docs" / "appendix-dags_ES.md"]
 
 MARKER = re.compile(

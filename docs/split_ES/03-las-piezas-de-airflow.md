@@ -139,7 +139,7 @@ volumen de la metadata database, no en los contenedores — `scripts/reset.sh`
 borra ese volumen, y por eso es el último recurso.
 
 De ahí salen dos consecuencias. Es lo que hay que incluir en las copias de
-seguridad, y crece indefinidamente salvo que ejecutes `airflow db clean` (§15) — un año de runs, task instances y
+seguridad, y crece indefinidamente salvo que ejecutes `airflow db clean` (§16) — un año de runs, task instances y
 XComs no se borra solo.
 
 ### El ciclo de vida de una task

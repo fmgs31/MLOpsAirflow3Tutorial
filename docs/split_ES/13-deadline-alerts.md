@@ -101,4 +101,4 @@ Referencia: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_aler
 
 ---
 
-← [12. Continual learning: monitorizar, decidir, actuar](12-continual-learning-monitorizar-decidir-actuar.md) · [Índice](README.md) · [14. Testear Dags](14-testear-dags.md) →
+← [12. Continual learning: monitorizar, decidir, actuar](12-continual-learning-monitorizar-decidir-actuar.md) · [Índice](README.md) · [14. Cuando los datos fallan](14-cuando-los-datos-fallan.md) →

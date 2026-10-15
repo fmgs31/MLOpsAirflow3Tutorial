@@ -532,7 +532,7 @@ in one of three ways:
   the compose file defines `google_cloud_default`, the Connection the BigQuery
   sensor in §11 uses, and `fs_default`, the one a `FileSensor` uses by default.
 - **In a secrets backend** (Vault, AWS Secrets Manager…), the usual choice in
-  production (§15).
+  production (§16).
 
 Templates read them as `{{ conn.warehouse.host }}` and `{{ var.value.min_rows }}`.
 

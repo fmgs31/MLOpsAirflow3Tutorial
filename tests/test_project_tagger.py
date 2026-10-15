@@ -14,16 +14,17 @@ import pytest
 from project_tagger import config, data, monitoring, validate
 
 # What `labeled_projects` looks like when read from the warehouse: raw tags,
-# one of them (`mlops`, 20 rows) rare enough to be collapsed into `other`.
+# one of them (`graph-learning`, 20 rows) outside the four classes the model
+# learns, so collapsed into `other`.
 LABELED = pd.DataFrame(
     {
         "id": range(1, 121),
         "created_on": pd.date_range("2020-01-01", periods=120, freq="D").astype(str),
         "title": [f"Fine-tuning BERT for classification {i}" for i in range(60)]
         + [f"Object detection with YOLO {i}" for i in range(40)]
-        + [f"Deploying models with Kubernetes {i}" for i in range(20)],
+        + [f"Graph neural networks for molecules {i}" for i in range(20)],
         "description": ["a description of the project"] * 120,
-        "tag": ["natural-language-processing"] * 60 + ["computer-vision"] * 40 + ["mlops"] * 20,
+        "tag": ["natural-language-processing"] * 60 + ["computer-vision"] * 40 + ["graph-learning"] * 20,
     }
 )
 
@@ -32,16 +33,16 @@ def test_clean_text_lowercases_and_strips_punctuation() -> None:
     assert data.clean_text("Hello, World! 42") == "hello world 42"
 
 
-def test_preprocess_produces_text_and_collapses_rare_tags() -> None:
-    out = data.preprocess(LABELED, min_tag_freq=30)
+def test_preprocess_produces_text_and_collapses_unlearned_tags() -> None:
+    out = data.preprocess(LABELED)
     assert "text" in out.columns
     assert out["text"].str.len().gt(0).all()
-    assert "mlops" not in set(out["tag"])
+    assert "graph-learning" not in set(out["tag"])
     assert "other" in set(out["tag"])
 
 
 def test_split_is_stratified_and_disjoint() -> None:
-    df = data.preprocess(LABELED, min_tag_freq=10)
+    df = data.preprocess(LABELED)
     train, test = data.split(df, test_size=0.25)
     assert len(train) + len(test) == len(df)
     assert set(train["id"]).isdisjoint(set(test["id"]))
@@ -95,22 +96,22 @@ def test_projects_suite_catches_duplicates() -> None:
 
 
 def test_check_split_passes_on_a_stratified_split() -> None:
-    df = data.preprocess(LABELED, min_tag_freq=10)
+    df = data.preprocess(LABELED)
     result = validate.check_split(*data.split(df), min_rows_per_class=5)
     assert result.passed, result.failures
 
 
 def test_check_split_catches_a_class_missing_from_test() -> None:
-    df = data.preprocess(LABELED, min_tag_freq=10)
+    df = data.preprocess(LABELED)
     train, test = data.split(df)
-    test = test[test["tag"] != "mlops"]
+    test = test[test["tag"] != "other"]
     result = validate.check_split(train, test, min_rows_per_class=5)
     assert not result.passed
     assert "classes_in_both_splits" in {r["expectation"] for r in result.failures}
 
 
 def test_check_split_catches_an_under_represented_class() -> None:
-    df = data.preprocess(LABELED, min_tag_freq=10)
+    df = data.preprocess(LABELED)
     train, test = data.split(df)
     result = validate.check_split(train, test, min_rows_per_class=1000)
     assert not result.passed
@@ -118,7 +119,7 @@ def test_check_split_catches_an_under_represented_class() -> None:
 
 
 def test_check_split_catches_leakage_between_splits() -> None:
-    df = data.preprocess(LABELED, min_tag_freq=10)
+    df = data.preprocess(LABELED)
     train, test = data.split(df)
     leaky = pd.concat([test, train.head(1)])
     result = validate.check_split(train, leaky, min_rows_per_class=5)
@@ -137,7 +138,7 @@ def test_prepare_windows_splits_by_date(tmp_path, monkeypatch) -> None:
     assert len(reference) + len(current) == len(LABELED)
     assert reference["created_on"].max() < current["created_on"].min()
     # Raw tags are kept, so a tag the model never saw stays visible to drift checks.
-    assert "mlops" in set(current["tag"])
+    assert "graph-learning" in set(current["tag"])
 
 
 def test_drift_flags_a_new_label(tmp_path, monkeypatch) -> None:
@@ -173,7 +174,7 @@ def local_tracking(tmp_path, monkeypatch):
 def test_training_beats_a_trivial_baseline() -> None:
     from project_tagger import train as train_module
 
-    df = data.preprocess(LABELED, min_tag_freq=10)
+    df = data.preprocess(LABELED)
     train_df, test_df = data.split(df, test_size=0.25)
     _, metrics = train_module.fit(train_df, test_df)
     majority = test_df["tag"].value_counts(normalize=True).max()
@@ -185,7 +186,7 @@ def test_tune_train_register_promote_rollback(local_tracking) -> None:
     """The mlops Dag's ML calls, in order, without Airflow."""
     from project_tagger import registry, train as train_module
 
-    df = data.preprocess(LABELED, min_tag_freq=10)
+    df = data.preprocess(LABELED)
     train_df, test_df = data.split(df)
 
     study = train_module.create_study("test-study")

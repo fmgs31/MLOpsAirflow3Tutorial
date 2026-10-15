@@ -129,7 +129,7 @@ tutorial:
 | `mlops` to wait for two assets, or to make do with either one | `AssetAll(a, b)` / `AssetAny(a, b)` in the `schedule` (§10) |
 | a Dag to start on a message from an outside system, with no producer in Airflow | `AssetWatcher` (§11) |
 
-There are more; §15 shows how to use four of them.
+There are more; §16 shows how to use four of them.
 
 A URI is optional. `production_model`, the asset `mlops` emits when it
 promotes a model (§10), has only a name: the model lives in MLflow's registry,

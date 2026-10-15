@@ -1,6 +1,6 @@
 ## 9. El Dag de DataOps
 
-`dags/03_dataops.py` carga los datos en bruto en el warehouse, los comprueba,
+`dags/03_dataops.py` carga los datos sin procesar en el warehouse, los comprueba,
 los convierte en la tabla de entrenamiento y comprueba también el resultado.
 Cada paso lo hace una herramienta pensada para él; el Dag decide cuándo se ejecuta cada una y
 detiene el pipeline cuando falla una comprobación.
@@ -10,7 +10,7 @@ detiene el pipeline cuando falla una comprobación.
 | `extract_and_load_projects`, `extract_and_load_tags` | **Airbyte** | copia cada CSV de origen a una tabla del warehouse |
 | — | **BigQuery** | el warehouse: guarda las tablas y ejecuta SQL sobre ellas |
 | `validate_projects`, `validate_tags`, `validate_transformed` | **Great Expectations** | comprueba una tabla contra una lista de reglas |
-| `transform` | **dbt** | construye la tabla de entrenamiento a partir de las dos tablas en bruto, en SQL |
+| `transform` | **dbt** | construye la tabla de entrenamiento a partir de las dos tablas sin procesar (`projects` y `tags`, tal como las carga Airbyte), en SQL |
 
 Cómo se hablan las piezas cuando se ejecuta el Dag. Cada columna es un
 sistema, y lo que está escrito en una columna ocurre en ese sistema. Una flecha
@@ -70,9 +70,9 @@ GX y dbt tienen también versiones de pago, alojadas, GX Cloud y dbt Cloud, que
 sí son servicios. Con ellas, la task llamaría a una API, como hace con Airbyte
 (ver «Alternativas» al final de esta sección).
 
-Cargar primero los datos en bruto y transformarlos dentro del warehouse se
-llama **ELT** (extract, load, transform). Como se conservan las tablas en
-bruto, una transformación con un bug se corrige y se vuelve a ejecutar sin
+Cargar primero los datos sin procesar y transformarlos dentro del warehouse se
+llama **ELT** (extract, load, transform). Como se conservan las tablas sin
+procesar, una transformación con un bug se corrige y se vuelve a ejecutar sin
 extraer de nuevo.
 
 Es también el primer Dag del tutorial con un cron real, `schedule="0 3 * * *"`
@@ -392,7 +392,7 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
 mensaje indica la causa: un Project ID equivocado, ningún archivo en `secrets/gcp-key.json`, o
 una service account a la que le falta un rol.
 
-**Declara las tablas en bruto.** Una *source* en dbt es una tabla que ya está
+**Declara las tablas sin procesar.** Una *source* en dbt es una tabla que ya está
 en BigQuery y que dbt lee pero no construye. Aquí las sources son `projects` y
 `tags` del dataset `mlops_course`, las tablas que cargaste en el paso 2.
 Declararlas una vez permite a los models referirse a ellas por su nombre. Crea
@@ -451,6 +451,9 @@ models:
       - name: title
         data_tests:
           - not_null
+      - name: description
+        data_tests:
+          - not_null
       - name: tag
         data_tests:
           - not_null
@@ -464,8 +467,8 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
     --project-dir /opt/airflow/dbt/dbt_transforms --profiles-dir /opt/airflow/dbt/dbt_transforms
 ```
 
-**Comprobación.** `Done. PASS=5 WARN=0 ERROR=0 SKIP=0 TOTAL=5`: un model y
-cuatro tests. BigQuery tiene una tercera tabla, `labeled_projects`, con 764
+**Comprobación.** `Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6`: un model y
+cinco tests. BigQuery tiene una tercera tabla, `labeled_projects`, con 764
 filas. Ejecuta el comando otra vez: mismo resultado, misma tabla, porque
 `+materialized: table` hace que dbt reemplace la tabla en cada ejecución. Un test
 fallido hace que `dbt build` termine con error, que es lo que hará fallar la
@@ -478,8 +481,9 @@ task `transform` del Dag.
 #### 5. Great Expectations
 
 Los tests de dbt comprueban la tabla que construye dbt. **Great Expectations**
-(GX) comprueba también las tablas en bruto, antes de construir nada sobre
-ellas, con más tipos de reglas. Una **expectation** es una regla ("`id` es
+(GX) comprueba además las tablas sin procesar, `projects` y `tags`, antes de que
+dbt las lea, y tiene más tipos de reglas que los `unique` y `not_null` de
+dbt, como un número mínimo de filas. Una **expectation** es una regla ("`id` es
 único"); una **suite** es una lista de expectations con nombre; **validar** una
 tabla contra una suite da un resultado, aprobado o fallido, por cada
 expectation.
@@ -500,8 +504,9 @@ e.ExpectTableRowCountToBeBetween(min_value=500),
 
 `validate.run_suite(df, "projects")` valida un dataframe contra esa suite y
 devuelve un resultado con `.passed`, `.failures`, `.results`, `.suite` y una
-línea `.summary()`. (GX tiene también operators de Airflow, pero su paquete no
-se puede instalar junto a Airflow 3.3.1, así que las tasks llaman a GX
+línea `.summary()`. (GX tiene también operators de Airflow, pero al momento de
+escribir esto (octubre de 2026) su paquete no se puede instalar junto a
+Airflow 3.3.1, así que las tasks llaman a GX
 directamente.)
 
 Cada expectation es *crítica* salvo que se marque lo contrario. Una
@@ -599,11 +604,11 @@ un worker slot (la §11 lo explica a fondo). Añádelas dentro de
 `airflow connections add`. `connection_id` es la
 connection de Airbyte que hay que sincronizar; un template (§6) la lee de una
 Variable cuando corre la task. Un sync fallido hace
-fallar la task. El outlet de cada task es el asset de una tabla en bruto (§8);
-ningún Dag está programado con ellos, porque los datos en bruto aún no se han
+fallar la task. El outlet de cada task es el asset de una tabla sin procesar (§8);
+ningún Dag está programado con ellos, porque los datos sin procesar aún no se han
 comprobado.
 
-Después un **gate** sobre cada tabla en bruto: una task que falla si la tabla
+Después un **gate** sobre cada tabla sin procesar: una task que falla si la tabla
 no pasa su suite, y con eso detiene todo lo que va aguas abajo:
 
 ```python dags/03_dataops.py
@@ -727,7 +732,7 @@ detrás de otro porque `airflow dags test` ejecuta las tasks de una en una.
 
 **Comprobación.** En el log, por orden: cada task de Airbyte informando de que
 su job ha terminado; `suite=projects passed=6/6` y `suite=tags passed=5/5`; el
-`Done. PASS=5 WARN=0 ERROR=0 SKIP=0 TOTAL=5` de dbt en el log de `transform`;
+`Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6` de dbt en el log de `transform`;
 `suite=labeled_projects passed=6/6`; y del task group,
 `projects: 6 checks, failed=none` y lo mismo para las otras dos.
 

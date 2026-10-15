@@ -100,4 +100,4 @@ Reference: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_alert
 
 ---
 
-← [12. Continual learning: monitor, decide, act](12-continual-learning-monitor-decide-act.md) · [Index](README.md) · [14. Testing Dags](14-testing-dags.md) →
+← [12. Continual learning: monitor, decide, act](12-continual-learning-monitor-decide-act.md) · [Index](README.md) · [14. When the data goes wrong](14-when-the-data-goes-wrong.md) →

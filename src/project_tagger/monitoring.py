@@ -36,7 +36,7 @@ def prepare_windows(run_key: str, df: pd.DataFrame | None = None) -> dict[str, s
     """
     if df is None:
         df = data_module.load_labeled()
-    df = data_module.preprocess(df, min_tag_freq=0)
+    df = data_module.preprocess(df, collapse_tags=False)
     reference, current = split_reference_current(df)
 
     folder = Path(config.SNAPSHOTS_DIR) / run_key

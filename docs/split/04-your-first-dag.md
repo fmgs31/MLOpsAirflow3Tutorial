@@ -47,7 +47,7 @@ five times, and every other task still retries twice. It exists so you do not
 repeat `owner=` and `retries=` on twenty tasks.
 
 `owner` is a label: it shows in the Dags list, you can filter on it, and it
-says who to ask when the Dag breaks. This repo's integrity tests (§14) reject
+says who to ask when the Dag breaks. This repo's integrity tests (§15) reject
 the default, `airflow`, because an owner that is nobody means nobody gets paged.
 
 The other two decide what happens when a task fails:
@@ -64,7 +64,7 @@ The other two decide what happens when a task fails:
 
 **The default is `retries=0`** (`[core] default_task_retries`), which means a
 task hit by a brief network glitch just fails and takes the run with it. Retrying
-is opt-in, and that is why this repo's integrity tests (§14) insist every
+is opt-in, and that is why this repo's integrity tests (§15) insist every
 non-demo Dag sets it.
 
 Retries only help with failures that might not happen again — a timeout, a
@@ -286,7 +286,7 @@ after every Dag you write.
 >   does not return until the wait is over.
 >
 > It is **not a dry run**, though: tasks write real files and real asset events
-> (§9). It is the fastest way to see a Dag work; §14 says when to stop trusting
+> (§9). It is the fastest way to see a Dag work; §15 says when to stop trusting
 > it.
 
 > **Try it.** Change the greeting without touching the file:

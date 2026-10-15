@@ -10,6 +10,43 @@ the record of when, and how it was measured — except what the first section
 below lists as still waiting. Nothing here is a step to run.
 Skip it, or come back when you want to know how far to trust a number.
 
+## 2026-10-15: four classes, and §14's checks
+
+Against the live stack (`apache/airflow:3.3.1`, BigQuery), after
+`data.preprocess` was changed to collapse every tag outside
+`config.ACCEPTED_TAGS` into `other` (until then a frequency threshold of 30
+left `reinforcement-learning` and `graph-learning` as classes of their own):
+
+- §10: `airflow dags test mlops` with the solution Dags: 20 trials, best trial
+  f1 0.9000, final model f1 0.8951, promoted, as there was no production model.
+- §12: label drift p = 7.718e-05, length drift p = 0.9169, the retraining
+  branch, approved by the timeout, `mlops` triggered. With
+  `drift_p_val=0.00001`: `continue_serving`.
+- §9: `dbt test` on the 764-row table, with the `description` test: 5 tests
+  pass.
+- §14: each delivery loaded straight into a scratch dataset, with the column
+  types Airbyte gives the tables (`id` NUMERIC, the rest STRING), then the real
+  GX suites and `dbt build`. Day 1: `FAIL 191 not_null_labeled_projects_tag`.
+  Day 2: the `projects` suite fails on `title,description`, the `tags` suite
+  warns on `other`. Day 3: `Invalid timestamp: '06/30/2021 03:58:46'`,
+  `ERROR=1 SKIP=5`; with the fixed model, `PASS=7`. Every query in §14 returns
+  what the section says. The monitoring Dag, run with `BQ_DATASET` pointed at
+  the scratch dataset: label drift p = 1.013e-17, `new_labels=['other']`,
+  `Branch into inspect`; after the tag mapping, p = 0.4574,
+  `continue_serving`; `f1 at promotion=0.8951 now=0.9330`. With `other` in
+  `KNOWN_RAW_TAGS`, the `tags` and `labeled_projects` suites pass with no
+  warning.
+- Found on the way: past one page of results, `to_dataframe()` switches to the
+  BigQuery Storage API, which needs a role the service account does not have
+  (403, `bigquery.readsessions.create`). `data.load_table` now reads with the
+  plain API.
+- `pytest tests` with `DAGS_DIR=solutions`: 41 passed, 1 skipped.
+
+Waiting for a walkthrough of §14 itself: the batch going through Airbyte
+(the files need to be at their public URLs), editing an Airbyte source's URL,
+the Dag runs and their timing, and the clicks in the Clear dialog, whose labels
+were read from the 3.3.1 UI bundle.
+
 ## Not yet verified on a live stack: the data-stack rewrite (2026-10-12)
 
 §9 to §12 were rewritten to use the real tools — Airbyte, BigQuery, dbt, Great
@@ -48,10 +85,10 @@ Waiting for the first live walkthrough:
 - The claim that the BigQuery sandbox cannot take Airbyte's writes, which rests
   on Google's description of the sandbox and on Airbyte community reports.
 - The source URLs, which need this repo to be public.
-- Every checkpoint in §9 to §12: suite counts, dbt's `PASS=5`, the deferrable
+- Every checkpoint in §9 to §12: suite counts, dbt's `PASS=6`, the deferrable
   Airbyte tasks under `airflow dags test`, the 21 MLflow runs, the sensor demo
   with `labeled_projects_copy`, `@task.external_python` in the monitoring Dag.
-- `abctl local uninstall` (§15).
+- `abctl local uninstall` (§16).
 
 ## 2026-09-09
 
@@ -150,7 +187,7 @@ the body prints back to you:
   number `dataops` wrote.
 
 Finally, a cold run on 2026-09-11 — `reset.sh`, `up.sh`, then every command
-in §2–§14 in order:
+in §2–§13 and §15 in order:
 
 - 28s from `up.sh` to seven Dags listed, all paused; the health endpoint
   `healthy` four times.
@@ -172,7 +209,7 @@ in §2–§14 in order:
   `up_for_reschedule` with the file moved; `764 rows` once restored.
 - §12 76s with `--conf` — `awaiting_input`, `Approved`, `trigger_dag_id=mlops`,
   one new `manual__` run; 9s and `continue_serving` without it.
-- §13 `DEADLINE MISSED` at +33s with `slow_step` still `running`. §14 30
+- §13 `DEADLINE MISSED` at +33s with `slow_step` still `running`. §15 30
   passed, listings in sync.
 
 Added on 2026-09-14, same stack: §4's `list-import-errors`. With the seven
@@ -195,7 +232,7 @@ database: `Database migration done!`, health endpoint `healthy` 33 s after
 Restructured on 2026-09-15 into a write-it-yourself tutorial — `dags/`
 empty, the finished files moved to `solutions/`, every lesson rebuilt as typed
 pieces — and cold-run again in the new order: `reset.sh`, `up.sh`, the seven
-files typed from the "Build it" blocks, every command in §2–§14 as written.
+files typed from the "Build it" blocks, every command in §2–§13 and §15 as written.
 
 - §2 with an empty `dags/`: `airflow dags list`, `list-import-errors` and
   `assets list` all print `No data found`; the health endpoint `healthy` four
@@ -245,7 +282,7 @@ files typed from the "Build it" blocks, every command in §2–§14 as written.
   response`, `Approved` 65 s later, `trigger_dag_id=mlops`, and one new
   `manual__` run of `mlops`.
 - §13: `DEADLINE MISSED` at +31 s, `slow_step` still running.
-- §14: the seven typed files pass the integrity suite (27 with the workload
+- §15: the seven typed files pass the integrity suite (27 with the workload
   tests); the same suite with `DAGS_DIR=solutions` passes; the "Build it"
   blocks in both READMEs assemble into files that import; **36 passed**
   in total.
@@ -281,7 +318,7 @@ Six real defects were found while building this, all documented in
   bug).
 - `DagBag` needs importing from `airflow.dag_processing.dagbag`.
 - `context["logical_date"]` raises `KeyError` on any run without a logical
-  date — found by a manual trigger, after every test in §14 had passed.
+  date — found by a manual trigger, after every test in §15 had passed.
 - `{{ ds }}` raises `UndefinedError` on the same runs — found the same way.
 - `airflow-init` bypassed the image entrypoint, could not import Airflow, and
   still exited 0 — found by a cold start with a WSL2 uid in `.env`.

@@ -93,8 +93,8 @@ plus the final one, and the model file is uploaded only with the final run.
 
 New workload functions: `data.save_snapshot(df, key)` writes a dataframe to
 `data/snapshots/<key>/` and `data.load_snapshot(fp)` reads it back;
-`data.preprocess(df)` cleans the text and collapses the rarest tags into
-`other`; `data.split(df)` returns a `(train, test)` pair with the same share of
+`data.preprocess(df)` cleans the text and collapses every tag outside the
+four classes the model learns (`config.ACCEPTED_TAGS`) into `other`; `data.split(df)` returns a `(train, test)` pair with the same share of
 each tag in both; `validate.check_split(train, test)` is a second suite, on the
 split. In `train_module` (`train.py`): `create_study`, `run_trials`,
 `best_trial` and `train_model`. In `registry`: `register`, `load_metrics`,

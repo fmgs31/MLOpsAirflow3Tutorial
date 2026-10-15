@@ -17,7 +17,7 @@ número de intentos. Tú escribes tasks; tú depuras task instances. La §3 sigu
 a lo largo de toda su vida.
 
 Este es un tutorial de MLOps: construyes un pequeño sistema de machine
-learning, desde los datos en bruto hasta un modelo en producción que se
+learning, desde los datos sin procesar hasta un modelo en producción que se
 reentrena cuando hace falta, y Airflow lo ejecuta. Cada paso lo hace la herramienta que usaría un equipo real;
 Airflow decide cuándo se ejecuta cada una:
 
@@ -25,7 +25,7 @@ Airflow decide cuándo se ejecuta cada una:
 |---|---|---|
 | **Airbyte** | copia los datos de origen al warehouse, la base de datos donde se guardan los datos para analizarlos | §9 |
 | **BigQuery** | el warehouse, en Google Cloud | §9 |
-| **dbt** | convierte las tablas en bruto en la tabla de entrenamiento, en SQL | §9 |
+| **dbt** | convierte las tablas sin procesar en la tabla de entrenamiento, en SQL | §9 |
 | **Great Expectations** (GX) | comprueba los datos antes de que los use cada paso | §9, §10 |
 | **Optuna** | busca los mejores hiperparámetros: los ajustes del modelo que se fijan antes de entrenar | §10 |
 | **MLflow** | registra cada entrenamiento, y lleva el model registry: las versiones numeradas del modelo entrenado, y cuál está en producción | §10, §12 |
@@ -80,7 +80,7 @@ Dos redes de seguridad:
   los comentarios didácticos dentro. Compara cuando algo no se parsee, o sáltate
   una lección copiando su archivo: `cp solutions/03_dataops.py dags/`. El
   [apéndice](../appendix-dags_ES.md) imprime cada solución completa.
-- **Los tests de la §14** leen *tu* carpeta `dags/`. Cuando los siete estén
+- **Los tests de la §15** leen *tu* carpeta `dags/`. Cuando los siete estén
   escritos, te dicen si construiste lo que el tutorial pretendía.
 
 Las lecciones se apoyan unas en otras a partir de la §9 — `mlops` se programa con
@@ -101,7 +101,7 @@ la pena como primer orquestador porque:
   único.
 
 Y tiene lo que se espera de un orquestador moderno, como Prefect o Dagster:
-workflows escritos en Python normal, testeables con pytest (§14), y el mismo
+workflows escritos en Python normal, testeables con pytest (§15), y el mismo
 código ejecutándose en tu portátil y en un clúster — cambias el executor, no el
 Dag.
 

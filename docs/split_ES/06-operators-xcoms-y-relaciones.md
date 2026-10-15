@@ -546,7 +546,7 @@ Las dos se definen de tres maneras:
   compose `google_cloud_default`, la Connection que usa el sensor de BigQuery
   de la §11, y `fs_default`, la que usa por defecto un `FileSensor`.
 - **En un secrets backend** (Vault, AWS Secrets Manager…), lo habitual en
-  producción (§15).
+  producción (§16).
 
 Las plantillas acceden a ellas con `{{ conn.warehouse.host }}` y
 `{{ var.value.min_rows }}`.

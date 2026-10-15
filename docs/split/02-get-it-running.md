@@ -4,7 +4,7 @@ There are two ways to install, and the choice decides how far you can go:
 
 | Install | Covers | Runs |
 |---|---|---|
-| **Docker** | the whole tutorial, §3 to §16 | Airflow, Postgres and MLflow, plus the dbt and alibi-detect virtualenvs, all from `docker-compose.yaml` |
+| **Docker** | the whole tutorial, §3 to §17 | Airflow, Postgres and MLflow, plus the dbt and alibi-detect virtualenvs, all from `docker-compose.yaml` |
 | **Native** | §3 to §8 only | Airflow alone, in a Python virtualenv on your machine |
 
 From §9 on, the pipeline needs more than Airflow: the MLflow server, Optuna's
