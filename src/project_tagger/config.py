@@ -48,8 +48,7 @@ DBT_PROJECT_DIR = Path(
 DBT_BIN = os.getenv("PROJECT_TAGGER_DBT_BIN", "/opt/venvs/dbt/bin/dbt")
 
 # --- The ML side (§10) ---------------------------------------------------------
-# The raw tags with too few projects to learn from become `other`.
-MIN_TAG_FREQ = 30
+# The four classes the model learns. Every other raw tag becomes `other`.
 OTHER_TAG = "other"
 ACCEPTED_TAGS = ["natural-language-processing", "computer-vision", "mlops", "other"]
 

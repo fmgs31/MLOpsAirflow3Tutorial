@@ -1,4 +1,4 @@
-## 16. Appendix and provenance
+## 17. Appendix and provenance
 
 The sections before this one build each Dag in pieces. Two longer documents
 live outside the sections, so the tutorial stays readable and the reference material stays
@@ -15,4 +15,4 @@ findable:
 
 ---
 
-← [15. Taking it to production](15-taking-it-to-production.md) · [Index](README.md)
+← [16. Taking it to production](16-taking-it-to-production.md) · [Index](README.md)

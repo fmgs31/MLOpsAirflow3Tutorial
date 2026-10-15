@@ -141,7 +141,7 @@ Eso tiene consecuencias que verás en el código de abajo:
   `"{{ params.drift_p_val }}"`, que se renderiza antes de que arranque el
   subproceso, así que llega como string, y `float()` lo convierte.
 
-Es la versión ligera de lo que la §15 recomienda para equipos con dependencias
+Es la versión ligera de lo que la §16 recomienda para equipos con dependencias
 que chocan: una imagen de contenedor por task, con `KubernetesPodOperator`.
 
 Primero, medir. Las ventanas se escriben una sola vez, y tanto los tests de

@@ -10,6 +10,9 @@ models:
       - name: title
         data_tests:
           - not_null
+      - name: description
+        data_tests:
+          - not_null
       - name: tag
         data_tests:
           - not_null

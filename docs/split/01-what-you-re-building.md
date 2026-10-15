@@ -78,7 +78,7 @@ Two safety nets:
   teaching comments left in. Compare when something does not parse, or skip a
   lesson by copying its file in: `cp solutions/03_dataops.py dags/`. The
   [appendix](../appendix-dags.md) prints every solution in full.
-- **§14's tests** read *your* `dags/` folder. When all seven are written, they
+- **§15's tests** read *your* `dags/` folder. When all seven are written, they
   tell you whether you built what the tutorial meant.
 
 The lessons build on each other from §9 on — `mlops` is scheduled on an asset
@@ -98,7 +98,7 @@ worth learning first because:
 - **Apache governance**, a large provider ecosystem, and no single vendor.
 
 And it has what you expect from a modern orchestrator, as Prefect or Dagster
-do: workflows written in ordinary Python, testable with pytest (§14), and the
+do: workflows written in ordinary Python, testable with pytest (§15), and the
 same code running on your laptop and on a cluster — swap the executor, not the
 Dag.
 

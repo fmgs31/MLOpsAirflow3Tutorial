@@ -130,7 +130,7 @@ salen más adelante en este tutorial:
 | que `mlops` espere a dos assets, o que le baste con uno de los dos | `AssetAll(a, b)` / `AssetAny(a, b)` en el `schedule` (§10) |
 | que un Dag arranque con un mensaje de un sistema externo, sin ningún productor en Airflow | `AssetWatcher` (§11) |
 
-Hay más; la §15 explica cómo se usan cuatro de ellas.
+Hay más; la §16 explica cómo se usan cuatro de ellas.
 
 La URI es opcional. `production_model`, el asset que emite `mlops` cuando
 promociona un modelo (§10), solo tiene nombre: el modelo vive en el registry de

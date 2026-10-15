@@ -7,12 +7,18 @@ airflow.cfg
 simple_auth_manager_passwords.json.generated
 
 # Tutorial artifacts
-data/
+data/*
 !data/.gitkeep
-dbt/*/target/
-dbt/*/logs/
 solutions/dbt_transforms/target/
 solutions/dbt_transforms/logs/
+
+# Reader workspace: files the reader writes while following the tutorial.
+# The reference versions live in solutions/.
+dags/*
+!dags/.gitkeep
+!dags/zz_broken_on_purpose.py
+dbt/*
+!dbt/.gitkeep
 
 # Credentials: the GCP service-account key lives here (§9). Never commit it.
 secrets/*

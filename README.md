@@ -56,9 +56,10 @@ getting it right took extensive corrections, polishing and a fair amount of work
 11. [Waiting: sensors, deferrable tasks, events](docs/split/11-waiting-sensors-deferrable-tasks-events.md)
 12. [Continual learning: monitor, decide, act](docs/split/12-continual-learning-monitor-decide-act.md)
 13. [Deadline alerts](docs/split/13-deadline-alerts.md)
-14. [Testing Dags](docs/split/14-testing-dags.md)
-15. [Taking it to production](docs/split/15-taking-it-to-production.md)
-16. [Appendix and provenance](docs/split/16-appendix-and-provenance.md)
+14. [When the data goes wrong](docs/split/14-when-the-data-goes-wrong.md)
+15. [Testing Dags](docs/split/15-testing-dags.md)
+16. [Taking it to production](docs/split/16-taking-it-to-production.md)
+17. [Appendix and provenance](docs/split/17-appendix-and-provenance.md)
 
 Reference material: [CLI cheatsheet](docs/cheatsheet.md) ·
 [Troubleshooting](docs/troubleshooting.md) ·
@@ -83,11 +84,11 @@ src/project_tagger/         the ML project Airflow orchestrates (imports no Airf
   predict.py                inference against the promoted model
   assets.py                 the Airflow Assets the Dags share
   callbacks.py              deadline-alert callbacks
-datasets/                   the two source CSVs Airbyte loads
+datasets/                   the source CSVs Airbyte loads, and the later batch (§14)
 secrets/                    where your GCP key goes (ignored by git)
 tests/                      Dag integrity (your dags/), unit tests, README checks
-docs/                       cheatsheet, troubleshooting, the Dag appendix (§16)
-scripts/                    up / reset / native setup / README sync
+docs/                       cheatsheet, troubleshooting, the Dag appendix (§17)
+scripts/                    up / reset / native setup / README sync / batch_2
 docker-compose.yaml         Airflow (LocalExecutor) + Postgres + MLflow
 ```
 

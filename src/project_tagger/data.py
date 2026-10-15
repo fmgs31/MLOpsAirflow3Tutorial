@@ -34,7 +34,10 @@ def bigquery_client():
 def load_table(table: str, columns: list[str]) -> pd.DataFrame:
     """Read the named columns of a warehouse table into a dataframe."""
     query = f"SELECT {', '.join(columns)} FROM `{config.table_id(table)}`"
-    return bigquery_client().query(query).to_dataframe()
+    # Once a result is larger than one page, the client switches to the
+    # BigQuery Storage API, which needs a role the service account does not
+    # have (§9). These tables are small; the plain API reads them fine.
+    return bigquery_client().query(query).to_dataframe(create_bqstorage_client=False)
 
 
 def count_rows(table: str) -> int:
@@ -86,16 +89,16 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def preprocess(df: pd.DataFrame, min_tag_freq: int = config.MIN_TAG_FREQ) -> pd.DataFrame:
+def preprocess(df: pd.DataFrame, collapse_tags: bool = True) -> pd.DataFrame:
     """`labeled_projects` -> model input: a cleaned `text` column and a learnable label space."""
     df = df.dropna(subset=["title", "tag"]).copy()
     df["description"] = df["description"].fillna("")
     df["text"] = (df["title"] + " " + df["description"]).apply(clean_text)
 
-    # Collapse the long tail into `other` so every class has enough examples.
-    counts = df["tag"].value_counts()
-    rare = counts[counts < min_tag_freq].index
-    df["tag"] = df["tag"].apply(lambda tag: config.OTHER_TAG if tag in rare else tag)
+    # The model learns four classes: every tag outside them becomes `other`,
+    # as in Made With ML's dataset.csv.
+    if collapse_tags:
+        df["tag"] = df["tag"].where(df["tag"].isin(config.ACCEPTED_TAGS), config.OTHER_TAG)
 
     df = df[df["text"].str.len() > 0]
     return df[["id", "created_on", "title", "description", "text", "tag"]].reset_index(drop=True)

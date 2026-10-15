@@ -10,7 +10,7 @@ fails.
 | `extract_and_load_projects`, `extract_and_load_tags` | **Airbyte** | copies each source CSV into a table in the warehouse |
 | — | **BigQuery** | the warehouse: stores the tables and runs SQL on them |
 | `validate_projects`, `validate_tags`, `validate_transformed` | **Great Expectations** | checks a table against a list of rules |
-| `transform` | **dbt** | builds the training table from the two raw tables, in SQL |
+| `transform` | **dbt** | builds the training table from the two raw tables (`projects` and `tags`, as Airbyte loads them), in SQL |
 
 How the pieces talk to each other when the Dag runs. Each column is one
 system, and what is written in a column happens in that system. An arrow is
@@ -436,6 +436,9 @@ models:
       - name: title
         data_tests:
           - not_null
+      - name: description
+        data_tests:
+          - not_null
       - name: tag
         data_tests:
           - not_null
@@ -448,8 +451,8 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
     --project-dir /opt/airflow/dbt/dbt_transforms --profiles-dir /opt/airflow/dbt/dbt_transforms
 ```
 
-**Checkpoint.** `Done. PASS=5 WARN=0 ERROR=0 SKIP=0 TOTAL=5`: one model and
-four tests. BigQuery has a third table, `labeled_projects`, with 764 rows. Run
+**Checkpoint.** `Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6`: one model and
+five tests. BigQuery has a third table, `labeled_projects`, with 764 rows. Run
 the command again: same result, same table, because `+materialized: table`
 makes dbt replace the table on every run. A failing test makes `dbt build`
 exit with an error, which is what will fail the Dag's `transform` task.
@@ -460,9 +463,10 @@ Stuck? The finished project is in
 
 #### 5. Great Expectations
 
-dbt's tests check the table dbt builds. **Great Expectations** (GX) checks the
-raw tables too, before anything is built on them, with a wider choice of
-rules. An **expectation** is one rule ("`id` is unique"); a **suite** is a
+dbt's tests check the table dbt builds. **Great Expectations** (GX) also checks
+the raw tables, `projects` and `tags`, before dbt reads them, and has more
+kinds of rule than dbt's `unique` and `not_null`, such as a minimum row count.
+An **expectation** is one rule ("`id` is unique"); a **suite** is a
 named list of expectations; **validating** a table against a suite gives a
 pass or fail per expectation.
 
@@ -482,8 +486,8 @@ e.ExpectTableRowCountToBeBetween(min_value=500),
 
 `validate.run_suite(df, "projects")` validates a dataframe against that suite
 and returns a result with `.passed`, `.failures`, `.results`, `.suite` and a
-`.summary()` line. (GX also has Airflow operators, but their package cannot be
-installed next to Airflow 3.3.1, so the tasks call GX directly.)
+`.summary()` line. (GX also has Airflow operators, but at the time of writing
+(October 2026) their package cannot be installed next to Airflow 3.3.1, so the tasks call GX directly.)
 
 Each expectation is *critical* unless marked otherwise. A failed critical
 expectation fails the suite; a failed non-critical one is only reported. The
@@ -701,7 +705,7 @@ the other because `airflow dags test` runs one task at a time.
 
 **Checkpoint.** In the log, in order: each Airbyte task reporting its job done;
 `suite=projects passed=6/6` and `suite=tags passed=5/5`; dbt's
-`Done. PASS=5 WARN=0 ERROR=0 SKIP=0 TOTAL=5` in `transform`'s log;
+`Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6` in `transform`'s log;
 `suite=labeled_projects passed=6/6`; and from the task group,
 `projects: 6 checks, failed=none` and the same for the other two.
 

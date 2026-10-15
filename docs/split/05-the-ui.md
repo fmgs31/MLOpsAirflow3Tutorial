@@ -75,7 +75,7 @@ Those versions come from the *bundle* the Dag was loaded from — the place the
 Dag processor reads files from. This stack has one, the `dags/` folder, named
 `dags-folder`: the `bundle_name` column of `airflow dags list` in §4. A local
 folder has no version of its own; a Git bundle does (the commit), and then
-**Code** shows that too (§15).
+**Code** shows that too (§16).
 
 **Do it now.** Press **Trigger**, at the top right of `hello_airflow3`'s page.
 A form opens with one field, `greeting`, pre-filled with `hello`: the `Param`

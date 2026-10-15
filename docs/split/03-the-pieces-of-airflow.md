@@ -137,7 +137,7 @@ metadata database's volume, not in the containers — `scripts/reset.sh` deletes
 that volume, which is why it is the last resort.
 
 Two consequences follow. It is the thing to back up, and it grows forever
-unless you run `airflow db clean` (§15) — a year of runs, task instances and
+unless you run `airflow db clean` (§16) — a year of runs, task instances and
 XComs does not remove itself.
 
 ### The lifecycle of one task

@@ -98,8 +98,8 @@ sube con el run final.
 
 Funciones nuevas de la carga de trabajo: `data.save_snapshot(df, key)` escribe
 un dataframe en `data/snapshots/<key>/` y `data.load_snapshot(fp)` lo vuelve a
-leer; `data.preprocess(df)` limpia el texto y agrupa los tags más raros en
-`other`; `data.split(df)` devuelve un par `(train, test)` con la misma
+leer; `data.preprocess(df)` limpia el texto y agrupa en `other` todo tag fuera
+de las cuatro clases que aprende el modelo (`config.ACCEPTED_TAGS`); `data.split(df)` devuelve un par `(train, test)` con la misma
 proporción de cada tag en los dos; `validate.check_split(train, test)` es una
 segunda suite, sobre el split. En `train_module` (`train.py`): `create_study`,
 `run_trials`, `best_trial` y `train_model`. En `registry`: `register`,

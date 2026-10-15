@@ -139,7 +139,7 @@ see in the code below:
   `"{{ params.drift_p_val }}"`, rendered before the subprocess starts, so it
   arrives as a string, and `float()` converts it.
 
-This is the light version of what §15 recommends for teams with clashing
+This is the light version of what §16 recommends for teams with clashing
 dependencies: one container image per task, with `KubernetesPodOperator`.
 
 Measure first. The windows are written once; the drift tests and the

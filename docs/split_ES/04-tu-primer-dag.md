@@ -50,7 +50,7 @@ tasks.
 
 `owner` es una etiqueta: sale en la lista de Dags, puedes filtrar por ella, y
 dice a quién preguntar cuando el Dag se rompe. Los tests de integridad de este
-repo (§14) rechazan el valor por defecto, `airflow`, porque un owner que no es
+repo (§15) rechazan el valor por defecto, `airflow`, porque un owner que no es
 nadie significa que no se avisa a nadie.
 
 Las otras dos deciden qué pasa cuando una task falla:
@@ -68,7 +68,7 @@ Las otras dos deciden qué pasa cuando una task falla:
 **El valor por defecto es `retries=0`** (`[core] default_task_retries`), lo que
 significa que una task que sufre un corte de red puntual simplemente falla y se lleva el
 run por delante. Los reintentos hay que activarlos explícitamente, y por eso los tests de integridad de este
-repo (§14) insisten en que todo Dag que no sea una demo lo fije.
+repo (§15) insisten en que todo Dag que no sea una demo lo fije.
 
 Los reintentos solo ayudan con fallos que podrían no repetirse — un timeout, una
 API con throttling, un nodo que murió. Para un fallo que *sí* se va a repetir,
@@ -290,7 +290,7 @@ después de cada Dag que escribas.
 >   comando no termina hasta que acaba.
 >
 > Eso sí, **no es un dry run**: las tasks escriben archivos reales y asset
-> events reales (§9). Es la forma más rápida de ver funcionar un Dag; la §14
+> events reales (§9). Es la forma más rápida de ver funcionar un Dag; la §15
 > dice cuándo dejar de fiarse de él.
 
 > **Pruébalo.** Cambia el saludo sin tocar el archivo:

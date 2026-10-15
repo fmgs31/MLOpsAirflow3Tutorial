@@ -80,7 +80,7 @@ Esas versiones salen del *bundle* del que se cargó el Dag: el sitio del que el
 Dag processor lee archivos. Este stack tiene uno, la carpeta `dags/`, llamado
 `dags-folder` — la columna `bundle_name` de `airflow dags list` en la §4. Una
 carpeta local no tiene versión propia; un bundle de Git sí (el commit), y
-entonces **Code** la muestra también (§15).
+entonces **Code** la muestra también (§16).
 
 **Hazlo ahora.** Pulsa **Trigger**, arriba a la derecha de la página de
 `hello_airflow3`. Se abre un formulario con un campo, `greeting`, relleno con

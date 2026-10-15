@@ -10,6 +10,44 @@ registro de cuándo, y de cómo se midió — salvo lo que la primera sección d
 abajo lista como pendiente. Nada de esto es un paso que ejecutar.
 Sáltatelo, o vuelve cuando quieras saber hasta qué punto fiarte de un número.
 
+## 2026-10-15: cuatro clases, y los controles de la §14
+
+Contra el stack real (`apache/airflow:3.3.1`, BigQuery), después de cambiar
+`data.preprocess` para que agrupe en `other` todo tag fuera de
+`config.ACCEPTED_TAGS` (hasta entonces un umbral de frecuencia de 30 dejaba
+`reinforcement-learning` y `graph-learning` como clases propias):
+
+- §10: `airflow dags test mlops` con los Dags de solución: 20 trials, mejor
+  trial f1 0.9000, modelo final f1 0.8951, promovido, porque no había modelo en
+  producción.
+- §12: label drift p = 7.718e-05, length drift p = 0.9169, la rama de
+  reentrenamiento, aprobada por el timeout, `mlops` disparado. Con
+  `drift_p_val=0.00001`: `continue_serving`.
+- §9: `dbt test` sobre la tabla de 764 filas, con el test de `description`:
+  pasan 5 tests.
+- §14: cada entrega cargada directamente en un dataset temporal, con los tipos
+  de columna que Airbyte les da a las tablas (`id` NUMERIC, el resto STRING), y
+  después las suites reales de GX y `dbt build`. Día 1:
+  `FAIL 191 not_null_labeled_projects_tag`. Día 2: la suite de `projects` falla
+  en `title,description`, la de `tags` avisa por `other`. Día 3:
+  `Invalid timestamp: '06/30/2021 03:58:46'`, `ERROR=1 SKIP=5`; con el model
+  arreglado, `PASS=7`. Todas las consultas de la §14 devuelven lo que dice la
+  sección. El Dag de monitoring, ejecutado con `BQ_DATASET` apuntando al
+  dataset temporal: label drift p = 1.013e-17, `new_labels=['other']`,
+  `Branch into inspect`; después del mapeo de tags, p = 0.4574,
+  `continue_serving`; `f1 at promotion=0.8951 now=0.9330`. Con `other` en
+  `KNOWN_RAW_TAGS`, las suites de `tags` y `labeled_projects` pasan sin avisos.
+- Encontrado en el camino: con más de una página de resultados,
+  `to_dataframe()` pasa a la BigQuery Storage API, que necesita un rol que la
+  service account no tiene (403, `bigquery.readsessions.create`).
+  `data.load_table` ahora lee con la API normal.
+- `pytest tests` con `DAGS_DIR=solutions`: 41 passed, 1 skipped.
+
+Pendiente de un recorrido de la propia §14: el lote pasando por Airbyte (los
+archivos tienen que estar en sus URLs públicas), la edición de la URL de una
+source de Airbyte, los runs del Dag y sus tiempos, y los clics en el diálogo
+Clear, cuyas etiquetas se leyeron del bundle de la UI de 3.3.1.
+
 ## Aún no verificado en un stack real: la reescritura del stack de datos (2026-10-12)
 
 Las secciones 9 a 12 se reescribieron para usar las herramientas reales —
@@ -53,10 +91,10 @@ Pendiente del primer recorrido real:
   de la comunidad de Airbyte.
 - Las URLs de origen, que necesitan que este repo sea público.
 - Todas las comprobaciones de la §9 a la §12: recuentos de las suites, el
-  `PASS=5` de dbt, las tasks deferrable de Airbyte bajo `airflow dags test`,
+  `PASS=6` de dbt, las tasks deferrable de Airbyte bajo `airflow dags test`,
   los 21 runs de MLflow, la demo del sensor con `labeled_projects_copy`,
   `@task.external_python` en el Dag de monitorización.
-- `abctl local uninstall` (§15).
+- `abctl local uninstall` (§16).
 
 ## 2026-09-09
 
@@ -160,7 +198,7 @@ afirmaciones que el cuerpo te devuelve impresos:
   el número que escribió `dataops`.
 
 Por último, una ejecución en frío el 2026-09-11 — `reset.sh`, `up.sh`, y luego
-todos los comandos de la §2 a la §14 en orden:
+todos los comandos de la §2 a la §13 y de la §15 en orden:
 
 - 28s desde `up.sh` hasta siete Dags listados, todos en pausa; el endpoint de
   salud `healthy` cuatro veces.
@@ -184,7 +222,7 @@ todos los comandos de la §2 a la §14 en orden:
   `up_for_reschedule` con el archivo apartado; `764 rows` una vez restaurado.
 - §12 76s con `--conf` — `awaiting_input`, `Approved`, `trigger_dag_id=mlops`,
   un run `manual__` nuevo; 9s y `continue_serving` sin él.
-- §13 `DEADLINE MISSED` a +33s con `slow_step` todavía `running`. §14 30 passed,
+- §13 `DEADLINE MISSED` a +33s con `slow_step` todavía `running`. §15 30 passed,
   listados en sync.
 
 Añadido el 2026-09-14, mismo stack: el `list-import-errors` de la §4. Con los
@@ -209,7 +247,7 @@ Reestructurado el 2026-09-15 como un tutorial de escribirlo-tú-mismo —
 `dags/` vacía, los archivos terminados movidos a `solutions/`, cada lección
 reconstruida como trozos que se teclean — y vuelto a ejecutar en frío en el
 nuevo orden: `reset.sh`, `up.sh`, los siete archivos tecleados a partir de los
-bloques de "Constrúyelo", todos los comandos de la §2 a la §14 tal cual están
+bloques de "Constrúyelo", todos los comandos de la §2 a la §13 y de la §15 tal cual están
 escritos.
 
 - §2 con `dags/` vacía: `airflow dags list`, `list-import-errors` y `assets
@@ -262,7 +300,7 @@ escritos.
   response`, `Approved` 65 s después, `trigger_dag_id=mlops`, y un run
   `manual__` nuevo de `mlops`.
 - §13: `DEADLINE MISSED` a +31 s, `slow_step` todavía corriendo.
-- §14: los siete archivos tecleados pasan la suite de integridad (27 con los
+- §15: los siete archivos tecleados pasan la suite de integridad (27 con los
   tests de la carga de trabajo); la misma suite con `DAGS_DIR=solutions` pasa;
   los bloques de "Constrúyelo" de ambos READMEs se ensamblan en archivos que
   importan; **36 passed** en total.
@@ -299,7 +337,7 @@ documentados en [troubleshooting](troubleshooting.md):
   Airflow 3.3.1).
 - `DagBag` hay que importarlo de `airflow.dag_processing.dagbag`.
 - `context["logical_date"]` lanza `KeyError` en cualquier run sin logical date
-  — encontrado por un trigger manual, después de que todos los tests de la §14
+  — encontrado por un trigger manual, después de que todos los tests de la §15
   pasaran.
 - `{{ ds }}` lanza `UndefinedError` en esos mismos runs — encontrado de la misma
   forma.
