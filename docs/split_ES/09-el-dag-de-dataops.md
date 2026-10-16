@@ -765,8 +765,9 @@ Ahora que tienes un Dag con schedule, los backfills tienen sentido. Un backfill
 crea a posteriori los runs de cada franja de un rango de fechas. En Airflow un
 backfill es un objeto propio, con su API, su formulario en la UI y su política
 de reprocesado (`--reprocess-behavior`, más abajo). **Haz un dry-run
-primero**: un backfill con el rango de fechas equivocado es la forma más fácil
-de crear treinta runs por accidente:
+primero**: `--dry-run` lista los runs que crearía el backfill sin crearlos, y un
+backfill con el rango de fechas equivocado es la forma más fácil de crear
+treinta runs por accidente:
 
 ```bash
 docker compose exec airflow-scheduler airflow backfill create \

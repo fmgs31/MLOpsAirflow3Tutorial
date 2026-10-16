@@ -741,8 +741,9 @@ property, **idempotence** (§6), is what makes `retries=2` safe here.
 Now that you have a Dag with a schedule, backfills make sense. A backfill
 creates the runs for every slice in a date range, after the fact. In Airflow a
 backfill is an object of its own, with its own API, UI form and reprocess
-policy (`--reprocess-behavior`, below). **Dry-run it first**: a backfill over
-the wrong date range is the easiest way to create thirty runs by accident:
+policy (`--reprocess-behavior`, below). **Dry-run it first**: `--dry-run`
+lists the runs the backfill would create without creating them, and a backfill
+over the wrong date range is the easiest way to create thirty runs by accident:
 
 ```bash
 docker compose exec airflow-scheduler airflow backfill create \

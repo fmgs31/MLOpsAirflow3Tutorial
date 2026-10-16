@@ -284,7 +284,8 @@ it after every Dag.
 >   triggerer, so `airflow dags test` does the waiting itself, and the command
 >   does not return until the wait is over.
 >
-> It is **not a dry run**, though: tasks write real files and real asset events
+> It is **not a dry run** (a rehearsal that reports what a command would do
+> without doing it), though: tasks write real files and real asset events
 > (§9). It is the fastest way to see a Dag work; §15 says when to stop trusting
 > it.
 

@@ -38,3 +38,4 @@ venv/
 
 # Scratch
 tmp/
+.claude/settings.local.json

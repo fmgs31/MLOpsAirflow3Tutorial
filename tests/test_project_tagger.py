@@ -196,6 +196,14 @@ def test_tune_train_register_promote_rollback(local_tracking) -> None:
     best = train_module.best_trial(study)
     assert best["num_trials"] == 4
 
+    import mlflow
+
+    trial_runs = mlflow.search_runs(filter_string="tags.kind = 'trial'")
+    study_runs = mlflow.search_runs(filter_string="tags.kind = 'study'")
+    assert len(study_runs) == 1  # the retried create_study reused it
+    assert set(trial_runs["tags.mlflow.parentRunId"]) == {study_runs["run_id"][0]}
+    assert study_runs["tags.best_trial_run_id"][0] == best["mlflow_run_id"]
+
     versions = []
     for i in range(2):
         trained = train_module.train_model(best["params"], train_df, test_df, run_name=f"final-{i}")
