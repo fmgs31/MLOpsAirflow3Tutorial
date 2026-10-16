@@ -92,7 +92,7 @@ Pendiente del primer recorrido real:
 - Las URLs de origen, que necesitan que este repo sea público.
 - Todas las comprobaciones de la §9 a la §12: recuentos de las suites, el
   `PASS=6` de dbt, las tasks deferrable de Airbyte bajo `airflow dags test`,
-  los 21 runs de MLflow, la demo del sensor con `labeled_projects_copy`,
+  los runs de MLflow (el del study con sus veinte hijos, más el final), la demo del sensor con `labeled_projects_copy`,
   `@task.external_python` en el Dag de monitorización.
 - `abctl local uninstall` (§16).
 

@@ -15,7 +15,7 @@ trial_budget ──────────────────────�
 |---|---|---|
 | `prepare_data` | BigQuery | copia `labeled_projects` a un archivo que este run usará de principio a fin |
 | `validate_training_data` | Great Expectations | la suite de la §9 otra vez, más comprobaciones del split train/test |
-| `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna** | busca los hiperparámetros, con el trabajo repartido entre varias tasks |
+| `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna**, con tracking en **MLflow** | busca los hiperparámetros, con el trabajo repartido entre varias tasks, y registra cada trial |
 | `train_best`, `evaluate_best` | tracking de **MLflow** | entrena el modelo final y lo registra: parámetros, métricas, el archivo del modelo |
 | `promotion_gate` → `promote_model` | Model Registry de **MLflow** | decide si el modelo nuevo pasa a producción |
 
@@ -75,10 +75,13 @@ Cada columna es un sistema, como en el diagrama de la §9:
  2 validate_training_data    │                   │                     │
    (GX, sobre el snapshot)   │                   │                     │
  3 create_study ──────────────► un study nuevo   │                     │
+   y su run ──────────────────────────────────────► el run del study   │
  4 run_trials ×N ─────────────► pide params,     │                     │
    cada task entrena unos    │  guarda scores    │                     │
-   modelos y registra cada ───────────────────────► un run por trial   │
+   modelos y registra cada ───────────────────────► un run hijo del    │
+                             │                   │  study por trial    │
  5 best_params ◄─────────────── el mejor trial   │                     │
+   y lo anota en ─────────────────────────────────► el run del study   │
  6 train_best ────────────────────────────────────► run final, con     │
                              │                   │  el modelo;         │
                              │                   │  registrado como    │
@@ -91,8 +94,8 @@ Cada columna es un sistema, como en el diagrama de la §9:
 
 BigQuery se lee una sola vez, en el paso 1; todas las tasks siguientes leen el
 archivo del snapshot, así que el run entero trabaja con los mismos datos. En
-MLflow queda un run por trial más el final, y el archivo del modelo solo se
-sube con el run final.
+MLflow queda un run para el study, con los trials como runs hijos debajo, más
+el run final; el archivo del modelo solo se sube con el run final.
 
 ### Constrúyelo
 
@@ -261,7 +264,11 @@ elemento de una lista, y cada una añade trials al mismo study. Cuatro tasks:
 ```
 
 `create_study` crea el study con `load_if_exists=True` (en `train.py`), así que
-una task reintentada carga el study en vez de fallar porque ya existe.
+una task reintentada carga el study en vez de fallar porque ya existe. También
+abre el run del study en MLflow, el **run padre** de todos los trials, y guarda
+el id de ese run en el propio study, como *user attribute* (un valor que Optuna
+guarda junto al study). Un reintento encuentra ahí el id y no abre un segundo
+run.
 
 `trial_budget` lee los params del Dag a través de la clave de contexto `params`
 y reparte los trials entre `n_workers` tasks: 20 entre 4 da `[5, 5, 5, 5]`.
@@ -272,11 +279,21 @@ separado. `.partial()` recibe los argumentos que comparten todas las
 instancias; `.expand()`, el que cambia en cada una.
 
 `run_trials` puntúa cada trial sobre un split de validación sacado de los datos
-de entrenamiento, y registra cada trial en MLflow como un run propio. El split
-de test no se ve en ningún momento de la búsqueda, así que la puntuación de
-test del modelo final sigue siendo una estimación honesta.
+de entrenamiento, y registra cada trial en MLflow como un **run hijo**: un run
+con padre, que la UI de MLflow pliega debajo de él. El split de test no se ve
+en ningún momento de la búsqueda, así que la puntuación de test del modelo
+final sigue siendo una estimación honesta.
 
-`best_params` le pide al study su mejor trial. Aun así recibe los resultados
+Un run hijo se abre normalmente con `mlflow.start_run(nested=True)` dentro del
+bloque `with mlflow.start_run():` del padre. Eso solo funciona en el proceso
+que abrió el padre, y aquí el padre lo abrió `create_study` y cada trial corre
+en una de las instancias de `run_trials`. Así que `train.py` nombra el padre
+explícitamente, `mlflow.start_run(parent_run_id=...)`, con el id leído del
+study.
+
+`best_params` le pide al study su mejor trial, y lo anota en el run del study:
+su puntuación como la métrica `best_f1`, su run id como el tag
+`best_trial_run_id`. Aun así recibe los resultados
 de las instancias mapeadas: ese argumento es lo que la obliga a esperar a todas
 las instancias de `run_trials`, y llega como una lista, un elemento por
 instancia.
@@ -312,7 +329,7 @@ del Dag sigue. Añade `train_best`, `evaluate_best`, `promotion_gate`,
         trained = train_module.train_model(
             best["params"], train_df, test_df,
             run_name=f"final-{run_key(run_id)}",
-            tags={"airflow_run_id": run_id},
+            tags={"airflow_run_id": run_id, "best_trial_run_id": best["mlflow_run_id"]},
         )
         version = registry.register(trained["model_uri"])
         print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
@@ -359,7 +376,10 @@ del Dag sigue. Añade `train_best`, `evaluate_best`, `promotion_gate`,
 
 `train_best` entrena el modelo final sobre todo el split de entrenamiento con
 los hiperparámetros del mejor trial, lo puntúa sobre el split de test y lo
-guarda en MLflow, con el archivo del modelo incluido. Después lo **registra** en
+guarda en MLflow, con el archivo del modelo incluido, como un run propio, fuera
+del study: no es un intento más de la búsqueda. Sus tags lo enlazan con el run
+de Airflow que lo creó y con el trial del que salen sus hiperparámetros.
+Después lo **registra** en
 el registry: cada modelo final pasa a ser una versión nueva de `project_tagger`,
 se promocione o no, así que un candidato rechazado sigue ahí para
 inspeccionarlo. La task devuelve un run id, un número de versión y un f1:
@@ -509,10 +529,12 @@ superó el umbral y no había modelo en producción al que batir.
 
 Después mira lo que el run ha dejado en MLflow, en <http://localhost:5000>:
 
-**Comprobación.** El experiment `project_tagger` tiene 21 runs: veinte
-llamados de `project_tagger-asset_triggered__…-trial-0` a `-trial-19`, y uno
-llamado `final-asset_triggered__…`. Ordena por la columna `f1` para ver la
-búsqueda en acción. Abre el run final: sus parameters son los del mejor trial,
+**Comprobación.** El experiment `project_tagger` muestra dos runs:
+`project_tagger-asset_triggered__…`, el study, y `final-asset_triggered__…`.
+Despliega el run del study para ver sus veinte hijos, de `…-trial-0` a
+`-trial-19`, y ordena por la columna `f1` para ver la búsqueda en acción. Abre
+el run del study: `best_f1` es la puntuación del mejor trial, y el tag
+`best_trial_run_id` lo identifica. Abre el run final: sus parameters son los del mejor trial,
 sus metrics incluyen el f1 por tag y por slice, y en **Artifacts** están
 `metrics.json` y el modelo. En **Models**, `project_tagger` tiene la versión 1,
 con el alias `champion`.

@@ -11,6 +11,7 @@ Two tools carry the experiment:
   study at once - which is what the mlops Dag does, one task per worker.
 * **MLflow** records every run: its parameters, its metrics and, for the final
   model, the model file itself, which the registry (registry.py) then versions.
+  A study is one parent run, and each of its trials a child run under it.
 """
 
 from __future__ import annotations
@@ -114,15 +115,25 @@ def flat_metrics(metrics: dict[str, Any]) -> dict[str, float]:
 
 
 def create_study(study_name: str) -> str:
-    """Create the study, or load it if it exists - so a retried task does not fail."""
+    """Create the study and its MLflow parent run, or load both if they exist -
+    so a retried task does not fail, nor leave a second parent run behind.
+
+    The parent run's id is kept on the study itself (a user attribute), where
+    every trial, in whichever process it runs, can read it.
+    """
     import optuna
 
-    optuna.create_study(
+    study = optuna.create_study(
         study_name=study_name,
         storage=config.OPTUNA_STORAGE,
         direction="maximize",
         load_if_exists=True,
     )
+    if "mlflow_run_id" not in study.user_attrs:
+        mlflow = setup_mlflow()
+        with mlflow.start_run(run_name=study_name) as run:
+            mlflow.set_tags({"optuna_study": study_name, "kind": "study"})
+        study.set_user_attr("mlflow_run_id", run.info.run_id)
     return study_name
 
 
@@ -134,7 +145,10 @@ def objective(trial, train_df: pd.DataFrame, val_df: pd.DataFrame, study_name: s
         "alpha": trial.suggest_float("alpha", 1e-6, 1e-2, log=True),
     }
     mlflow = setup_mlflow()
-    with mlflow.start_run(run_name=f"{study_name}-trial-{trial.number}") as run:
+    with mlflow.start_run(
+        run_name=f"{study_name}-trial-{trial.number}",
+        parent_run_id=trial.study.user_attrs["mlflow_run_id"],
+    ) as run:
         _, metrics = fit(train_df, val_df, params)
         mlflow.set_tags({"optuna_study": study_name, "kind": "trial"})
         mlflow.log_params(params)
@@ -164,11 +178,27 @@ def run_trials(study_name: str, n_trials: int, train_df: pd.DataFrame) -> list[d
 
 
 def best_trial(study_name: str) -> dict[str, Any]:
+    """The study's best trial, also recorded on the study's parent run.
+
+    A metric and a tag, not params: MLflow params cannot change once logged,
+    and a study that gets more trials (a cleared task) can get a new best.
+    """
     import optuna
 
     study = optuna.load_study(study_name=study_name, storage=config.OPTUNA_STORAGE)
     best = study.best_trial
-    return {"number": best.number, "f1": best.value, "params": best.params, "num_trials": len(study.trials)}
+    trial_run_id = best.user_attrs["mlflow_run_id"]
+    mlflow = setup_mlflow()
+    with mlflow.start_run(run_id=study.user_attrs["mlflow_run_id"]):
+        mlflow.log_metrics({"best_f1": best.value, "num_trials": len(study.trials)})
+        mlflow.set_tag("best_trial_run_id", trial_run_id)
+    return {
+        "number": best.number,
+        "f1": best.value,
+        "params": best.params,
+        "num_trials": len(study.trials),
+        "mlflow_run_id": trial_run_id,
+    }
 
 
 def train_model(

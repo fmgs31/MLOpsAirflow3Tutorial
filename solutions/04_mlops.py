@@ -12,8 +12,8 @@ Also shown:
 * **Distributed tuning with dynamic task mapping** - one Optuna study, stored
   in a database, and one `run_trials` task instance per worker, fanned out at
   runtime. Every worker adds trials to the same study.
-* **Experiment tracking** - every trial and the final model are MLflow runs;
-  the final model is registered as a new version.
+* **Experiment tracking** - the study is an MLflow run with one child run per
+  trial, and the final model is a run of its own, registered as a new version.
 * **Branching as a promotion gate** - a model that misses the f1 threshold does
   not reach production, and the Dag run still succeeds (a rejected candidate is
   a normal outcome, not a failure).
@@ -148,7 +148,8 @@ def mlops():
         trained = train_module.train_model(
             best["params"], train_df, test_df,
             run_name=f"final-{run_key(run_id)}",
-            tags={"airflow_run_id": run_id},
+            # Links the final run back to the trial it took its params from.
+            tags={"airflow_run_id": run_id, "best_trial_run_id": best["mlflow_run_id"]},
         )
         version = registry.register(trained["model_uri"])
         print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")

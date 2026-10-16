@@ -291,8 +291,9 @@ vas a usar después de cada Dag.
 >   hay triggerer, así que la espera la hace el propio `airflow dags test`, y el
 >   comando no termina hasta que acaba.
 >
-> Eso sí, **no es un dry run**: las tasks escriben archivos reales y asset
-> events reales (§9). Es la forma más rápida de ver funcionar un Dag; la §15
+> Eso sí, **no es un dry run** (un ensayo que informa de lo que haría un
+> comando sin hacerlo): las tasks escriben archivos reales y asset events
+> reales (§9). Es la forma más rápida de ver funcionar un Dag; la §15
 > dice cuándo dejar de fiarse de él.
 
 > **Pruébalo.** Cambia el saludo sin tocar el archivo:
