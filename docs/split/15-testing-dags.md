@@ -5,13 +5,15 @@ you wrote — and one on the data.
 
 **Dag integrity tests** — [`tests/test_dag_integrity.py`](../../tests/test_dag_integrity.py).
 These catch, before the file reaches Airflow, the failures that would otherwise
-surface as an import error in the UI, and they are the single highest-value thing you can put in CI.
+surface as an import error in the UI, and they are the single highest-value
+thing you can put in CI.
 
 They rest on `DagBag`, the class Airflow uses to parse a Dag folder:
 `DagBag(dag_folder=...)` imports every file in it and keeps the Dags it found
 in `.dags` and the files that failed in `.import_errors`. The `dagbag` argument
 in each test is a pytest fixture, defined in the same file, that
-builds one from your `dags/` folder:
+builds one from your `dags/` folder, first putting it on `sys.path` as
+Airflow does (§8), so your Dags can import `project_tagger_orchestration`:
 
 ```python
 from airflow.dag_processing.dagbag import DagBag
@@ -38,9 +40,8 @@ of these in. Some stop the file from importing (`schedule_interval=`,
 accepted and does nothing, and `execution_date` fails only once the task runs.
 
 **Unit tests on the workload** — [`tests/test_project_tagger.py`](../../tests/test_project_tagger.py).
-Apart from `assets.py`, which defines the Asset objects, nothing in
-`src/project_tagger/` imports Airflow, so the ML code is testable without a scheduler
-in the loop. That separation is deliberate: Airflow orchestrates the
+Nothing in `src/project_tagger/` imports Airflow, so the ML code is testable
+without a scheduler in the loop. That separation is deliberate: Airflow orchestrates the
 code, it does not contain it.
 
 They do not need the warehouse or the MLflow server either, and that is
@@ -50,8 +51,8 @@ have returned and passes it in: the GX suites, the split checks and the drift
 windows all take a dataframe, not a table name. Optuna and MLflow run for
 real, but against SQLite files in a temporary folder: the test points
 `config.OPTUNA_STORAGE` and `config.MLFLOW_TRACKING_URI` there with pytest's
-`monkeypatch`, which replaces a value for the length of one test, then tunes, trains, registers, promotes and rolls back. The
-drift test needs alibi-detect, which lives only in its own virtualenv (§12),
+`monkeypatch`, which replaces a value for the length of one test, then tunes,
+trains, registers, promotes and rolls back. The drift test needs alibi-detect, which lives only in its own virtualenv (§12),
 so in Airflow's environment it is **skipped**, not failed.
 
 **Data tests** — the GX suites and dbt's tests (§9). They are tests too, but on
@@ -67,8 +68,8 @@ runs a single task without recording its state in the metadata database.
 code is only useful while the quotes are true.
 [`tests/test_readme_listings.py`](../../tests/test_readme_listings.py): the
 [appendix](../appendix-dags.md) shows every solution in full, injected from
-`solutions/` by [`scripts/sync_readme.py`](../../scripts/sync_readme.py) rather than
-copied by hand; the test re-runs the injection in memory and fails if the
+`solutions/` by [`scripts/sync_readme.py`](../../scripts/sync_readme.py)
+rather than copied by hand; the test re-runs the injection in memory and fails if the
 result differs.
 [`tests/test_readme_build_steps.py`](../../tests/test_readme_build_steps.py): every
 "Build it" block in this tutorial is tagged with the file it belongs to; the test
@@ -93,14 +94,14 @@ well under a minute:
 41 passed, 1 skipped in 20.75s
 ```
 
-The `s` is the drift test, skipped for the reason given under "Unit tests on the workload". No scheduler was
-involved, no Dag ran, and nothing reached BigQuery or the MLflow server. That
-is the point: every one of those tests is fast enough to run on every commit,
-which is what makes them worth having.
+The `s` is the drift test, skipped for the reason given under "Unit tests on
+the workload". No scheduler was involved, no Dag ran, and nothing reached
+BigQuery or the MLflow server, so every one of those tests is fast enough to
+run on every commit.
 
-When one fails, the message says which file and what is missing — `mlops has no
+When one fails, the message says which file and what is missing (`mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`,
-`dataops` missing an outlet — and the fix is in the section that built that
+`dataops` missing an outlet), and the fix is in the section that built that
 file, or in `solutions/`. To see the suite pass against the finished versions,
 point it there:
 
@@ -124,9 +125,10 @@ python scripts/sync_readme.py             # fix it
 None of those levels would have caught the failures in §7's "trap" box (the
 `KeyError` and the `UndefinedError` of a run without a logical date):
 `airflow dags test` always supplies a logical date, so a Dag that breaks on a
-run without one passes every test in this section. **Trigger each Dag once for real** —
-through the scheduler, with `airflow dags trigger` and no `-l`, so the run has
-no logical date, just like an asset-triggered one — before you trust it.
+run without one passes every test in this section. **Trigger each Dag once
+for real** before you trust it: through the scheduler, with
+`airflow dags trigger` and no `-l`, so the run has no logical date, like an
+asset-triggered one.
 
 ---
 

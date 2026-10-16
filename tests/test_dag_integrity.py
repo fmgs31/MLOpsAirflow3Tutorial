@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,9 @@ STALE_CONSTRUCTS = {
 
 @pytest.fixture(scope="session")
 def dagbag() -> DagBag:
+    # Airflow puts the Dag folder on sys.path when it parses, which is how the
+    # Dags import the package they share, `project_tagger_orchestration`.
+    sys.path.insert(0, str(DAGS_FOLDER))
     return DagBag(dag_folder=str(DAGS_FOLDER))
 
 

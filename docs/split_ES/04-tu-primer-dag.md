@@ -34,8 +34,8 @@ DEFAULT_ARGS = {
 }
 ```
 
-El docstring no es decorativo: dentro de un momento lo vas a pasar como la
-documentación del Dag en la UI. `pendulum` es la librería de datetimes con zona
+Dentro de un momento le pasas el docstring al Dag como su documentación en la
+UI. `pendulum` es la librería de datetimes con zona
 horaria que Airflow usa en todas partes. Un `datetime` normal sin zona horaria
 (uno "naive") se interpreta en la zona horaria por defecto de Airflow, que puede
 no ser la que querías — y entonces tus runs arrancan a horas que no esperabas.
@@ -65,10 +65,10 @@ Las otras dos deciden qué pasa cuando una task falla:
   necesitar minutos, y `retry_exponential_backoff=2.0` duplica la espera tras
   cada intento.
 
-**El valor por defecto es `retries=0`** (`[core] default_task_retries`), lo que
-significa que una task que sufre un corte de red puntual simplemente falla y se lleva el
-run por delante. Los reintentos hay que activarlos explícitamente, y por eso los tests de integridad de este
-repo (§15) insisten en que todo Dag que no sea una demo lo fije.
+**El valor por defecto es `retries=0`** (`[core] default_task_retries`), así
+que una task que sufre un corte de red puntual falla y se lleva el run por
+delante. Los reintentos hay que activarlos, y por eso los tests de integridad
+de este repo (§15) exigen que todo Dag que no sea una demo los fije.
 
 Los reintentos solo ayudan con fallos que podrían no repetirse — un timeout, una
 API con throttling, un nodo que murió. Para un fallo que *sí* se va a repetir,
@@ -94,8 +94,8 @@ def hello_airflow3():
 
 Línea a línea:
 
-- **`@dag` convierte una función en un Dag.** Este estilo de decoradores tiene
-  nombre, **TaskFlow**, y el nombre va a seguir apareciendo.
+- **`@dag` convierte una función en un Dag.** Este estilo de decoradores se
+  llama **TaskFlow**.
 - **`schedule=None`** — este Dag corre solo cuando alguien lo dispara: tú, desde
   la UI o la CLI, o un programa a través de la API. La §7 tiene los otros
   valores que puede tomar un schedule.
@@ -150,13 +150,15 @@ imprima acaba en el log de la task, visible en la UI.
 `**context` es cómo una task ve el run al que pertenece: `run_id`, `params`, `ti`
 (la task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`, `conn`,
 `macros`. Son objetos de tipos distintos, de ahí `**context: Any`; Airflow
-rellena el contexto por nombre y no lee la anotación. Lee `logical_date` — la fecha que da nombre a un run, como en "el
-run del 10 de septiembre" (§7) — con `.get()`, nunca con `context["logical_date"]`:
-un run disparado por asset, o desde la CLI sin logical date, no tiene ninguna, y
-entonces la clave
-no existe en el contexto — indexarla lanza `KeyError` en tiempo de
-ejecución, mientras `airflow dags test` (que siempre aporta una) sigue en verde.
-La §7 explica el porqué. `run_id` siempre está; prefiérelo para nombrar cosas.
+rellena el contexto por nombre y no lee la anotación.
+
+Lee `logical_date`, la fecha que da nombre a un run ("el run del 10 de
+septiembre", §7), con `.get()`, nunca con `context["logical_date"]`. Un run
+disparado por asset, o desde la CLI sin logical date, no tiene ninguna, y
+entonces la clave no existe en el contexto: indexarla lanza `KeyError` en
+tiempo de ejecución, mientras `airflow dags test`, que siempre aporta una,
+sigue en verde. La §7 explica por qué. `run_id` siempre está; prefiérelo para
+nombrar cosas.
 
 Termina el archivo conectando las tasks entre sí y registrando el Dag:
 
@@ -181,19 +183,20 @@ make_greeting ─┬─► shout ──────┬─► report
 ```
 
 Y la última línea: **el decorador solo define el Dag; llamar a la función lo
-registra.** Un archivo de Dag que define un Dag y nunca lo llama no produce nada
-— se importa sin errores y no aparece en ningún sitio. Es el error de principiante
-más común y el más difícil de ver, porque no hay ningún error que leer.
+registra.** Un archivo que define un Dag y nunca lo llama se importa sin
+errores y no aparece en ningún sitio. Es el error de principiante más común y
+el más difícil de ver, porque no hay ningún error que leer.
 
-Guarda el archivo. Compáralo con
-[`solutions/01_hello_airflow3.py`](../../solutions/01_hello_airflow3.py) si quieres —
-es el mismo código con los comentarios dentro.
+Guarda el archivo. Si quieres, compáralo con
+[`solutions/01_hello_airflow3.py`](../../solutions/01_hello_airflow3.py): el
+mismo código con los comentarios dentro.
 
 ### Comprueba que se parsea
 
 El Dag processor (§3) escanea `dags/` cada cinco segundos en este stack,
 importa cada archivo `.py` que parece un archivo de Dag (qué significa eso
-viene más abajo), y escribe lo que parseó en la metadata database. A los pocos segundos de guardar:
+viene más abajo), y escribe lo que parseó en la metadata database. A los
+pocos segundos de guardar:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list -o plain
@@ -203,19 +206,19 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 `is_paused True`, `bundle_name dags-folder`. Recarga la UI y el Dag está en la
 página **Dags**, en pausa. (Todos los Dags empiezan en pausa — §7.)
 
-Si la fila no está y ya pasaron esos segundos, pueden estar pasando tres cosas,
-y en `airflow dags list` parecen idénticas. La primera es un archivo que lanza una excepción al importarse — una
-errata, un paquete que falta, una función `@dag` que revienta. Eso no es un Dag
-roto en la lista, es **ningún Dag**: ausente de la UI, ausente de `airflow dags
-list`. Aparece como error de import en las páginas Home y Dags (§5) y con este
+Si la fila no está y ya pasaron esos segundos, pueden estar pasando tres
+cosas, y en `airflow dags list` parecen idénticas. La primera es un archivo que
+lanza una excepción al importarse: una errata, un paquete que falta, una
+función `@dag` que revienta. Eso no es un Dag roto en la lista sino **ningún
+Dag**, ausente de la UI y de `airflow dags list`. Aparece como error de import en las páginas Home y Dags (§5) y con este
 comando:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
 ```
 
-**Comprobación.** `No data found` — tu archivo se importa sin errores. Mira cómo se ve el otro
-caso provocándolo: guarda esto como `dags/zz_broken_on_purpose.py`,
+**Comprobación.** `No data found`: tu archivo se importa sin errores. Mira
+cómo se ve el otro caso provocándolo: guarda esto como `dags/zz_broken_on_purpose.py`,
 
 ```python
 # An airflow dag file that does not import
@@ -236,23 +239,22 @@ dags-folder    zz_broken_on_purpose.py  Traceback (most recent call last):
 El archivo, la línea y el traceback completo. Borra el archivo y la fila
 desaparece sola en el siguiente escaneo.
 
-Esa primera línea de comentario no es relleno. El Dag processor no importa
-todos los `.py` que encuentra: con `[core] dag_discovery_safe_mode` activado —
-el valor por defecto — primero lee el archivo como texto y se lo salta salvo que
+La línea de comentario del archivo roto importa. El Dag processor no importa
+todos los `.py` que encuentra: con `[core] dag_discovery_safe_mode` activado,
+el valor por defecto, primero lee el archivo como texto y se lo salta salvo que
 el contenido en minúsculas contenga `airflow` *y* además `dag` o `asset`. Quita
-el comentario de ese archivo roto y no se parsea nunca, no se lista nunca y no
-se reporta nunca — silencio, no un error. Un archivo de Dag real siempre pasa
-esta prueba: basta con `from airflow.sdk import dag` para que contenga las dos
-palabras, así que no tienes que preocuparte por ello. Los archivos que se salta
-son los que nunca las mencionan — un módulo auxiliar como un `utils.py` sin
-ningún Dag dentro, que es justo lo correcto, o un experimento desechable como el
-archivo roto de arriba. Así que cuando un archivo simplemente no está, esto es
-lo segundo que hay que comprobar.
+el comentario de `zz_broken_on_purpose.py` y no se parsea, no se lista ni se
+reporta nunca: silencio, no un error. Un archivo de Dag real siempre pasa esta
+prueba, porque basta con `from airflow.sdk import dag` para que contenga las
+dos palabras. Los archivos que se salta son los que no tienen alguna: un
+módulo auxiliar sin ningún Dag dentro, que es lo correcto, o un experimento
+desechable como `zz_broken_on_purpose.py`. Así que cuando un archivo no está,
+esto es lo segundo que hay que comprobar.
 
-La tercera forma de no obtener nada es el error de principiante descrito bajo el título
-"Constrúyelo" en esta sección — un archivo que define un Dag y nunca lo llama. Se
-importa sin errores, así que `list-import-errors` también está vacío, y el único síntoma
-es un Dag que no está. Mira primero `list-import-errors`, y después el final del
+La tercera forma de no obtener nada es el error de principiante de
+"Constrúyelo": un archivo que define un Dag y nunca lo llama. Se importa sin
+errores, así que `list-import-errors` también está vacío, y el único síntoma es
+un Dag que no está. Mira primero `list-import-errors`, y después el final del
 archivo.
 
 ### Ejecútalo
@@ -271,9 +273,9 @@ impresa lleva un espacio en medio:
 HELLO FROM RUN MANUAL__2026-09-15T12:18:32.454459+00:00 AT 2026-09-15 12:18:33.500053+00:00  (7 words)
 ```
 
-y, al final, `DagRun Finished: ... state=success`. Es la forma más rápida de
-probar un Dag mientras lo escribes: un run completo con logs reales y sin UI. Lo vas a usar
-después de cada Dag que escribas.
+y, al final, `DagRun Finished: ... state=success`: un run completo con logs
+reales y sin UI, la forma más rápida de probar un Dag mientras lo escribes. Lo
+vas a usar después de cada Dag.
 
 > **Qué es `airflow dags test`, y qué no.** Ejecuta el Dag entero dentro de este
 > único comando, sin scheduler, executor ni triggerer. Hay tres cosas que
@@ -303,8 +305,8 @@ después de cada Dag que escribas.
 > `context["params"]` — el `Param` que declaraste, sobrescrito para un run.
 
 **Otra forma de declarar un Dag** es el context manager, que está plenamente
-soportado y se lee mejor cuando las tasks son operators (§6) en vez de funciones.
-No para este archivo — solo para que lo reconozcas:
+soportado y se lee mejor cuando las tasks son operators (§6) en vez de
+funciones. No es para este archivo; está aquí para que lo reconozcas:
 
 ```python
 from airflow.sdk import DAG

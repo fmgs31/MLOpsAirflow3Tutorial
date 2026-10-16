@@ -1,9 +1,9 @@
 ## 5. The UI
 
-The UI is a React application on top of the api-server's API — the public
-REST API plus some endpoints of its own under `/ui/` —, served
-at <http://localhost:8080>. Half of what this tutorial teaches is easier to see
-than to read about, so take the tour now that there is a Dag to look at.
+The UI, at <http://localhost:8080>, is a React application on top of the
+api-server's API: the public REST API plus some endpoints of its own under
+`/ui/`. Much of what this tutorial teaches is easier to see than to read, so
+take the tour now that there is a Dag to look at.
 
 The nav is **Home · Dags · Assets · Browse · Admin** at the top and **Docs**, a
 clock and **User** at the bottom.
@@ -30,15 +30,14 @@ between them. At the other end of that row are the controls worth knowing:
   the graph direction, and **Dependencies** — whether the graph shows only the
   Dag's own tasks (the default) or also the assets and Dags connected to it.
   `hello_airflow3` is connected to nothing, so all three options look the
-  same; §10 shows the difference on `mlops`. In the Grid: how many runs to show, and version
-  indicators that mark where the code changed between runs.
+  same; §10 shows the difference on `mlops`. In the Grid: how many runs to
+  show, and version indicators that mark where the code changed between runs.
 - **Filter** (a funnel): pick a task and show only what is upstream or
   downstream of it.
 - **Task Filters** (a magnifying glass, Graph only). It appears only when there
   is something to filter: a run is selected, or the Dag has task groups or more
-  than one kind of operator — so on `hello_airflow3` you see it once you open a
-  run. It filters by state, task group,
-  duration, and **Min. map index** — "shows mapped tasks expanded to at least
+  than one kind of operator, so on `hello_airflow3` you see it once you open a
+  run. It filters by state, task group, duration, and **Min. map index** — "shows mapped tasks expanded to at least
   this index". A mapped task like `run_trials` (§10) is one collapsed node
   until you raise it; raise it and each mapped instance gets its own.
 - **Download graph image**, the arrow at the bottom right of the Graph.
@@ -67,7 +66,7 @@ and both of their results to `report`.
 ran with: each time you save a change to a Dag file, Airflow creates a new
 version — `v1`, `v2`, … The picker, in the Graph's **Options** and on the
 **Code** tab, lists each version with the time it was created, and lets you
-look at a run through the code that actually produced it: last week's run still
+look at a run through the code that produced it: last week's run still
 shows last week's graph. **Code** also shows when the file was parsed and, once
 there are two versions, a button to compare them.
 
@@ -81,7 +80,7 @@ folder has no version of its own; a Git bundle does (the commit), and then
 A form opens with one field, `greeting`, pre-filled with `hello`: the `Param`
 you declared in §4.
 
-**The Trigger form is generated from your `params`.** This is why params are
+**The Trigger form is generated from your `params`**, which is why they are
 worth declaring with types:
 
 ```python
@@ -91,17 +90,16 @@ POLICY_PARAMS = {"drift_p_val": Param(0.05, type="number")}     # dags/06
 
 A string param becomes a text field, a number a numeric one, an enum a dropdown,
 and the values are validated against each `Param`'s type and limits before
-the run is created. Under **Advanced
-Options** the same thing is editable as raw **Configuration JSON**, and the form
-also offers a run id, a logical date and a manual data interval. If the Dag is
+the run is created. Under **Advanced Options** the same values are editable as
+raw **Configuration JSON**, and the form also offers a run id, a logical date and a manual data interval. If the Dag is
 paused there is also an *"Unpause … on trigger"* checkbox, ticked by default,
 which un-pauses it as the run is created. Untick it and the run is still
 created, but stays **queued** until you un-pause the Dag (§7).
 
 Type another single word in `greeting` — leave *Unpause* ticked if it is
 there — and submit. That is the same `Param` reaching the same task by a
-third route: a default in the file, `--conf` on the command
-line, a form in the browser.
+third route: a default in the file, `--conf` on the command line, a form in
+the browser.
 
 Now read what it did. Open the **Runs** tab, click the new run, click `report`
 in the graph, and open **Logs**: your word in capitals and `(7 words)`, the line
@@ -111,15 +109,15 @@ in the graph, and open **Logs**: your word in capitals and `(7 words)`, the line
 
 > The run `airflow dags test` made has no logs here. That command prints task
 > output to your terminal and writes no log file, so its **Logs** tab only says
-> the log file was not found — and suggests remote logging. Nothing is broken;
-> there is simply no file.
+> the log file was not found, and suggests remote logging. Nothing is broken;
+> there is no file.
 
 The Trigger form has a second mode, **Backfill** — *"Run this Dag for a range
 of dates"* — and on `hello_airflow3` it is disabled; hover over it and it says
 *"This Dag's schedule does not support backfills"*. A backfill asks the
 schedule which runs should have happened between two dates and creates them: a
 daily schedule over four days answers "four runs, one per day".
-`schedule=None` has no answer — the Dag runs only when someone triggers it, so
+`schedule=None` has no answer: the Dag runs only when someone triggers it, so
 no date range holds a run it should have had. Backfill becomes usable in §9, on
 `dataops`, which runs daily: a date range, a **Reprocess Behavior** (missing
 runs / missing and errored runs / all runs), max active runs, "run backwards",
@@ -131,7 +129,7 @@ updated, not on dates.
 Dags that use them exist, it lists every asset with its producing tasks,
 consuming Dags and event history, and draws the cross-Dag graph: `dataops` →
 `labeled_projects` → `mlops` → `production_model`. The Dags list cannot show
-it, because the connection is not a dependency between Dags, it is an asset
+that graph, because what connects the Dags is an asset, not a dependency
 between them; besides this page, only a Dag's Graph with **Options →
 Dependencies → All Dag Dependencies** draws it (§10). **Create Event** on
 an asset either materializes it (runs the Dag upstream, which produces the data
@@ -159,9 +157,10 @@ timezone.
 API token generator, and logout.
 
 > Two menus can appear that this stack does not show. **Security** comes with an
-> auth manager that has users and roles to manage; this tutorial's stack runs the
-> Simple auth manager with everyone an admin. **Plugins** appears when an installed plugin
-> adds pages to the nav; the only plugin installed in the stack, OpenLineage, adds none.
+> auth manager that has users and roles to manage; this stack runs the Simple
+> auth manager with everyone an admin. **Plugins** appears when an installed
+> plugin adds pages to the nav; the only plugin in this stack, OpenLineage, adds
+> none.
 
 ---
 

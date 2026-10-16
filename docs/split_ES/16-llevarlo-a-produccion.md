@@ -1,15 +1,15 @@
 ## 16. Llevarlo a producción
 
-**Executors.** `LocalExecutor` es el de por defecto y sirve mientras baste una máquina. Más
-allá: `CeleryExecutor` (varias máquinas worker que toman tasks de una cola),
-`KubernetesExecutor` (un pod por task),
-o **varios executors** configurados a la vez. También existe el **Edge
+**Executors.** `LocalExecutor` es el de por defecto y sirve mientras baste una
+máquina. Más allá: `CeleryExecutor` (varias máquinas worker que toman tasks de
+una cola), `KubernetesExecutor` (un pod por task) o **varios executors**
+configurados a la vez. También existe el **Edge
 executor**, para workers fuera de tu clúster, algo que es posible gracias a la
 Task Execution API (§3).
 
 **Aislamiento.** No instales tus dependencias de ML junto a las de Airflow.
-Este stack ya se ha topado con el problema dos veces: dbt (§9) y alibi-detect (§12)
-fijan versiones que el entorno de Airflow no puede aceptar, así que cada uno
+Este stack ya se ha topado con el problema dos veces: dbt (§9) y alibi-detect
+(§12) fijan versiones que el entorno de Airflow no puede aceptar, así que cada uno
 tiene su propio virtualenv en la imagen, uno llamado desde un `BashOperator` y
 el otro a través de `@task.external_python`. Eso funciona para unas pocas
 herramientas y un equipo. Con muchos equipos, cada uno con sus librerías, dale
@@ -17,12 +17,12 @@ a cada task su propia imagen de contenedor con `KubernetesPodOperator` (o
 `DockerOperator`): la imagen de Airflow solo contiene Airflow, y un equipo
 actualiza sus librerías sin tocar las de nadie más. El cómputo pesado
 pertenece a un clúster (Ray, Spark, EMR, Dataproc) con Airflow disparándolo y
-siguiéndolo — Airflow es un orquestador, no un motor de cómputo.
+siguiéndolo: Airflow es un orquestador, no un motor de cómputo.
 
 **Dag bundles.** El Dag processor lee *bundles*; el de por defecto es un
 `LocalDagBundle` llamado `dags-folder`, que lee el ajuste `dags_folder`.
-Cambiar a `GitDagBundle` te da versionado: cada Dag run registra el commit con el
-que corrió, así que un re-run usa el mismo código.
+Cambiar a `GitDagBundle` te da versionado: cada Dag run registra el commit con
+el que corrió, así que un re-run usa el mismo código.
 
 ```ini
 [dag_processor]
@@ -106,8 +106,8 @@ nunca en la `uri` o el `extra` de un asset — los extras de asset se guardan en
 texto plano. Usa Connections, Variables o un secrets backend (HashiCorp Vault,
 AWS Secrets Manager, Google Secret Manager), del que Airflow lee entonces las
 Connections y Variables, así que nunca llegan a estar en su base de datos.
-Define `AIRFLOW_FERNET_KEY` en `.env` (`env.example` explica cómo generar una) para que lo que sí esté en la base de datos
-vaya cifrado. Dos cosas que hace este stack y que uno de producción no
+Define `AIRFLOW_FERNET_KEY` en `.env` (`env.example` explica cómo generar una)
+para que lo que sí esté en la base de datos vaya cifrado. Dos cosas que hace este stack y que uno de producción no
 debería: la clave de la service account de GCP es un archivo montado en todos
 los contenedores, cuando una plataforma como GKE les daría a los workers una
 identidad propia (Workload Identity), sin clave que se pueda filtrar; y las
@@ -117,8 +117,8 @@ guardaría un secrets backend.
 **Auth.** Cambia el Simple auth manager por FAB (§2) o por un proveedor de
 identidad real antes de que nadie más pueda llegar a la UI.
 
-**Observabilidad.** Airflow emite sus propias métricas, y esta es la parte que la
-gente se salta hasta que hay un incidente. Tres capas:
+**Observabilidad.** Airflow emite sus propias métricas, y esta es la parte que
+la gente se salta hasta que hay un incidente. Tres capas:
 
 - **Metrics** — `[metrics] statsd_on = True` para StatsD/Datadog, o
   `[metrics] otel_on = True` para enviar OpenTelemetry a un collector. Vigila
@@ -130,15 +130,16 @@ gente se salta hasta que hay un incidente. Tres capas:
   y de los runs de task, y así encuentras *qué* task de un Dag lento se
   volvió más lenta.
 - **Health** — `GET /api/v2/monitor/health` informa del estado de la metadata
-  database, el scheduler, el triggerer y el Dag processor; la página Home de la UI muestra lo mismo.
+  database, el scheduler, el triggerer y el Dag processor; la página Home de la
+  UI muestra lo mismo.
 
-Y luego el mantenimiento de siempre: `airflow db clean` programado (si no, la metadata
-database crece indefinidamente), deadline alerts en los Dags que importan (§13), y
-Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — conectados a
+Y luego el mantenimiento de siempre: `airflow db clean` programado (si no, la
+metadata database crece indefinidamente), deadline alerts en los Dags que
+importan (§13), y Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — conectados a
 `on_failure_callback` o a un `AsyncCallback`.
 
-**Cuando termines el tutorial.** Al terminar, tres cosas siguen en marcha o
-siguen existiendo: el stack de Airflow (`scripts/reset.sh`, §2), Airbyte, que se
+**Cuando termines el tutorial.** Tres cosas siguen en marcha o siguen
+existiendo: el stack de Airflow (`scripts/reset.sh`, §2), Airbyte, que se
 elimina con `abctl local uninstall`, y el proyecto de Google Cloud. Para
 eliminar el proyecto y todo lo que contiene, incluida la service account y su
 clave, abre **IAM & Admin → Settings** en la consola y elige **Shut down**.

@@ -1,9 +1,9 @@
 ## 5. La UI
 
-La UI es una aplicación React encima de la API del api-server — la REST API
-pública más unos endpoints propios bajo `/ui/` —, servida en
-<http://localhost:8080>. La mitad de lo que enseña este tutorial se entiende mejor
-viéndolo que leyéndolo, así que haz el recorrido ahora que hay un Dag que mirar.
+La UI, en <http://localhost:8080>, es una aplicación React encima de la API
+del api-server: la REST API pública más unos endpoints propios bajo `/ui/`.
+Buena parte de lo que enseña este tutorial se entiende mejor viéndolo que
+leyéndolo, así que haz el recorrido ahora que hay un Dag que mirar.
 
 La navegación es **Home · Dags · Assets · Browse · Admin** arriba y, abajo,
 **Docs**, un reloj y **User**.
@@ -40,9 +40,9 @@ conviene conocer:
   arriba o aguas abajo de ella.
 - **Task Filters** (una lupa, solo en el Graph). Solo aparece cuando hay algo
   que filtrar: hay un run seleccionado, o el Dag tiene task groups o más de un
-  tipo de operator — así que en `hello_airflow3` la ves en cuanto abres un run.
-  Filtra por estado, task group, duración y **Min. map index** — "shows mapped tasks
-  expanded to at least this index". Una mapped task como `run_trials`
+  tipo de operator, así que en `hello_airflow3` la ves en cuanto abres un run.
+  Filtra por estado, task group, duración y **Min. map index** — "shows mapped
+  tasks expanded to at least this index". Una mapped task como `run_trials`
   (§10) es un único nodo colapsado hasta que subes ese valor; súbelo y cada
   instancia mapeada tiene su propio nodo.
 - **Download graph image**, la flecha abajo a la derecha del Graph.
@@ -71,7 +71,7 @@ resultados de ambas a `report`.
 con la que corrió: cada vez que guardas un cambio en un archivo de Dag, Airflow
 crea una versión nueva — `v1`, `v2`, … El selector, en **Options** del Graph y
 en la pestaña **Code**, muestra cada versión con la fecha en que se creó, y te
-permite ver un run con el código que realmente lo produjo: el run de la
+permite ver un run con el código que lo produjo: el run de la
 semana pasada sigue mostrando el grafo de la semana pasada. **Code** enseña
 además cuándo se parseó el archivo y, en cuanto hay dos versiones, un botón para
 compararlas.
@@ -86,8 +86,8 @@ entonces **Code** la muestra también (§16).
 `hello_airflow3`. Se abre un formulario con un campo, `greeting`, relleno con
 `hello`: es el `Param` que declaraste en la §4.
 
-**El formulario de Trigger se genera a partir de tus `params`.** Por eso merece
-la pena declarar los params con tipos:
+**El formulario de Trigger se genera a partir de tus `params`**, y por eso
+merece la pena declararlos con tipos:
 
 ```python
 params={"greeting": Param("hello", type="string")}              # dags/01
@@ -96,9 +96,9 @@ POLICY_PARAMS = {"drift_p_val": Param(0.05, type="number")}     # dags/06
 
 Un param string se convierte en un campo de texto, un number en uno numérico, un
 enum en un desplegable, y los valores se validan contra el tipo y los límites
-de cada `Param` antes de crear el run. En **Advanced Options** puedes editar lo
-mismo directamente como **Configuration JSON**, y el formulario ofrece además un run id, una logical date y un data
-interval manual. Si el Dag está en pausa aparece también una casilla *"Unpause
+de cada `Param` antes de crear el run. En **Advanced Options** puedes editar
+los mismos valores como **Configuration JSON**, y el formulario ofrece además
+un run id, una logical date y un data interval manual. Si el Dag está en pausa aparece también una casilla *"Unpause
 … on trigger"*, marcada por defecto, que le quita la pausa al disparar.
 Desmárcala y el run se crea igual, pero se queda **queued** hasta que quites la
 pausa (§7).
@@ -117,16 +117,15 @@ y `count_words`.
 
 > El run que hizo `airflow dags test` no tiene logs aquí. Ese comando imprime
 > la salida de las tasks en tu terminal y no escribe ningún archivo de log, así
-> que su pestaña **Logs** solo dice que no encontró el archivo de log — y
-> sugiere configurar remote logging. No hay nada roto; simplemente no hay
-> archivo.
+> que su pestaña **Logs** solo dice que no encontró el archivo de log, y
+> sugiere configurar remote logging. No hay nada roto; no hay archivo.
 
 El formulario de Trigger tiene un segundo modo, **Backfill** — *"Run this Dag
 for a range of dates"* — y en `hello_airflow3` aparece deshabilitado; pasa el
 ratón por encima y dice *"This Dag's schedule does not support backfills"*. Un
 backfill le pregunta al schedule qué runs tendrían que haber ocurrido entre dos
 fechas y los crea: un schedule diario sobre cuatro días responde "cuatro runs,
-uno por día". `schedule=None` no tiene respuesta — el Dag solo corre cuando
+uno por día". `schedule=None` no tiene respuesta: el Dag solo corre cuando
 alguien lo dispara, así que ningún rango de fechas contiene un run que debería
 haber tenido. Backfill se puede usar a partir de la §9, con `dataops`, que corre
 a diario: un rango de fechas, un **Reprocess Behavior** (missing runs / missing
@@ -139,10 +138,11 @@ fechas.
 §9. En cuanto existan los Dags que los usan, lista cada asset con sus tasks
 productoras, los Dags consumidores y el histórico de eventos, y dibuja el grafo
 entre Dags: `dataops` → `labeled_projects` → `mlops` → `production_model`. La
-lista de Dags no puede enseñarlo, porque la conexión no es una dependencia entre
-Dags, es un asset entre ellos; aparte de esta página, solo lo dibuja el Graph de
-un Dag con **Options → Dependencies → All Dag Dependencies** (§10). **Create Event** sobre un asset o bien lo materializa (ejecuta el Dag
-aguas arriba, que produce los datos de verdad) o registra un evento manual, que
+lista de Dags no puede enseñar ese grafo, porque lo que conecta los Dags es un
+asset, no una dependencia entre ellos; aparte de esta página, solo lo dibuja el
+Graph de un Dag con **Options → Dependencies → All Dag Dependencies** (§10).
+**Create Event** sobre un asset o bien lo materializa (ejecuta el Dag aguas
+arriba, que produce los datos de verdad) o registra un evento manual, que
 dispara los Dags aguas abajo sin ejecutar el productor.
 
 **Browse** — Audit Log (quién disparó, pausó o limpió qué — tu trigger desde la
@@ -167,10 +167,10 @@ actual en esa zona; haz clic para elegir otra zona horaria.
 generador de tokens de la API y el logout.
 
 > Hay dos menús que pueden aparecer y que este stack no muestra. **Security**
-> viene con un auth manager que tiene usuarios y roles que gestionar; el stack de
-> este tutorial usa el Simple auth manager con todo el mundo como admin. **Plugins** aparece cuando
-> un plugin instalado añade páginas a la navegación; el único plugin instalado
-> en el stack, OpenLineage, no añade ninguna.
+> viene con un auth manager que tiene usuarios y roles que gestionar; este
+> stack usa el Simple auth manager con todo el mundo como admin. **Plugins**
+> aparece cuando un plugin instalado añade páginas a la navegación; el único
+> plugin de este stack, OpenLineage, no añade ninguna.
 
 ---
 

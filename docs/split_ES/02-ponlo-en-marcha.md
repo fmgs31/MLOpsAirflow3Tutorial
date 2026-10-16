@@ -45,12 +45,15 @@ docker compose ps
 docker compose exec airflow-scheduler airflow dags list
 ```
 
-El segundo imprime `No data found` — la misma lista vacía. Esas dos líneas son
-el patrón de todos los comandos de aquí en adelante. `docker compose …` corre en
-tu máquina; `airflow …` corre dentro del contenedor del scheduler, que es lo que
-hace el prefijo `docker compose exec airflow-scheduler`. Donde este tutorial
-muestre un comando `airflow …` a secas — en una transcripción, o como una línea
-suelta en el texto — significa lo mismo, prefijo incluido.
+El segundo imprime `No data found`, la misma lista vacía. Todos los comandos
+de aquí en adelante siguen el patrón de uno de esos dos: `docker compose …`
+corre en tu máquina, y el prefijo `docker compose exec airflow-scheduler`
+ejecuta `airflow …` dentro del contenedor del scheduler. Valdría cualquiera de los
+contenedores de Airflow: comparten imagen, configuración y carpetas montadas, y
+solo cambia el componente que ejecuta cada uno (§3). El del scheduler es la
+elección fija porque siempre está en marcha. Un comando
+`airflow …` a secas, en una transcripción o en el texto, significa lo mismo,
+prefijo incluido.
 
 El stack es deliberadamente más pequeño que el [docker-compose.yaml
 oficial](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
@@ -87,9 +90,10 @@ o en Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
-Te pregunta antes de borrar, y `up.sh` / `up.ps1` vuelve a levantar el stack. No
-toca `dags/` — los archivos que escribas sobreviven a un reset — ni nada fuera
-del stack de este repo: tus tablas de BigQuery y Airbyte se quedan como están. Ningún paso de
+Te pregunta antes de borrar, y `up.sh` / `up.ps1` vuelve a levantar el stack.
+No toca `dags/`, así que los archivos que escribas sobreviven a un reset, ni
+nada fuera del stack de este repo: tus tablas de BigQuery y Airbyte se quedan
+como están. Ningún paso de
 este tutorial lo necesita; está aquí para el día en que algo se atasque y
 [troubleshooting](../troubleshooting.md) no haya ayudado.
 
@@ -101,14 +105,13 @@ este tutorial lo necesita; está aquí para el día en que algo se atasque y
 > abre Git Bash para todo lo que sigue.
 >
 > En **Git Bash**, unos pocos comandos de más adelante pasan una ruta `/opt/...`
-> a un contenedor, y cada uno lleva el prefijo `MSYS_NO_PATHCONV=1`. No es
-> decorativo: sin él, Git reescribe la ruta a una de Windows antes de que Docker
-> la vea.
+> a un contenedor, y cada uno lleva el prefijo `MSYS_NO_PATHCONV=1`. Sin él,
+> Git Bash reescribe la ruta a una de Windows antes de que Docker la vea.
 
 > **Tu editor.** A partir de la §4 vas a crear archivos en `dags/`. Vale cualquier
 > editor; el contenedor ve la carpeta a través de un bind mount, así que un
 > archivo guardado en tu máquina es un archivo dentro de Airflow un momento
-> después. No hay que copiar nada.
+> después.
 
 ### Nativo (Linux / macOS / WSL2; solo de la §3 a la §8)
 
@@ -125,7 +128,7 @@ este tutorial lo necesita; está aquí para el día en que algo se atasque y
 > `MLFLOW_TRACKING_URI`, `OPTUNA_STORAGE`), pero este tutorial no lo recorre:
 > de la §9 en adelante, usa el stack de Docker.
 
-Lo que hace ese script, y por qué importa cada línea:
+Lo que ejecuta ese script:
 
 ```bash
 AIRFLOW_VERSION=3.3.1
@@ -157,7 +160,7 @@ airflow.db      the SQLite metadata DB
 logs/           task logs, one directory per dag_id / run_id / task_id
 ```
 
-> **SQLite es solo para desarrollo.** La documentación de Airflow es tajante:
+> **SQLite es solo para desarrollo.** La documentación de Airflow dice que
 > "should NEVER be used for production". Vale para seguir este tutorial —
 > `LocalExecutor` ejecuta tasks en paralelo contra ella, y necesita SQLite ≥ 3.15
 > — pero pásate a Postgres o MySQL para cualquier cosa real. El stack de Docker

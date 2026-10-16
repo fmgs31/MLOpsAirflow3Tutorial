@@ -15,13 +15,26 @@ matter.
 > solution without re-running the script and the test suite fails. They cannot
 > drift out of sync with the code that actually runs.
 
-The shared Asset definitions come first, because every Dag below imports them.
+First, the package `dataops` and `mlops` import (§8): `.airflowignore`, then
+`project_tagger_orchestration/`.
 <details>
-<summary><b>src/project_tagger/assets.py</b> — the Assets the Dags produce and consume (§8)</summary>
+<summary><b>solutions/project_tagger_orchestration/</b> — the Assets the Dags produce and consume (§8)</summary>
 
-<!-- BEGIN FILE: src/project_tagger/assets.py -->
+<!-- BEGIN FILE: solutions/.airflowignore -->
+```
+project_tagger_orchestration/
+```
+<!-- END FILE: solutions/.airflowignore -->
+
+<!-- BEGIN FILE: solutions/project_tagger_orchestration/__init__.py -->
 ```python
-"""The Assets shared by the Dags.
+"""Code shared by this tutorial's Dags. Not a Dag: `.airflowignore` keeps the Dag processor out."""
+```
+<!-- END FILE: solutions/project_tagger_orchestration/__init__.py -->
+
+<!-- BEGIN FILE: solutions/project_tagger_orchestration/assets.py -->
+```python
+"""The Assets the tutorial's Dags produce and consume.
 
 An Asset is a named piece of data, and it is how the Dags in this tutorial are
 wired together: the DataOps Dag *produces* `labeled_projects`, and the MLOps Dag
@@ -32,6 +45,10 @@ An Asset is identified by a name and a URI. The tables get their real
 BigQuery URI, `bigquery://<project>/<dataset>/<table>` - a scheme the Google
 provider registers - so the Assets view in the UI says exactly which table
 each one is.
+
+This module is orchestration, so it lives with the Dags, not in
+`src/project_tagger/`: the ML project imports no Airflow. It takes the table
+names from `project_tagger.config`, so both sides agree on them.
 """
 
 from __future__ import annotations
@@ -40,32 +57,27 @@ from airflow.sdk import Asset
 
 from project_tagger import config
 
-
-def _bigquery_uri(table: str) -> str:
-    return f"bigquery://{config.GCP_PROJECT_ID}/{config.BQ_DATASET}/{table}"
-
+# The table dbt builds and the ML Dag trains on. Produced by `dataops`,
+# consumed (as a schedule) by `mlops`.
+LABELED_PROJECTS = Asset(
+    name="labeled_projects",
+    uri=config.bigquery_uri(config.LABELED_PROJECTS_TABLE),
+    group="dataset",
+    extra={"layer": "warehouse", "owner": "data-engineering"},
+)
 
 # The two raw tables Airbyte loads, produced by `dataops`.
 RAW_PROJECTS = Asset(
     name="raw_projects",
-    uri=_bigquery_uri(config.PROJECTS_TABLE),
+    uri=config.bigquery_uri(config.PROJECTS_TABLE),
     group="dataset",
     extra={"layer": "raw", "owner": "data-engineering"},
 )
 RAW_TAGS = Asset(
     name="raw_tags",
-    uri=_bigquery_uri(config.TAGS_TABLE),
+    uri=config.bigquery_uri(config.TAGS_TABLE),
     group="dataset",
     extra={"layer": "raw", "owner": "data-engineering"},
-)
-
-# The table dbt builds and the ML Dag trains on. Produced by `dataops`,
-# consumed (as a schedule) by `mlops`.
-LABELED_PROJECTS = Asset(
-    name="labeled_projects",
-    uri=_bigquery_uri(config.LABELED_PROJECTS_TABLE),
-    group="dataset",
-    extra={"layer": "warehouse", "owner": "data-engineering"},
 )
 
 # Produced by `mlops` when a model clears the promotion gate - that is, when
@@ -77,7 +89,7 @@ PRODUCTION_MODEL = Asset(
     extra={"owner": "ml-engineering"},
 )
 ```
-<!-- END FILE: src/project_tagger/assets.py -->
+<!-- END FILE: solutions/project_tagger_orchestration/assets.py -->
 
 </details>
 
@@ -375,7 +387,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
-from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
+from project_tagger_orchestration.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -403,7 +415,7 @@ def dataops():
     # slot is held while the sync runs.
     extract_and_load_projects = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_projects",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_projects_connection_id }}",
         deferrable=True,
         timeout=3600,
@@ -411,7 +423,7 @@ def dataops():
     )
     extract_and_load_tags = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_tags",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_tags_connection_id }}",
         deferrable=True,
         timeout=3600,
@@ -547,7 +559,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
-from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -1114,7 +1126,7 @@ deadline_alerts()
 
 </details>
 
-The rest of `src/project_tagger/` — `data.py`, `validate.py`, `train.py`,
+`src/project_tagger/` — `data.py`, `validate.py`, `train.py`,
 `evaluate.py`, `registry.py`, `monitoring.py`, `predict.py`, `config.py`,
 `callbacks.py` — is the ML project being orchestrated, not the orchestration, and
 imports no Airflow. It is in the repo; it is not reproduced here.

@@ -37,7 +37,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
-from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
+from project_tagger_orchestration.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -65,7 +65,7 @@ def dataops():
     # slot is held while the sync runs.
     extract_and_load_projects = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_projects",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_projects_connection_id }}",
         deferrable=True,
         timeout=3600,
@@ -73,7 +73,7 @@ def dataops():
     )
     extract_and_load_tags = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_tags",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_tags_connection_id }}",
         deferrable=True,
         timeout=3600,

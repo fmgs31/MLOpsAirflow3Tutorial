@@ -1,9 +1,9 @@
 ## 16. Taking it to production
 
-**Executors.** `LocalExecutor` is the default and is fine as long as one machine
-is enough.
-Beyond that: `CeleryExecutor` (several worker machines taking tasks from a queue), `KubernetesExecutor` (a pod per
-task), or **multiple executors** configured together. There is also the **Edge
+**Executors.** `LocalExecutor` is the default and is fine as long as one
+machine is enough. Beyond that: `CeleryExecutor` (several worker machines
+taking tasks from a queue), `KubernetesExecutor` (a pod per task), or
+**multiple executors** configured together. There is also the **Edge
 executor**, for workers outside your cluster, which the Task Execution API (§3)
 makes possible.
 
@@ -16,12 +16,12 @@ teams, each with its own libraries, give each task its own container image
 with `KubernetesPodOperator` (or `DockerOperator`): Airflow's image then holds
 only Airflow, and a team upgrades its libraries without touching anyone
 else's. The heavy compute belongs on a cluster (Ray, Spark, EMR, Dataproc)
-with Airflow triggering and tracking it — Airflow is an orchestrator, not a
+with Airflow triggering and tracking it: Airflow is an orchestrator, not a
 compute engine.
 
 **Dag bundles.** The Dag processor reads *bundles*; the default is one
-`LocalDagBundle` named `dags-folder`, which reads the `dags_folder` setting. Switching to
-`GitDagBundle` gets you versioning: each Dag run records the commit it ran with,
+`LocalDagBundle` named `dags-folder`, which reads the `dags_folder` setting.
+Switching to `GitDagBundle` gets you versioning: each Dag run records the commit it ran with,
 so a re-run uses the same code.
 
 ```ini
@@ -104,8 +104,9 @@ and burns CPU for nothing.
 `uri` or `extra` — asset extras are stored in cleartext. Use Connections,
 Variables, or a secrets backend (HashiCorp Vault, AWS Secrets Manager, Google
 Secret Manager), which Airflow then reads Connections and Variables from, so
-they never sit in its database at all. Set `AIRFLOW_FERNET_KEY` in `.env` (`env.example` shows how to generate one) so that
-whatever is in the database is encrypted. Two things this stack does that a
+they never sit in its database at all. Set `AIRFLOW_FERNET_KEY` in `.env`
+(`env.example` shows how to generate one) so that whatever is in the database
+is encrypted. Two things this stack does that a
 production one should not: the GCP service-account key is a file mounted into
 every container, where a platform such as GKE would give the workers an
 identity of their own instead (Workload Identity), with no key to leak; and
@@ -127,11 +128,12 @@ skip until an incident. Three layers:
 - **Traces** — `[traces] otel_on = True` sends spans for scheduler loops and
   task runs, which is how you find *which* task in a slow Dag got slower.
 - **Health** — `GET /api/v2/monitor/health` reports metadata database,
-  scheduler, triggerer and Dag processor status; the UI Home page renders the same thing.
+  scheduler, triggerer and Dag processor status; the UI Home page renders the
+  same thing.
 
 Then the ordinary hygiene: `airflow db clean` on a schedule (the metadata
-database grows forever otherwise), deadline alerts on the Dags that matter (§13), and
-Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — wired to
+database grows forever otherwise), deadline alerts on the Dags that matter
+(§13), and Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — wired to
 `on_failure_callback` or an `AsyncCallback`.
 
 **When you are done with the tutorial.** Three things keep running or

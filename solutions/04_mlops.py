@@ -39,7 +39,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
-from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",

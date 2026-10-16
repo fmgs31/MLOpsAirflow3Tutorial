@@ -1,13 +1,12 @@
 ## 6. Operators, XComs and relationships
 
 §4's Dag used `@task`-decorated functions. This one uses **operators**, the
-pre-built task types, and shows that the two styles mix freely in one Dag. Both
-styles produce **tasks**: a task is any step in a Dag, and a *TaskFlow task* is
-one written as a `@task` function instead of by instantiating an operator
-yourself (underneath, Airflow turns it into an operator anyway; *Which class to
-subclass?*, further down, explains it). The common
-operators ship in `apache-airflow-providers-standard`, which is already
-installed:
+pre-built task types, and shows that the two styles mix freely in one Dag.
+Both produce **tasks**, the steps of a Dag; a *TaskFlow task* is one written as
+a `@task` function instead of an operator you instantiate yourself
+(underneath, Airflow turns it into an operator anyway, as *Which class to
+subclass?*, further down, explains). The common operators ship in
+`apache-airflow-providers-standard`, which is already installed:
 
 ```python
 from airflow.providers.standard.operators.bash import BashOperator
@@ -19,26 +18,26 @@ from airflow.providers.standard.sensors.filesystem import FileSensor
 Beyond the standard ones there is a provider for nearly every system you would
 want to talk to — S3, Snowflake, BigQuery, Postgres, Kubernetes, Databricks,
 Slack, HTTP, Docker, dbt Cloud, Airbyte — each shipping operators, hooks (the
-clients underneath them, §6's *Hooks, Connections and Variables*) and sensors
-(tasks that wait, §11), installed as `apache-airflow-providers-<name>` and listed in the UI
-under Admin → Providers. Use one before writing HTTP calls by hand: a
-provider's operator already handles connections, retries and secret lookup.
-When none fits, you can write your own; §6's *Writing your own operator*
-subsection shows how, once this Dag is built.
+clients underneath them, *Hooks, Connections and Variables* below) and sensors
+(tasks that wait, §11), installed as `apache-airflow-providers-<name>` and
+listed in the UI under Admin → Providers. Use one before writing HTTP calls by
+hand: a provider's operator already handles connections, retries and secret
+lookup. When none fits, you can write your own, as *Writing your own
+operator*, after this Dag, shows.
 
 ### Build it: XComs first
 
 The Dag you are about to write, `dags/02_operators_and_xcoms.py`, wires ten
 tasks of four kinds — `EmptyOperator`, `PythonOperator`, `BashOperator` and
-TaskFlow `@task` — and passes a number between them. The thing it teaches is how
-tasks hand values to each other.
+TaskFlow `@task` — and passes a number between them, to teach how tasks hand
+values to each other.
 
 **XComs** ("cross-communications") are how tasks pass small values. They are
 stored in the metadata database, but a task never accesses the metadata
 database directly: it reads and writes XComs by asking the API server, through
 the Task Execution API (§3). §4's `@task` functions already used them, out of
-sight: every
-`return` was an XCom push, every argument an XCom pull. With operators you push and pull explicitly.
+sight: every `return` was an XCom push, every argument an XCom pull. With
+operators you push and pull explicitly.
 
 Create `dags/02_operators_and_xcoms.py` with the imports and two plain Python
 functions that a `PythonOperator` will call:
@@ -79,8 +78,8 @@ the same name-based injection `**context` did in §4. Its type,
 `xcom_push` and `xcom_pull` among its methods. Two things to notice:
 
 **`xcom_pull` without `task_ids` reads the current task's own XComs** and
-quietly returns `None`. Almost every pull you write needs `task_ids=`; the
-`_multiply` above names its source.
+quietly returns `None`. Almost every pull you write needs `task_ids=`;
+`_multiply` names its source.
 
 **XComs are for metadata, not payloads.** They live in the metadata database.
 Pass a path, a run id, a row count; put the dataframe in object storage and
@@ -185,18 +184,18 @@ Three things to know about templates:
    in the Dag: it renders only the arguments the operator names in its
    `template_fields` (for `BashOperator`: `bash_command`, `env`, `cwd`). A
    string anywhere else — another argument, or a string written in the body
-   of a `@task` function — is never rendered: Python knows nothing about Jinja and Airflow
-   never looks at that string, so its braces (`{{ }}`) stay as literal text. A
-   log showing `{{ … }}` unreplaced usually means exactly this.
+   of a `@task` function — is never rendered: Python knows nothing about
+   Jinja and Airflow never looks at that string, so its braces (`{{ }}`) stay
+   as literal text. A log showing `{{ … }}` unreplaced usually means this.
 
 3. **A `@task` function rarely needs this.** It receives the context as
    Python (`**context`, or a named argument like `ti`), so templating is mostly
    an operator concern. The arguments you pass when calling a `@task` are
    rendered, though: the `@task` decorator turns the function into an
    operator, stores those arguments in its `op_args` and `op_kwargs`
-   attributes, and names both in its `template_fields`. If `show` is
-   a `@task` function that prints its argument, `show("run={{ run_id }}")`
-   prints the real run id.
+   attributes, and names both in its `template_fields`. If `show` is a `@task`
+   function that prints its argument, `show("run={{ run_id }}")` prints the
+   real run id.
 
 The `| default(...)` on `ds` does in the template what `.get()` did in §4.
 `ds` is derived from `logical_date`, and an asset-triggered run, or one
@@ -234,9 +233,9 @@ Now a TaskFlow task in the same Dag, reading an operator's XCom:
 
 TaskFlow tasks and operators mix freely: a `@task` can read an operator's XCom
 and vice versa, and the same `ti.xcom_pull` works from either side. For calling
-a Python function, `@task` and `PythonOperator` are equivalent — the Airflow
-docs present `@task` as `PythonOperator`'s TaskFlow equivalent, without
-recommending one over the other —, and choosing is a matter of style:
+a Python function, `@task` and `PythonOperator` are equivalent (the Airflow
+docs present `@task` as `PythonOperator`'s TaskFlow equivalent and recommend
+neither), so choosing is a matter of style:
 `PythonOperator` takes the function and its arguments separately
 (`python_callable`, `op_kwargs`, as in `push_seed` and `multiply`); with
 `@task`, calling the function is creating the task.
@@ -289,8 +288,8 @@ last four:
    `describe.set_downstream(product)` and `product.set_upstream(describe)`, the
    methods the operators call underneath.
 3. **Fan-out and fan-in**: a list on one side of `>>` (one side, not both:
-   see the fifth way) creates one edge per
-   task in the list, so `product >> [check_parity, check_range] >> checks_done` is four
+   see the fifth way) creates one edge per task in the list, so
+   `product >> [check_parity, check_range] >> checks_done` is four
    dependencies, not two: `product` → `check_parity`, `product` → `check_range`,
    `check_parity` → `checks_done` and `check_range` → `checks_done`. Both checks
    start when `product` finishes, and `checks_done` waits for both to succeed.
@@ -323,8 +322,8 @@ docker compose exec airflow-scheduler airflow dags test operators_and_xcoms
 
 **Checkpoint.** In the output, look for the `describe` task's line,
 `run=manual__… ds=… run_after=… product=42`, then `TaskFlow saw product=42`
-from `taskflow_reader`, and `even` and `under 100` from the checks. Then open the Dag's **Graph**
-view in the UI: the `seed -> product` label on one edge, a two-way fan-out into
+from `taskflow_reader`, and `even` and `under 100` from the checks. Then open
+the Dag's **Graph** view in the UI: the `seed -> product` label on one edge, a two-way fan-out into
 `check_parity`/`check_range`, and those two fanning into `checks_done`,
 `publish` and `notify`. If the graph does not match, compare with
 [`solutions/02_operators_and_xcoms.py`](../../solutions/02_operators_and_xcoms.py).
@@ -366,9 +365,9 @@ not get:
 
 Provider operators need these, which is why they are classes. The training
 step below needs the first one. It takes a threshold, `min_f1`, and fails when
-the model's f1 (its quality metric, from 0 to 1) falls below it. A threshold typed as `65` instead of `0.65` should
-be caught as soon as the Dag processor parses the file, not after a training
-run:
+the model's f1 (its quality metric, from 0 to 1) falls below it. A threshold
+typed as `65` instead of `0.65` should be caught as soon as the Dag processor
+parses the file, not after a training run:
 
 ```python
 from airflow.sdk import BaseOperator
@@ -408,9 +407,9 @@ train = ProjectTaggerTrainOperator(
 arguments. With `min_f1=65` the Dag does not load at all, and the UI shows the
 import error `ValueError: min_f1 must be between 0 and 1, got 65`. `execute`
 runs when the task instance runs, after Airflow has rendered every attribute
-named in `template_fields` — so `self.experiment_name` holds
-`project_tagger_manual__…`, not the braces. Whatever `execute` returns is pushed as an
-XCom, exactly like a `@task` function's `return`.
+named in `template_fields`, so `self.experiment_name` holds
+`project_tagger_manual__…`, not the braces. Whatever `execute` returns is
+pushed as an XCom, like a `@task` function's `return`.
 
 `template_fields` is what links the argument to the rendering. It is a class
 attribute that `BaseOperator` defines as an empty tuple and each operator
@@ -447,9 +446,8 @@ throughout.
 
 > This holds for a value written in the Dag file. If the value arrives when
 > the run is triggered, as a param (§4), it does not exist yet at parse time,
-> and neither the class nor the `@task` can check it at parse time, only when
-> the task runs. For the case where it
-> needs validating, put the limit on the `Param` itself:
+> and neither the class nor the `@task` can check it before the task runs. To
+> validate it earlier, put the limit on the `Param` itself:
 > `Param(0.65, type="number", exclusiveMinimum=0, maximum=1)` makes Airflow
 > reject a trigger with `min_f1=65` before the run is created.
 
@@ -477,8 +475,8 @@ An operator is a whole task that does one fixed thing: `SQLExecuteQueryOperator`
 runs a query, `SqlToS3Operator` copies a query's result into a file on S3. A
 **hook** is the client underneath an operator. It takes a `conn_id` — the name
 of a **Connection**, the credentials for a service that Airflow stores under
-that name (explained further down) —, builds the authenticated client, and
-gives you methods to call — `PostgresHook.get_df` runs a query and returns a
+that name (explained below) —, builds the authenticated client, and gives you
+methods to call — `PostgresHook.get_df` runs a query and returns a
 dataframe, `S3Hook.load_string` writes a string to S3. Every operator that
 talks to a service outside Airflow (a database, S3, an API) does it through a
 hook.
@@ -537,9 +535,9 @@ in one of three ways:
 Templates read them as `{{ conn.warehouse.host }}` and `{{ var.value.min_rows }}`.
 
 > A task fetching either one does not touch the metadata database. It first
-> looks at the `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` environment variables — that
-> is how it finds `google_cloud_default` without asking anyone — and, if it is not there,
-> asks the API server over the Task Execution API, which is what lets a remote
+> looks at the `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` environment variables, which
+> is how it finds `google_cloud_default`, and, if it is not there, asks the API
+> server over the Task Execution API, which is what lets a remote
 > worker resolve a Connection without access to the metadata database.
 >
 > Prefer a **param** (§4) over a global Variable when the value is a setting

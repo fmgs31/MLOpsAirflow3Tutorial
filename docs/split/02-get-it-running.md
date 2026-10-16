@@ -45,12 +45,14 @@ docker compose ps
 docker compose exec airflow-scheduler airflow dags list
 ```
 
-The second prints `No data found` — the same empty list. Those two lines are
-the shape of every command from here on. `docker compose …` runs on your
-machine; `airflow …` runs inside the scheduler container, which is what the
-`docker compose exec airflow-scheduler` prefix does. Where this tutorial shows
-an `airflow …` command bare — in a transcript, or as a one-liner in prose — it
-means the same thing, prefix included.
+The second prints `No data found`, the same empty list. Every command from
+here on has the shape of one of those two: `docker compose …` runs on your
+machine, and the `docker compose exec airflow-scheduler` prefix runs
+`airflow …` inside the scheduler container. Any of the Airflow containers
+would do: they share the same image, settings and mounted folders, and differ
+only in which component they run (§3). The scheduler is the fixed choice
+because it is always running. An `airflow …` command shown bare,
+in a transcript or in prose, means the same thing, prefix included.
 
 The stack is deliberately smaller than the [official
 docker-compose.yaml](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
@@ -60,7 +62,7 @@ gives Airflow users, roles and a login page. Fewer moving parts while you are
 learning.
 
 Two services in the list are not Airflow. `mlflow` is MLflow (§1), whose UI
-is at <http://localhost:5000>; §10 is where you use it. `extra-databases` runs
+is at <http://localhost:5000>; you use it in §10. `extra-databases` runs
 once at start-up, creates a database for Optuna (§10) on the same Postgres,
 and exits. The rest of the data stack, a Google
 Cloud project and Airbyte, you set up in §9; nothing before §9 needs either.
@@ -74,8 +76,7 @@ One more script, for later. Everything the stack accumulates — runs, task
 logs, the snapshots the Dags write, MLflow's runs and models — survives a
 restart of the containers, because it lives in Docker volumes and in the
 `data/` and `logs/` folders of this repo (§3 comes back to this). To
-throw all of it away and start over from a clean slate, on Linux, macOS, WSL2
-or Git Bash:
+throw all of it away and start over, on Linux, macOS, WSL2 or Git Bash:
 
 ```bash
 ./scripts/reset.sh
@@ -87,9 +88,9 @@ or in Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
-It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. It does
-not touch `dags/` — the files you write survive a reset — nor anything outside
-this repo's stack: your BigQuery tables and Airbyte stay as they are. No step in this
+It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. It
+leaves `dags/` alone, so the files you write survive a reset, and anything
+outside this repo's stack: your BigQuery tables and Airbyte stay as they are. No step in this
 tutorial needs it; it is here for the day something is stuck and
 [troubleshooting](../troubleshooting.md) has not helped.
 
@@ -101,13 +102,12 @@ tutorial needs it; it is here for the day something is stuck and
 > below.
 >
 > On **Git Bash**, a few later commands pass a `/opt/...` path into a
-> container, and each carries the prefix `MSYS_NO_PATHCONV=1`. It is not
-> decoration: without it Git rewrites the path into a Windows one before Docker
-> sees it.
+> container, and each carries the prefix `MSYS_NO_PATHCONV=1`. Without it,
+> Git Bash rewrites the path into a Windows one before Docker sees it.
 
 > **Your editor.** You will be creating files in `dags/` from §4 on. Any editor
 > works; the container sees the folder through a bind mount, so a file saved on
-> your machine is a file inside Airflow a moment later. Nothing needs copying.
+> your machine is a file inside Airflow a moment later.
 
 ### Native (Linux / macOS / WSL2; §3 to §8 only)
 
@@ -123,7 +123,7 @@ tutorial needs it; it is here for the day something is stuck and
 > `PROJECT_TAGGER_ALIBI_PYTHON`, `MLFLOW_TRACKING_URI`, `OPTUNA_STORAGE`), but
 > this tutorial does not walk through it: for §9 onwards, use the Docker stack.
 
-What that script does, and why each line matters:
+What that script runs:
 
 ```bash
 AIRFLOW_VERSION=3.3.1
@@ -155,8 +155,8 @@ airflow.db      the SQLite metadata DB
 logs/           task logs, one directory per dag_id / run_id / task_id
 ```
 
-> **SQLite is for development only.** The Airflow docs are blunt about it: it
-> "should NEVER be used for production". It is fine for working through this
+> **SQLite is for development only.** The Airflow docs say it "should NEVER be
+> used for production". It is fine for working through this
 > tutorial — `LocalExecutor` runs tasks in parallel against it, and needs
 > SQLite ≥ 3.15 — but move to Postgres or MySQL for anything real. The Docker
 > stack in this repo already runs Postgres 16, which is why the Docker path is

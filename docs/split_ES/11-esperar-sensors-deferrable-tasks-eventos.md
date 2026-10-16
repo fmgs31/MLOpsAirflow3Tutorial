@@ -8,8 +8,8 @@ Un **sensor** es una task cuyo único trabajo es esperar a que algo sea verdad:
 que exista un archivo, que una tabla tenga filas, que responda una API. Cada
 comprobación se llama **poke**. Si el poke da verdadero, la task termina con
 éxito; si no, espera `poke_interval` segundos y vuelve a comprobar; si pasa
-`timeout` sin éxito, falla. Las tres formas se distinguen por lo que ocurre *entre*
-pokes:
+`timeout` sin éxito, falla. Las tres formas se distinguen por lo que ocurre
+*entre* pokes:
 
 ```python
 # 1. Poking sensor — holds a worker slot the entire time. Seconds, not hours.
@@ -23,16 +23,16 @@ BigQueryTableExistenceSensor(..., mode="reschedule")
 BigQueryTableExistenceSensor(..., deferrable=True)
 ```
 
-Con el modo por defecto, `mode="poke"`, el proceso sigue
-vivo y dormido, ocupando su worker slot. Con `mode="reschedule"`, la task
-instance termina su proceso, queda en `up_for_reschedule` (§3) y el scheduler la vuelve a
-encolar para el siguiente poke.
+Con el modo por defecto, `mode="poke"`, el proceso sigue vivo y dormido,
+ocupando su worker slot. Con `mode="reschedule"`, la task instance termina su
+proceso, queda en `up_for_reschedule` (§3) y el scheduler la vuelve a encolar
+para el siguiente poke.
 
 La tercera opción, deferrable, necesita aclarar antes la palabra **trigger**,
-porque tiene más de un significado. Tú *disparas* (trigger) un Dag (§7): un verbo. El
-proceso triggerer de la §3 ejecuta **triggers**: sustantivos — pequeños fragmentos de
-código asíncrono que esperan a algo (un momento concreto, una tabla, un
-mensaje) y lanzan un evento cuando ocurre. "Deferrable" significa que la task le
+porque tiene más de un significado. Tú *disparas* (trigger) un Dag (§7): un
+verbo. El proceso triggerer de la §3 ejecuta **triggers**: sustantivos,
+pequeños fragmentos de código asíncrono que esperan a algo (un momento
+concreto, una tabla, un mensaje) y lanzan un evento cuando ocurre. "Deferrable" significa que la task le
 entrega al triggerer uno de esos triggers, termina su proceso, y se reanuda
 cuando llega el evento. `TriggerDagRunOperator` (§12) vuelve a ser el verbo.
 
@@ -118,11 +118,11 @@ compose (§9).
 
 La tabla que hay que esperar la indica un **param del Dag**, `table`, con
 `labeled_projects` por defecto, así que se puede apuntar un run a otra tabla
-con `-c`, como harás más abajo. `table_id` es un campo con template (§6), así que
-`{{ params.table }}` se renderiza cuando corre la task.
+con `-c`, como harás más abajo. `table_id` es un campo con template (§6), así
+que `{{ params.table }}` se renderiza cuando corre la task.
 
-Un sensor también se puede escribir como función. Añádelo, con la task que usa su
-valor, y las conexiones entre tasks:
+Un sensor también se puede escribir como función. Añádelo, con la task que usa
+su valor, y las conexiones entre tasks:
 
 ```python dags/05_sensors_and_events.py
     @task.sensor(poke_interval=10, timeout=120, mode="reschedule")
@@ -146,19 +146,19 @@ valor, y las conexiones entre tasks:
 sensors_and_events()
 ```
 
-`PokeReturnValue(is_done=..., xcom_value=...)` detiene los pokes y a la vez entrega
-un valor aguas abajo — `proceed` recibe el recuento de filas. `data.count_rows`
+`PokeReturnValue(is_done=..., xcom_value=...)` detiene los pokes y a la vez
+entrega un valor aguas abajo: `proceed` recibe el recuento de filas. `data.count_rows`
 ejecuta un `SELECT COUNT(*)` en BigQuery; mientras la tabla no existe, BigQuery
 responde `NotFound`, y el poke indica que aún no ha terminado, en lugar de
-fallar. `enough_rows` está en modo `reschedule`, la segunda opción de la lista con
-que empieza la §11.
+fallar. `enough_rows` está en modo `reschedule`, la segunda opción de la lista
+con que empieza la §11.
 
-Fíjate en las conexiones: `enough_rows` no tiene ninguna task aguas arriba, así que
-arranca enseguida, a la vez que `settle`, y `proceed` espera tanto a
+Fíjate en las conexiones: `enough_rows` no tiene ninguna task aguas arriba, así
+que arranca enseguida, a la vez que `settle`, y `proceed` espera tanto a
 `wait_for_table` como a `enough_rows`.
 
-Una opción más elimina la espera del todo: el **event-driven scheduling**. No va
-en el archivo, porque necesita una cola de mensajes (como Amazon SQS) que no
+Una opción más elimina la espera del todo: el **event-driven scheduling**. No
+va en el archivo, porque necesita una cola de mensajes (como Amazon SQS) que no
 tienes. Asocia a un asset un *watcher* (un trigger que vigila la cola) y cada
 mensaje que llega arranca un run; nada hace polling, nada ocupa un slot:
 
@@ -174,7 +174,7 @@ new_projects = Asset(name="new_projects",
 def ingest_on_message(): ...
 ```
 
-Solo los triggers que derivan de `BaseEventTrigger` pueden ser watchers — un
+Solo los triggers que derivan de `BaseEventTrigger` pueden ser watchers: un
 trigger que comprueba una condición permanente ("la tabla existe") se
 dispararía una y otra vez para siempre.
 
@@ -204,13 +204,14 @@ Data is ready (764 rows). Downstream work can start.
 cuenta las filas y supera su umbral en el primer poke. Y `settle` apenas
 espera: su objetivo de cinco segundos se mide desde el `data_interval_end`
 del run (o su `run_after`), que `airflow dags test` fija al arrancar, así que
-cuando la task corre ya ha pasado parte de ese tiempo, o todo. Si queda algo, no
-hay triggerer al que pasarle la espera: `airflow dags test` ejecuta el trigger él
-mismo, y lo anuncia en el log con `[DAG TEST] running trigger in line` (§4).
+cuando la task corre ya ha pasado parte de ese tiempo, o todo. Si queda algo,
+no hay triggerer al que pasarle la espera: `airflow dags test` ejecuta el
+trigger él mismo, y lo anuncia en el log con `[DAG TEST] running trigger in
+line` (§4).
 
-**Para ver de verdad una task en estado `deferred`**, lanza el run a través del scheduler, y luego
-lee los estados de las tasks unas cuantas veces a lo largo de los siguientes diez
-segundos:
+**Para ver una task en estado `deferred`**, lanza el run a través del
+scheduler, y luego lee los estados de las tasks unas cuantas veces a lo largo
+de los siguientes diez segundos:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause sensors_and_events
@@ -218,14 +219,14 @@ docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events defer-demo -o plain
 ```
 
-**Comprobación.** `settle` aparece como `deferred` unos segundos — su proceso ha
-terminado y el triggerer lleva la cuenta del temporizador — y pasa a `success`
-unos cinco segundos después del trigger. Ese
-`deferred` es el estado de la §3, y es lo que se ve desde fuera cuando una task
-"libera el worker slot". Sé rápido con el último comando; un `docker compose exec`
-ya tarda uno o dos segundos por sí solo.
+**Comprobación.** `settle` aparece como `deferred` unos segundos (su proceso
+ha terminado y el triggerer lleva la cuenta del temporizador) y pasa a
+`success` unos cinco segundos después del trigger. Ese `deferred` es el estado
+de la §3, y es lo que se ve desde fuera cuando una task "libera el worker
+slot". Sé rápido con el último comando; un `docker compose exec` ya tarda uno o
+dos segundos por sí solo.
 
-**Ahora mira el caso interesante** — un sensor que sí tiene que esperar. Apunta
+**Ahora el caso interesante**: un sensor que sí tiene que esperar. Apunta
 el run a una tabla que todavía no existe:
 
 ```bash
@@ -265,9 +266,9 @@ DROP TABLE `<your project id>.mlops_course.labeled_projects_copy`
 ```
 
 **Regla práctica:** segundos → un poking sensor vale. Minutos u horas →
-`mode="reschedule"` o deferrable, o estarás ocupando un worker slot solo para dormir. Un servicio que avisa
-por sí mismo, enviando un mensaje a una cola → un `AssetWatcher`, y ninguna
-task espera.
+`mode="reschedule"` o deferrable, o estarás ocupando un worker slot solo para
+dormir. Un servicio que avisa por sí mismo, enviando un mensaje a una cola → un
+`AssetWatcher`, y ninguna task espera.
 
 Referencia: [`solutions/05_sensors_and_events.py`](../../solutions/05_sensors_and_events.py).
 

@@ -9,9 +9,11 @@ the wiring. A block that belongs to a file is fenced as
     ```
 
 and the pieces are meant to be typed into that file in the order they appear.
-This test does exactly that: it reads each language's section files in order
-(01-…, 02-…, …), concatenates every block tagged with the same path, writes the result to a temporary Dag folder, and loads
-it with `DagBag`. A lesson whose pieces no longer form a working file fails
+The same goes for the files in the Dag folder that are not Dags: the
+`project_tagger_orchestration` package of §8 and its `.airflowignore`. This
+test does exactly that: it reads each language's section files in order (01-…, 02-…, …),
+concatenates every block tagged with the same path, writes the result to a
+temporary Dag folder, and loads it with `DagBag`. A lesson whose pieces no longer form a working file fails
 here, in the same way it would fail the reader.
 
 Blocks with a bare ```python fence are illustrations and are left alone.
@@ -20,6 +22,8 @@ Blocks with a bare ```python fence are illustrations and are left alone.
 from __future__ import annotations
 
 import re
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -29,7 +33,7 @@ from airflow.dag_processing.dagbag import DagBag
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIALS = [REPO_ROOT / "docs" / "split", REPO_ROOT / "docs" / "split_ES"]
 
-BUILD_BLOCK = re.compile(r"^```python (?P<path>dags/[\w.]+\.py)\n(?P<body>.*?)^```", re.DOTALL | re.MULTILINE)
+BUILD_BLOCK = re.compile(r"^```\w+ (?P<path>dags/[\w./]+)\n(?P<body>.*?)^```", re.DOTALL | re.MULTILINE)
 
 EXPECTED_FILES = {
     "dags/01_hello_airflow3.py": "hello_airflow3",
@@ -39,6 +43,14 @@ EXPECTED_FILES = {
     "dags/05_sensors_and_events.py": "sensors_and_events",
     "dags/06_monitoring_and_retraining.py": "monitoring",
     "dags/07_deadline_alerts.py": "deadline_alerts",
+}
+
+# Not Dags: the package the Dags share (§8), and the file that keeps the Dag
+# processor out of it.
+SHARED_FILES = {
+    "dags/.airflowignore",
+    "dags/project_tagger_orchestration/__init__.py",
+    "dags/project_tagger_orchestration/assets.py",
 }
 
 
@@ -57,20 +69,36 @@ def assemble(tutorial: Path) -> dict[str, str]:
 
 
 @pytest.fixture(scope="module", params=TUTORIALS, ids=lambda p: p.name)
-def assembled(request, tmp_path_factory) -> tuple[Path, dict[str, str]]:
+def assembled(request, tmp_path_factory) -> Iterator[tuple[Path, dict[str, str]]]:
     tutorial: Path = request.param
     if not sections(tutorial):
         pytest.skip(f"{tutorial.name} not available here")
     files = assemble(tutorial)
     folder = tmp_path_factory.mktemp(tutorial.name)
     for path, source in files.items():
-        (folder / Path(path).name).write_text(source, encoding="utf-8")
-    return folder, files
+        target = folder / path.removeprefix("dags/")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source, encoding="utf-8")
+    # Airflow puts the Dag folder on sys.path when it parses, which is how the
+    # Dags import `project_tagger_orchestration`. Do the same, and forget the
+    # package the other language imported, so each language is checked with
+    # its own.
+    _forget_shared_package()
+    sys.path.insert(0, str(folder))
+    yield folder, files
+    sys.path.remove(str(folder))
+    _forget_shared_package()
+
+
+def _forget_shared_package() -> None:
+    shared = [m for m in sys.modules if m.split(".")[0] == "project_tagger_orchestration"]
+    for name in shared:
+        del sys.modules[name]
 
 
 def test_every_lesson_builds_a_file(assembled) -> None:
     _, files = assembled
-    missing = set(EXPECTED_FILES) - set(files)
+    missing = (set(EXPECTED_FILES) | SHARED_FILES) - set(files)
     assert not missing, f"no build blocks found for {sorted(missing)}"
 
 

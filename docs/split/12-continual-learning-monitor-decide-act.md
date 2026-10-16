@@ -32,8 +32,8 @@ A monitoring event has four sensible responses, and
 | **inspect** | an unseen label appeared | stop and page someone — the label space changed |
 | **rollback** | performance collapsed | re-point production at the previous model |
 
-How the pieces talk to each other when the Dag runs. Each column is one
-system, as in the §9 diagram:
+How the pieces talk when the Dag runs. Each column is one system, as in the
+§9 diagram:
 
 ```
  Airflow (Docker)               │ BigQuery          │ MLflow (Docker)
@@ -121,8 +121,8 @@ def monitoring_dag():
 (The function is `monitoring_dag` because `monitoring` is already the name of
 the imported module. The `dag_id` is what Airflow sees.)
 
-The drift task, `detect_drift`, runs in **another Python**. alibi-detect needs `numpy<2`, which
-Airflow's own environment cannot have, so the image has a second virtualenv
+The drift task, `detect_drift`, runs in **another Python**. alibi-detect needs
+`numpy<2`, which Airflow's own environment cannot have, so the image has a second virtualenv
 just for it, `/opt/venvs/alibi`, and `config.ALIBI_PYTHON` is its interpreter.
 `@task.external_python` sends the function there: Airflow writes the
 function's source and its arguments to files, runs that interpreter on them in
@@ -203,11 +203,11 @@ Then decide:
 `params` is the policy — the defaults in `POLICY_PARAMS`, or whatever this run
 was given. Each retraining condition watches one of the three kinds of drift
 in the table. Note the ordering: **a new label routes to `inspect`, not to
-`request_retraining`.** Retraining on data whose label space you have not understood yet is
-how you ship a worse model with full confidence.
+`request_retraining`.** Retraining on data whose label space you have not
+understood yet is how you ship a worse model with full confidence.
 
-Now the four branches `decide` can pick. Three are simple; the fourth is a **human-in-the-loop**
-gate (a task that waits for a person to answer), `ApprovalOperator`, followed
+Now the four branches `decide` can pick. Three are simple; the fourth is a
+**human-in-the-loop** gate (a task that waits for a person to answer), `ApprovalOperator`, followed
 by the task that starts another Dag:
 
 ```python dags/06_monitoring_and_retraining.py
@@ -247,10 +247,9 @@ by the task that starts another Dag:
 
 `ApprovalOperator` parks the task in `awaiting_input` and shows a prompt in the
 UI, on the task instance's **Required Actions** tab and under Browse →
-**Required Actions**. On **Reject**, everything
-downstream is skipped. `defaults` is the answer applied if nobody responds within
-`response_timeout` — sixty seconds here so the lesson finishes; give it hours
-in production. `TriggerDagRunOperator` starts another Dag: it creates a
+**Required Actions**. On **Reject**, everything downstream is skipped.
+`defaults` is the answer applied if nobody responds within `response_timeout`:
+sixty seconds here so the lesson finishes; give it hours in production. `TriggerDagRunOperator` starts another Dag: it creates a
 `manual__` run of `mlops` with the `conf` given, and with
 `wait_for_completion=False` it does not stay around to watch it.
 
@@ -284,14 +283,14 @@ There is no join at the end, because nothing needs to run after all of them.
 docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
-> **This command takes about 70 seconds and looks frozen for 60 of them.** That
-> is not a hang. `request_retraining` is the human-in-the-loop gate: it enters
+> **This command takes about 70 seconds and looks frozen for 60 of them.**
+> `request_retraining` is the human-in-the-loop gate: it enters
 > `awaiting_input` and waits out its full 60-second `response_timeout` before
 > defaulting to Approve, because nobody is going to click the button. Let it
 > sit.
 
 **Checkpoint.** `decide` logs the two p-values: label drift around `7.7e-05`,
-length drift around `0.92`. The tag mix of the newest quarter really did move.
+length drift around `0.92`. The tag mix of the newest quarter moved.
 `mlops` grows from about 6% of the older projects to about 16% of the newest,
 and `natural-language-processing` falls from 44% to 30%; the text length did
 not change. The label test is far below 0.05, so `decide` takes the retraining
@@ -305,7 +304,7 @@ Approved. Proceeding with downstream tasks…  ← 60s later, the default resolv
 Dag Run triggered successfully.  trigger_dag_id=mlops
 ```
 
-That last line is real. Check for yourself:
+Check that last line:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
@@ -315,12 +314,12 @@ It now has a fresh `manual__…` run that this Dag created. One Dag decided
 another Dag should run, and a person was given the chance to say no.
 
 While it is in `awaiting_input`, open the run in the UI and click
-`request_retraining`: the prompt is waiting for you on its **Required Actions**
-tab (§5), and answering it there resolves
-the task without waiting for the timeout. Airflow records the answer either way
-— the choice that was made, when, and *by whom*. A run that timed out and fell
-back to its `defaults` stores the choice with the "who" left empty, which is how
-you tell "a person approved this" from "nobody was looking".
+`request_retraining`: the prompt is waiting for you on its **Required
+Actions** tab (§5), and answering it there resolves the task without waiting
+for the timeout. Airflow records the answer either way: the choice, when, and
+*by whom*. A run that timed out and fell back to its `defaults` stores the
+choice with the "who" left empty, which is how you tell "a person approved
+this" from "nobody was looking".
 
 > **Change the policy, change the decision.** The threshold is a param, so a
 > run can be given a stricter one:
@@ -333,8 +332,8 @@ you tell "a person approved this" from "nobody was looking".
 > The label test's p-value is now above the threshold, so no test reports
 > drift. If §10 promoted a model, `decide()` returns `continue_serving`, the
 > retraining branch is skipped, and the run is over in seconds. If there is no
-> production model yet, `decide()` says so — `No production model yet - train
-> one.` — and takes the retraining branch anyway, timeout included. Both are
+> production model yet, `decide()` says so (`No production model yet - train
+> one.`) and takes the retraining branch anyway, timeout included. Both are
 > correct: the outcome depends on state and policy, which is the point of a
 > monitor.
 
@@ -384,9 +383,9 @@ strategies** shrink how much damage it can do before anyone notices:
 
 They belong to the serving layer, the service that answers prediction
 requests, which this project does not have: here `champion` switches all at
-once. The registry is where they start, though: a
-`challenger` alias next to `champion` is how a serving system knows which
-version gets the canary share or the shadow copy, and the promotion gate
+once. The registry is where they start, though: a `challenger` alias next to
+`champion` is how a serving system knows which version gets the canary share
+or the shadow copy, and the promotion gate
 becomes "the challenger's live metrics beat the champion's" instead of a test
 set score.
 

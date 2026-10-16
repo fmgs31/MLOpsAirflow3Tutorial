@@ -9,16 +9,14 @@ have a direction. *Acyclic*: no loops, so no path of edges leads back to a
 task it already passed through. Each node is a **task**, and one execution of the whole
 graph is a **Dag run**.
 
-Two words are worth separating now, *task* and *task instance*, because every
-log line and error message assumes you already do. A **task** is the thing you wrote once, in the file. A
-**task instance** is that task inside one particular Dag run — the thing that
-actually has a state, a duration, a log and a number of attempts. You write
-tasks; you debug task instances. §3 follows one through its whole life.
+Every log line and error message assumes you tell apart two words. A
+**task** is what you wrote once, in the file. A **task instance** is that task
+in one Dag run: the thing that has a state, a duration, a log and a number of
+attempts. You write tasks; you debug task instances. §3 follows one through its whole life.
 
 This is an MLOps tutorial: you build a small machine-learning system, from
-raw data to a model in production and back, and Airflow runs it. Each step is
-done by the tool a real team would use for it; Airflow decides when each one
-runs:
+raw data to a model in production and back. Each step is done by the tool a
+real team would use for it; Airflow decides when each one runs:
 
 | Tool | Its job here | Section |
 |---|---|---|
@@ -53,10 +51,9 @@ monitoring:  measure ─► decide ─► {continue | inspect | rollback | appro
 An **asset** is a named piece of data: `labeled_projects` is the labeled data
 `dataops` produces, and `production_model` is the model `mlops` promotes. Each
 time the task that produces an asset succeeds, Airflow records an event, and
-any Dag that has that asset as its schedule starts a run (§8). That is why
-`mlops` has **no time schedule**: its schedule is an asset, and it runs when
-`dataops` publishes good data. That is
-data-aware scheduling, and it is what ties the three Dags together.
+any Dag that has that asset as its schedule starts a run (§8). So `mlops`
+has **no time schedule**: it runs when `dataops` publishes good data. This
+data-aware scheduling is what ties the three Dags together.
 
 Four more Dags exist to teach one thing each: `hello_airflow3` (a first Dag),
 `operators_and_xcoms` (task types and how tasks talk), `sensors_and_events`
@@ -65,12 +62,12 @@ too slow).
 
 ### How this tutorial works
 
-You write every one of those seven Dags yourself, and in §9 the dbt project
-too. The folder Airflow reads, `dags/`, is **empty** when you clone this repo,
-and so is `dbt/`. Each section explains a piece of
-Airflow, then has you build the Dag that uses it — a few lines at a time, with
-the reason for each piece next to it — and then run it and check what happened.
-The code is given; the work is typing it, seeing it parse, and watching it run.
+You write all seven Dags yourself, plus the package they share (§8) and the
+dbt project (§9). The folder Airflow reads, `dags/`, is **empty** when you
+clone this repo, and so is `dbt/`. Each section explains a piece of Airflow,
+has you build the Dag that uses it, a few lines at a time with the reason for
+each, then run it and check the result. The code is given; the work is typing
+it, seeing it parse, and watching it run.
 
 Two safety nets:
 
@@ -97,16 +94,15 @@ worth learning first because:
   transfer and every vendor ships an integration.
 - **Apache governance**, a large provider ecosystem, and no single vendor.
 
-And it has what you expect from a modern orchestrator, as Prefect or Dagster
-do: workflows written in ordinary Python, testable with pytest (§15), and the
+And, like Prefect or Dagster, it has what you expect of a modern
+orchestrator: workflows written in ordinary Python, testable with pytest (§15), and the
 same code running on your laptop and on a cluster — swap the executor, not the
 Dag.
 
 ### The ML project it orchestrates
 
-Airflow orchestrates code; it does not contain it. The code this tutorial
-orchestrates is a small ML project in `src/project_tagger/`. You do not write
-it; the Dags call it.
+Airflow orchestrates code; it does not contain it. Here that code is a small
+ML project in `src/project_tagger/`, which you do not write: the Dags call it.
 
 **The data** is 764 ML projects collected by Made With ML between February and
 October 2020, in two tables, as a source system would keep them
@@ -130,7 +126,7 @@ hyperparameter sets fits in a Dag run. `dataops` (§9) loads, checks and joins
 the data in the warehouse; `mlops` (§10) searches the hyperparameters, trains
 the best model and decides whether it replaces the one in production.
 
-**The production model** is the one trained model currently used to tag new
+**The production model** is the trained model currently used to tag new
 text. Nothing serves it over the network here: MLflow's model registry marks
 one version as `champion`, and `predict.py` loads that version and tags
 whatever text it is given:
@@ -145,7 +141,7 @@ Dag (§12) compares the newest quarter of the projects, by date added, with the
 older ones: has the share of each tag moved, has a tag appeared that the older
 projects do not have, does the production model still score as well.
 
-The modules, of which only `assets.py` imports Airflow:
+The modules, none of which imports Airflow:
 
 | Module | Role |
 |---|---|
@@ -156,11 +152,11 @@ The modules, of which only `assets.py` imports Airflow:
 | `registry.py` | MLflow's model registry: register, promote, roll back |
 | `monitoring.py`, `drift.py` | the windows drift is measured on, the alibi-detect tests, live performance |
 | `predict.py` | tag new text with whatever is currently promoted |
-| `assets.py` | the Airflow Assets the Dags share |
 | `callbacks.py` | deadline-alert callbacks |
 
 The SQL is not in that package: it is the dbt project you create in §9, in
-`dbt/`.
+`dbt/`. Nor are the Airflow Assets the Dags share: they are orchestration, and
+you write them next to the Dags, in §8.
 
 ---
 

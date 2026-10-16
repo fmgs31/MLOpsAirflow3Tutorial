@@ -7,8 +7,8 @@ el informe de la mañana.
 
 ### Constrúyelo
 
-`dags/07_deadline_alerts.py` es el archivo más corto de los siete, y lo
-interesante está todo en el decorador:
+`dags/07_deadline_alerts.py` es el archivo más corto de los siete, y todo lo
+interesante está en el decorador:
 
 ```python dags/07_deadline_alerts.py
 """Lesson 7 - deadline alerts: "tell me if this run is taking too long"."""
@@ -51,11 +51,12 @@ ejecuta otro proceso, y cuál depende de la clase del callback — aquí
 lista a `deadline=` para varios plazos.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
-`AVERAGE_RUNTIME(max_runs=10)` — esta última es "más lento que la propia media
-reciente de este Dag", que suele ser lo que de verdad quieres decir. Callbacks:
-`SyncCallback` (corre en el executor) o `AsyncCallback` (corre en el triggerer —
-úsalo para Notifiers, los emisores de alertas ya hechos que los providers
-traen para Slack, email y similares, p. ej. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
+`AVERAGE_RUNTIME(max_runs=10)`; esta última es "más lento que la propia media
+reciente de este Dag", que suele ser lo que quieres decir. Callbacks:
+`SyncCallback` (corre en el executor) o `AsyncCallback` (corre en el
+triggerer; úsalo para Notifiers, los emisores de alertas ya hechos que los
+providers traen para Slack, email y similares, p. ej.
+`AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
 
 El Dag incumple su propio deadline a propósito:
 
@@ -83,9 +84,9 @@ docker compose logs airflow-scheduler | grep "DEADLINE MISSED"
 ```
 
 **Comprobación.** Una línea `DEADLINE MISSED`, unos 30 segundos después del
-trigger, con el contexto del run — y `slow_step` sigue corriendo cuando salta la
-alerta, porque esa task duerme 75 segundos. De eso se trata: te enteraste del run
-lento antes de que terminara. Los deadlines perdidos y pendientes también se
+trigger, con el contexto del run, mientras `slow_step`, que duerme 75
+segundos, sigue corriendo: te enteraste del run lento antes de que
+terminara. Los deadlines perdidos y pendientes también se
 listan bajo Browse → **Deadlines**.
 
 > **Bug de Airflow 3.3.1 (la versión que instala este tutorial):**
@@ -93,8 +94,8 @@ listan bajo Browse → **Deadlines**.
 > (`psycopg2.ProgrammingError: can't adapt type 'dict'`
 > saliendo de `DagRun.update_state`). Las tasks corren bien; lo único que falla
 > es la actualización final de estado de la CLI. Dispara esos Dags a través del
-> scheduler en su lugar — por eso `mlops` no lleva deadline, ya que
-> rompería el paso `airflow dags test mlops` de la §10.
+> scheduler en su lugar. Por eso `mlops` no lleva deadline: rompería el paso
+> `airflow dags test mlops` de la §10.
 > [Detalles.](../troubleshooting.md)
 
 Referencia: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_alerts.py).
