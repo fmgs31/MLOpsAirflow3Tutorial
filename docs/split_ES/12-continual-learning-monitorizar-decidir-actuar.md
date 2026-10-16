@@ -2,9 +2,9 @@
 
 **Continual**, no continuo: el sistema se repite *con pausas*, y las pausas son
 deliberadas. Un monitor dispara, se decide algo — por una persona donde importa —
-y entonces corre el pipeline. El gate de aprobación que construye esta sección,
-`request_retraining`, es esa decisión,
-convertida en una task del Dag.
+y entonces corre el pipeline. El gate de aprobación que construye esta
+sección, `request_retraining`, es esa decisión, convertida en una task del
+Dag.
 
 Lo que estás vigilando es el **drift**, de tres tipos:
 
@@ -123,8 +123,8 @@ def monitoring_dag():
 (La función se llama `monitoring_dag` porque `monitoring` ya es el nombre del
 módulo importado. El `dag_id` es lo que ve Airflow.)
 
-La task de drift, `detect_drift`, corre en **otro Python**. alibi-detect necesita `numpy<2`, algo
-que el entorno propio de Airflow no puede tener, así que la imagen trae un
+La task de drift, `detect_drift`, corre en **otro Python**. alibi-detect
+necesita `numpy<2`, algo que el entorno propio de Airflow no puede tener, así que la imagen trae un
 segundo virtualenv solo para él, `/opt/venvs/alibi`, y `config.ALIBI_PYTHON` es
 su intérprete. `@task.external_python` envía la función allí: Airflow escribe
 en archivos el código fuente de la función y sus argumentos, ejecuta ese
@@ -144,8 +144,8 @@ Eso tiene consecuencias que verás en el código de abajo:
 Es la versión ligera de lo que la §16 recomienda para equipos con dependencias
 que chocan: una imagen de contenedor por task, con `KubernetesPodOperator`.
 
-Primero, medir. Las ventanas se escriben una sola vez, y tanto los tests de
-drift como la comprobación de rendimiento leen esas mismas ventanas:
+Primero, medir. Las ventanas se escriben una sola vez, y las leen tanto los
+tests de drift como la comprobación de rendimiento:
 
 ```python dags/06_monitoring_and_retraining.py
     @task
@@ -204,12 +204,14 @@ Después, decidir:
 
 `params` es la política — los defaults de `POLICY_PARAMS`, o lo que se le haya
 dado a este run. Cada condición de reentrenamiento vigila uno de los tres tipos
-de drift de la tabla. Fíjate en el orden: **una etiqueta nueva lleva a `inspect`, no
-a `request_retraining`.** Reentrenar con datos cuyo espacio de etiquetas todavía no has
-entendido es la receta para publicar un modelo peor convencido de que es mejor.
+de drift de la tabla. Fíjate en el orden: **una etiqueta nueva lleva a
+`inspect`, no a `request_retraining`.** Reentrenar con datos cuyo espacio de
+etiquetas todavía no has entendido es la receta para publicar un modelo peor
+convencido de que es mejor.
 
-Ahora las cuatro ramas que puede elegir `decide`. Tres son simples; la cuarta es un gate
-**human-in-the-loop** (una task que espera a que una persona responda),
+Ahora las cuatro ramas que puede elegir `decide`. Tres son simples; la cuarta
+es un gate **human-in-the-loop** (una task que espera a que una persona
+responda),
 `ApprovalOperator`, seguido de la task que arranca otro Dag:
 
 ```python dags/06_monitoring_and_retraining.py
@@ -249,11 +251,10 @@ Ahora las cuatro ramas que puede elegir `decide`. Tres son simples; la cuarta es
 
 `ApprovalOperator` aparca la task en `awaiting_input` y muestra un aviso en la
 UI, en la pestaña **Required Actions** de la task instance y bajo Browse →
-**Required Actions**. Con **Reject**, todo lo de
-aguas abajo queda skipped. `defaults` es la respuesta que se aplica si nadie
-responde antes de `response_timeout` — sesenta segundos aquí para que la lección
-termine; dale horas en producción. `TriggerDagRunOperator` arranca otro
-Dag: crea un run `manual__` de `mlops` con el `conf` dado, y con
+**Required Actions**. Con **Reject**, todo lo de aguas abajo queda skipped.
+`defaults` es la respuesta que se aplica si nadie responde antes de
+`response_timeout`: sesenta segundos aquí para que la lección termine; dale
+horas en producción. `TriggerDagRunOperator` arranca otro Dag: crea un run `manual__` de `mlops` con el `conf` dado, y con
 `wait_for_completion=False` no se queda a mirarlo.
 
 `rollback` devuelve el alias `champion` del registry a `previous_champion`. No
@@ -289,14 +290,14 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
 > **Este comando tarda unos 70 segundos y parece congelado durante 60 de ellos.**
-> No es un cuelgue. `request_retraining` es el gate human-in-the-loop: entra en
+> `request_retraining` es el gate human-in-the-loop: entra en
 > `awaiting_input` y agota su `response_timeout` completo de 60 segundos antes
 > de resolverse por defecto con Approve, porque nadie va a pulsar el botón.
 > Déjalo terminar.
 
 **Comprobación.** `decide` escribe en el log los dos p-valores: label drift en
 torno a `7.7e-05`, length drift en torno a `0.92`. La mezcla de tags del cuarto
-más reciente se movió de verdad. `mlops` pasa de ser cerca del 6 % de los
+más reciente se movió. `mlops` pasa de ser cerca del 6 % de los
 proyectos antiguos a cerca del 16 % de los más recientes, y
 `natural-language-processing` baja del 44 % al 30 %; la longitud del texto no
 cambió. El test de etiquetas queda muy por debajo de 0.05, así que `decide`
@@ -310,7 +311,7 @@ Approved. Proceeding with downstream tasks…  ← 60s después, resuelve el def
 Dag Run triggered successfully.  trigger_dag_id=mlops
 ```
 
-Esa última línea es real. Compruébalo tú mismo:
+Comprueba esa última línea:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
@@ -322,11 +323,11 @@ no.
 
 Mientras está en `awaiting_input`, abre el run en la UI y haz clic en
 `request_retraining`: el aviso te espera en su pestaña **Required Actions**
-(§5), y responderlo ahí resuelve la task sin esperar
-al timeout. Airflow registra la respuesta en cualquiera de los dos casos — la
-decisión que se tomó, cuándo, y *quién*. Un run que agotó el timeout y aplicó sus
-`defaults` guarda la decisión con el "quién" vacío, que es cómo distingues "una persona
-aprobó esto" de "no había nadie mirando".
+(§5), y responderlo ahí resuelve la task sin esperar al timeout. Airflow
+registra la respuesta en los dos casos: la decisión, cuándo, y *quién*. Un run
+que agotó el timeout y aplicó sus `defaults` guarda la decisión con el "quién"
+vacío, que es cómo distingues "una persona aprobó esto" de "no había nadie
+mirando".
 
 > **Cambia la política, cambia la decisión.** El umbral es un param, así que a
 > un run se le puede dar uno más estricto:
@@ -340,10 +341,10 @@ aprobó esto" de "no había nadie mirando".
 > ningún test informa de drift. Si la §10 promocionó un modelo, `decide()`
 > devuelve `continue_serving`, la rama de reentrenamiento queda skipped, y el
 > run termina en segundos. Si todavía no hay modelo en producción, `decide()`
-> lo dice — `No production model yet - train one.` — y elige la rama de
+> lo dice (`No production model yet - train one.`) y elige la rama de
 > reentrenamiento igualmente, timeout incluido. Ambas son correctas: el
-> desenlace depende del estado y de la política, que es justo para lo que
-> sirve un monitor.
+> desenlace depende del estado y de la política, que es para lo que sirve un
+> monitor.
 
 Una salvedad sobre `f1_now`. La ventana actual es el cuarto más reciente de la
 misma tabla con la que entrenó `mlops`, así que el champion ya ha visto la
@@ -370,11 +371,12 @@ este Dag:
 | **sampling** | sube/baja muestreo para arreglar el desbalanceo que introdujo el drift |
 | **evaluation** | construye el conjunto de test para que se parezca a los datos que verá el modelo en producción |
 
-La otra restricción es el **catastrophic forgetting**: entrenar solo con la ventana
-nueva hace que el modelo olvide patrones que antes acertaba, así que corrige los
-errores de hoy y vuelve a cometer los de antes. El Dag de este tutorial lo evita
-entrenando siempre con la tabla etiquetada completa — vale con este tamaño, y es lo
-primero que hay que revisar cuando la tabla deje de caber en una task.
+La otra restricción es el **catastrophic forgetting**: entrenar solo con la
+ventana nueva hace que el modelo olvide patrones que antes acertaba, así que
+corrige los errores de hoy y vuelve a cometer los de antes. El Dag de este
+tutorial lo evita entrenando siempre con la tabla etiquetada completa: vale con
+este tamaño, y es lo primero que hay que revisar cuando la tabla deje de caber
+en una task.
 
 Por eso también `promotion_gate`, en la §10, compara con el modelo que está en
 producción en vez de solo con un umbral fijo: un modelo reentrenado que es peor
@@ -395,10 +397,10 @@ alguien se dé cuenta:
 Pertenecen a la capa de serving, el servicio que responde a las peticiones
 de predicción, que este proyecto no tiene: aquí `champion` cambia de golpe.
 Pero el punto de partida está en el registry: con un alias `challenger` junto a
-`champion`, el sistema de serving sabe qué versión recibe la parte del canary o
-la copia del shadow, y el promotion gate pasa a ser "las métricas en
-vivo del challenger superan a las del champion" en vez de una puntuación sobre
-un conjunto de test.
+`champion`, el sistema de serving sabe qué versión recibe la parte del canary
+o la copia del shadow, y el promotion gate pasa a ser "las métricas en vivo del
+challenger superan a las del champion" en vez de una puntuación sobre un
+conjunto de test.
 
 ---
 

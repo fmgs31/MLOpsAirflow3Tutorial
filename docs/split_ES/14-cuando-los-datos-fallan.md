@@ -22,7 +22,7 @@ Los archivos están en [`datasets/batch_2/`](../../datasets/batch_2/). Los 191
 proyectos son reales: el holdout set de Made With ML, proyectos del mismo
 sitio que no están en `datasets/projects.csv`. Sus fechas se movieron un año
 hacia adelante, para que sean las filas más nuevas del warehouse, y los tres
-primeros problemas de la tabla se agregaron encima. El cuarto no se agregó:
+primeros problemas de la tabla se añadieron encima. El cuarto no se añadió:
 Made With ML publicó estos tags con los tres más raros ya fusionados en
 `other`. [`scripts/make_batch_2.py`](../../scripts/make_batch_2.py) genera los
 archivos, y [`datasets/README.md`](../../datasets/README.md) detalla qué trae
@@ -88,7 +88,7 @@ WHERE tag IS NULL
 ORDER BY created_on
 ```
 
-191 filas, todas de 2021: exactamente el lote nuevo. Y `tags` no creció:
+191 filas, todas de 2021: el lote nuevo. Y `tags` no creció:
 
 ```sql
 SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
@@ -104,12 +104,12 @@ avisar. Hay que esperar las etiquetas.
 
 El fallo muestra dos cosas más. Primero, `labeled_projects` ya tiene las 191
 filas sin tag: `dbt build` escribe la tabla y después la testea. Lo que las
-mantuvo lejos del entrenamiento es el control que viene después:
+mantuvo lejos del entrenamiento es el gate que viene después:
 `validate_transformed` no corrió, así que no se emitió ningún asset event.
 Segundo, la espera: `transform` corrió tres veces, con un minuto entre cada
 una, porque `dataops` da `retries=2` a todas sus tasks. Los reintentos sirven
 cuando la causa se va sola, como un error de red o una API ocupada; un
-problema de datos falla igual cada vez. Por eso los controles de GX lanzan
+problema de datos falla igual cada vez. Por eso los gates de GX lanzan
 `AirflowFailException`, que se salta los reintentos (§9). `transform` es un
 `BashOperator` que ejecuta dbt, así que no distingue un test fallido de una
 conexión perdida, y reintenta los dos.
@@ -163,7 +163,7 @@ exportación volvió a mandar cuatro proyectos viejos como si fueran nuevos.
 administra es quien puede decir cuál de los ids es el real. Repórtalo, con la
 consulta. Borrar las copias en BigQuery no sirve: el siguiente sync vuelve a
 reemplazar la tabla entera con la exportación, copias incluidas. Hasta que
-llegue una exportación corregida, el control detiene el pipeline.
+llegue una exportación corregida, el gate detiene el pipeline.
 
 Hay una línea más en el log de `validate_tags`, un aviso, no un fallo:
 `expect_column_values_to_be_in_set:tag` con `'other'` en sus detalles. Los
@@ -231,7 +231,7 @@ LEFT JOIN {{ source('mlops_course', 'tags') }} AS t
 
 `SAFE_CAST` devuelve `NULL` donde `CAST` detendría la consulta, y `COALESCE`
 se queda con el primer valor que no es `NULL`: primero el formato viejo,
-después el nuevo. Un tercer formato daría `NULL`, sin avisar. Así que agrega
+después el nuevo. Un tercer formato daría `NULL`, sin avisar. Así que añade
 el control que le faltó a este incidente, en
 `dbt/dbt_transforms/models/labeled_projects/schema.yml`, antes de `title`:
 
@@ -353,7 +353,7 @@ segundos.
 Queda un cabo suelto: cada run de `dataops` sigue avisando sobre `other`, en
 `validate_tags` y en `validate_transformed`. Un aviso que siempre está deja de
 leerse, y el siguiente se pierde. El origen ahora emite `other` a propósito,
-así que va en la lista de tags que se sabe que emite. Agrégalo a
+así que va en la lista de tags que se sabe que emite. Añádelo a
 `KNOWN_RAW_TAGS` en [`src/project_tagger/config.py`](../../src/project_tagger/config.py):
 
 ```python

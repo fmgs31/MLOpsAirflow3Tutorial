@@ -27,10 +27,10 @@ Two more tools, both running in the compose stack, need no account.
 (here: maximise f1). A **trial** is one attempt: Optuna picks a value for each
 hyperparameter, the code trains and scores a model with them, and the score
 goes back to the study. Optuna does not try every combination: it uses the
-scores so far to choose the next values. The study is stored in a database, here
-the `optuna` database on the stack's Postgres, so several processes can add
-trials to the same study at the same time. That is what lets Airflow spread
-the search over several tasks.
+scores so far to choose the next values. The study is stored in a database,
+here the `optuna` database on the stack's Postgres, so several processes can
+add trials to the same study at the same time, which is what lets Airflow
+spread the search over several tasks.
 
 **MLflow** records experiments. Each training is a **run**, with its
 **parameters** (the hyperparameters used), its **metrics** (f1, precision...)
@@ -94,8 +94,9 @@ plus the final one, and the model file is uploaded only with the final run.
 New workload functions: `data.save_snapshot(df, key)` writes a dataframe to
 `data/snapshots/<key>/` and `data.load_snapshot(fp)` reads it back;
 `data.preprocess(df)` cleans the text and collapses every tag outside the
-four classes the model learns (`config.ACCEPTED_TAGS`) into `other`; `data.split(df)` returns a `(train, test)` pair with the same share of
-each tag in both; `validate.check_split(train, test)` is a second suite, on the
+four classes the model learns (`config.ACCEPTED_TAGS`) into `other`;
+`data.split(df)` returns a `(train, test)` pair with the same share of each tag
+in both; `validate.check_split(train, test)` is a second suite, on the
 split. In `train_module` (`train.py`): `create_study`, `run_trials`,
 `best_trial` and `train_model`. In `registry`: `register`, `load_metrics`,
 `get_production` and `promote`. `config.MIN_F1_TO_PROMOTE` is the minimum f1
@@ -119,7 +120,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
-from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -160,8 +161,8 @@ study name.
 
 **Validate before you train.** `dataops` validated `labeled_projects` when it
 built it, and this Dag validates it again before training on it. That is not
-redundant: it was a different Dag run, possibly hours ago, this run may have been
-triggered by hand, and what the model is fitted on is the data as it is *now*.
+redundant: it was a different Dag run, possibly hours ago, this run may have
+been triggered by hand, and the model is fitted on the data as it is *now*.
 Add the first two tasks:
 
 ```python dags/04_mlops.py
@@ -205,7 +206,7 @@ that is retried an hour later. The task returns the file's path: XComs carry a
 pointer to the data, not the data itself (§6).
 
 The second half of `validate_training_data`'s check is one a table-level suite
-cannot do at all. It looks at the **split**:
+cannot do. It looks at the **split**:
 
 ```python
 # src/project_tagger/validate.py — check_split()
@@ -218,8 +219,8 @@ cannot do at all. It looks at the **split**:
 
 Each problem in those comments — a class only in train, three rows of a class,
 the same project in both splits — passes a column-level suite without a
-warning, and still produces a model whose f1 on the test set means nothing. That f1 is
-exactly what `promotion_gate`, later in this section, compares against the
+warning, and still produces a model whose f1 on the test set means nothing.
+That f1 is what `promotion_gate`, later in this section, compares against the
 production model. These checks span two dataframes, which a GX suite (one
 batch of data at a time) does not express, so they are plain Python returning
 the same result shape.
@@ -271,13 +272,12 @@ still an honest estimate.
 anyway: that argument is what makes it wait for every `run_trials` instance,
 and it arrives as a list, one item per instance.
 
-**How many `run_trials` instances run at once is a choice, and it is written in
-`run_trials`' decorator.**
-Nothing about `.expand()` says "in parallel"; it says "these are four separate
-task instances". Whether they overlap is the executor's business, bounded by the
-narrowest of the limits from §3 — and `max_active_tis_per_dag=2` on that task is
-deliberately the narrowest one here. So the fan-out runs **two at a time, in two
-waves**. Raise the cap and all four overlap; remove it and `[core]
+**How many `run_trials` instances run at once is a choice, written in
+`run_trials`' decorator.** Nothing about `.expand()` says "in parallel"; it
+says "these are four separate task instances". Whether they overlap is the
+executor's business, bounded by the narrowest of the limits from §3, and
+`max_active_tis_per_dag=2` on that task is deliberately the narrowest one here.
+So the fan-out runs **two at a time, in two waves**. Raise the cap and all four overlap; remove it and `[core]
 max_active_tasks_per_dag` (16) is the next limit up. A cap on a training task
 is not a toy setting: four instances at once is four copies of the data in
 memory. When the limited resource is shared — say, a database that accepts only
@@ -368,10 +368,9 @@ champion, is a normal outcome: the run succeeds and production is left alone.
 and the edge appears in the Assets graph.
 
 **Trigger rules** are how a task states what its upstream tasks must have done
-before it runs, and
-branching is where you first need one. The join, `done`, needs
-`none_failed_min_one_success`, because the default `all_success` would skip it as
-soon as either branch is skipped. The useful ones: `all_success` (default),
+before it runs, and branching is where you first need one. The join, `done`,
+needs `none_failed_min_one_success`, because the default `all_success` would
+skip it as soon as either branch is skipped. The useful ones: `all_success` (default),
 `all_done` (run whatever happened upstream — cleanup tasks),
 `none_failed_min_one_success` (joins after a branch), `none_failed` (allows skips
 but not failures), `one_success`, `one_failed` (alerting paths), `all_skipped`,
@@ -445,10 +444,10 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
 Nothing happens on the first line: `mlops`'s schedule is an asset, and no
-event has arrived. The second line is enough to start everything, and you did not
-trigger anything — that is the §7 rule: `dataops` has a cron and a 2025
-`start_date`, so the moment it is un-paused the scheduler creates the run for
-the most recent 03:00 UTC it missed, and starts it. Give it a few minutes, then:
+event has arrived. The second line starts everything without a trigger, by the
+§7 rule: `dataops` has a cron and a 2025 `start_date`, so the moment it is
+un-paused the scheduler creates the run for the most recent 03:00 UTC it
+missed, and starts it. Give it a few minutes, then:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs dataops -o plain
@@ -461,9 +460,9 @@ with that as its `logical_date` and a `start_date` of a few minutes ago. (The
 `manual__` run from `airflow dags test` in §9 is there too.) And `mlops` has a
 run nobody triggered: id beginning `asset_triggered__`, `running` if you were
 quick, `success` once its trials and the final model are done, with an **empty**
-`logical_date` — asset-triggered runs have no logical date, like a run
-triggered from the CLI without one (§7). In the UI, open **Assets** and you will see the edge that
-caused it.
+`logical_date`: asset-triggered runs have no logical date, like a run
+triggered from the CLI without one (§7). In the UI, **Assets** shows the edge
+that caused it.
 
 Know where the wait comes from. Almost all of it is the tools: the two Airbyte
 syncs in `dataops`, then twenty trials and a final fit in `mlops`. The Airflow
@@ -473,22 +472,23 @@ recorded (§3, §8). If nothing has appeared after a few minutes, check that bot
 Dags are un-paused and that the `dataops` run succeeded — a failed
 `validate_transformed` emits no event, by design.
 
-Now the two waves of `run_trials`. Open that `mlops` run in the UI, click `run_trials`,
-and read its **Task Instances** tab — four rows, map index 0 to 3, each with
-its own start and end time. Two start together; each of the other two starts
-only when one of the first pair has finished. The *Show Gantt* view (§5),
-available now that a run is selected, draws the same thing as two waves of bars. On the **Graph**, the four are one collapsed node until you raise the
+Now the two waves of `run_trials`. Open that `mlops` run in the UI, click
+`run_trials`, and read its **Task Instances** tab: four rows, map index 0 to 3,
+each with its own start and end time. Two start together; each of the other
+two starts only when one of the first pair has finished. The *Show Gantt* view
+(§5), available now that a run is selected, draws the same thing as two waves
+of bars. On the **Graph**, the four are one collapsed node until you raise the
 **Min. map index** filter (§5). Or read it off the CLI:
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain
 ```
 
-Four `run_trials` rows with `map_index` 0–3; 2 and 3 each start after one
-of 0 and 1 has ended. And `keep_current_model` is `skipped`
-while `promote_model` is `success`: `promotion_gate` took the `promote_model`
-branch, because
-the final model's f1 cleared the threshold and there was no production model to beat.
+Four `run_trials` rows with `map_index` 0–3; 2 and 3 each start after one of
+0 and 1 has ended. And `keep_current_model` is `skipped` while `promote_model`
+is `success`: `promotion_gate` took the `promote_model` branch, because the
+final model's f1 cleared the threshold and there was no production model to
+beat.
 
 Then look at what the run left in MLflow, at <http://localhost:5000>:
 
@@ -515,9 +515,10 @@ the model. Under **Models**, `project_tagger` has version 1, with the alias
 > can go either way, and `promotion_gate`'s log says which.
 
 > **Try it, the other branch.** Set the bar impossibly high and watch
-> `promotion_gate` take the `keep_current_model` branch. The threshold is read from an environment variable inside
-> the task's own process, and `airflow dags test` runs the tasks in its own
-> process, so pass the variable to that command with `-e`:
+> `promotion_gate` take the `keep_current_model` branch. The threshold is read
+> from an environment variable inside the task's own process, and
+> `airflow dags test` runs the tasks in its own process, so pass the variable
+> to that command with `-e`:
 >
 > ```bash
 > docker compose exec -e PROJECT_TAGGER_MIN_F1=0.99 airflow-scheduler airflow dags test mlops

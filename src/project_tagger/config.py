@@ -92,6 +92,12 @@ def table_id(table: str) -> str:
     return f"{GCP_PROJECT_ID}.{BQ_DATASET}.{table}"
 
 
+def bigquery_uri(table: str) -> str:
+    """The table as a URI: `bigquery://project/dataset/table`, the scheme the
+    Google provider registers for Airflow Assets."""
+    return f"bigquery://{GCP_PROJECT_ID}/{BQ_DATASET}/{table}"
+
+
 def ensure_dirs() -> None:
     """Create the directories the pipeline writes to. Safe to call repeatedly."""
     for directory in (DATA_DIR, SNAPSHOTS_DIR):

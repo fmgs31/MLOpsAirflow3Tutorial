@@ -28,9 +28,10 @@ sits in `up_for_reschedule` (§3), and the scheduler re-queues it for the next
 poke.
 
 The third option, deferrable, needs the word **trigger** pinned down first,
-because it has more than one meaning. You *trigger* a Dag (§7): a verb. The triggerer process from §3
-runs **triggers**: nouns — small pieces of asynchronous code that wait for one
-thing (a moment in time, a table, a message) and fire an event when it happens.
+because it has more than one meaning. You *trigger* a Dag (§7): a verb. The
+triggerer process from §3 runs **triggers**: nouns, small pieces of
+asynchronous code that wait for one thing (a moment in time, a table, a
+message) and fire an event when it happens.
 "Deferrable" means the task hands the triggerer such a trigger, exits, and is
 resumed when the event arrives. `TriggerDagRunOperator` (§12) is the verb again.
 
@@ -142,7 +143,7 @@ sensors_and_events()
 ```
 
 `PokeReturnValue(is_done=..., xcom_value=...)` both stops the poking and hands
-a value downstream — `proceed` receives the row count. `data.count_rows` runs a
+a value downstream: `proceed` receives the row count. `data.count_rows` runs a
 `SELECT COUNT(*)` in BigQuery; while the table does not exist, BigQuery answers
 `NotFound`, and the poke reports not done instead of failing. `enough_rows` is
 in `reschedule` mode, the second option in the list that opens §11.
@@ -154,8 +155,8 @@ alongside `settle`, and `proceed` waits for both `wait_for_table` and
 One more option removes the wait altogether: **event-driven scheduling**. It
 does not go in the file, because it needs a message queue (such as Amazon SQS)
 you do not have. Attach a *watcher* (a trigger that watches the queue) to an
-asset and each message that arrives starts a run; nothing polls,
-nothing occupies a slot:
+asset and each message that arrives starts a run; nothing polls, nothing
+occupies a slot:
 
 ```python
 from airflow.providers.common.messaging.triggers.msg_queue import MessageQueueTrigger
@@ -169,7 +170,7 @@ new_projects = Asset(name="new_projects",
 def ingest_on_message(): ...
 ```
 
-Only triggers deriving from `BaseEventTrigger` can be watchers — a trigger
+Only triggers deriving from `BaseEventTrigger` can be watchers: a trigger
 testing a permanent condition ("table exists") would re-fire forever.
 
 > Deferrable sensors and watchers both need `airflow triggerer` running. Without
@@ -193,8 +194,8 @@ labeled_projects has 764 rows
 Data is ready (764 rows). Downstream work can start.
 ```
 
-`wait_for_table` finds the table on its first check; `enough_rows`
-counts the rows and clears its threshold on the first poke. And `settle`
+`wait_for_table` finds the table on its first check; `enough_rows` counts the
+rows and clears its threshold on the first poke. And `settle`
 barely waits: its five-second target is measured from the run's
 `data_interval_end` (or its `run_after`), which `airflow dags test` sets when it
 starts, so by the time the task runs some or all of that time has passed. If
@@ -202,8 +203,8 @@ any is left, there is no triggerer to hand the wait to: `airflow dags test`
 runs the trigger itself, and says so in the log with `[DAG TEST] running
 trigger in line` (§4).
 
-**To watch a task actually defer**, send the run through the scheduler instead,
-then read the task states a few times over the next ten seconds:
+**To watch a task defer**, send the run through the scheduler instead, then
+read the task states a few times over the next ten seconds:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause sensors_and_events
@@ -211,14 +212,13 @@ docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events defer-demo -o plain
 ```
 
-**Checkpoint.** `settle` reads `deferred` for a few seconds — its process has
-exited and the triggerer is holding the timer — then turns `success` about
-five seconds after the trigger. That `deferred` is the
-state from §3, and it is what "frees the worker slot" looks like from outside.
-Be quick with the last command; a `docker compose exec` takes a second or
-two of its own.
+**Checkpoint.** `settle` reads `deferred` for a few seconds (its process has
+exited and the triggerer is holding the timer), then turns `success` about
+five seconds after the trigger. That `deferred` is the state from §3, and it is
+what "frees the worker slot" looks like from outside. Be quick with the last
+command; a `docker compose exec` takes a second or two of its own.
 
-**Now see the interesting case** — a sensor that actually has to wait. Point
+**Now the interesting case**: a sensor that has to wait. Point
 the run at a table that does not exist yet:
 
 ```bash
@@ -256,9 +256,9 @@ DROP TABLE `<your project id>.mlops_course.labeled_projects_copy`
 ```
 
 **Rule of thumb:** seconds → a poking sensor is fine. Minutes or hours →
-`mode="reschedule"` or deferrable, or you are paying a worker slot to sleep. A service that announces
-changes itself, by sending a message to a queue → an `AssetWatcher`, and no
-task waits at all.
+`mode="reschedule"` or deferrable, or you are paying a worker slot to sleep. A
+service that announces changes itself, by sending a message to a queue → an
+`AssetWatcher`, and no task waits at all.
 
 Reference: [`solutions/05_sensors_and_events.py`](../../solutions/05_sensors_and_events.py).
 

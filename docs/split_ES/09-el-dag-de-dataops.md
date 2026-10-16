@@ -1,9 +1,9 @@
 ## 9. El Dag de DataOps
 
-`dags/03_dataops.py` carga los datos sin procesar en el warehouse, los comprueba,
+`dags/03_dataops.py` carga los datos sin procesar (projects y tags) en el warehouse, los comprueba,
 los convierte en la tabla de entrenamiento y comprueba también el resultado.
-Cada paso lo hace una herramienta pensada para él; el Dag decide cuándo se ejecuta cada una y
-detiene el pipeline cuando falla una comprobación.
+Cada paso lo hace una herramienta pensada para él; el Dag decide cuándo se
+ejecuta cada una y detiene el pipeline cuando falla una comprobación.
 
 | Task | Herramienta | Qué hace |
 |---|---|---|
@@ -13,7 +13,7 @@ detiene el pipeline cuando falla una comprobación.
 | `transform` | **dbt** | construye la tabla de entrenamiento a partir de las dos tablas sin procesar (`projects` y `tags`, tal como las carga Airbyte), en SQL |
 
 Cómo se hablan las piezas cuando se ejecuta el Dag. Cada columna es un
-sistema, y lo que está escrito en una columna ocurre en ese sistema. Una flecha
+sistema, y lo que está escrito en una columna ocurre en ese sistema; una flecha
 es un sistema llamando a otro, o datos que pasan de uno a otro:
 
 ```
@@ -92,8 +92,8 @@ comprueba el anterior.
 
 1. **Date de alta en Google Cloud** en <https://cloud.google.com>. Las cuentas
    nuevas reciben el Free Trial: un crédito de 90 días. Pide una tarjeta, pero
-   no te cobra nada salvo que tú mismo pases a una cuenta de pago. Tras el periodo de prueba,
-   el free tier sigue cubriendo 10 GB de almacenamiento y 1 TB de consultas al
+   no te cobra nada salvo que tú mismo pases a una cuenta de pago. Tras el
+   periodo de prueba, el free tier sigue cubriendo 10 GB de almacenamiento y 1 TB de consultas al
    mes; las tablas de este tutorial ocupan menos de 1 MB.
 
    BigQuery tiene también un *sandbox* que no pide tarjeta, pero no permite
@@ -115,8 +115,9 @@ comprueba el anterior.
 4. **Descarga su clave.** En **IAM & Admin → Service Accounts**, haz clic en
    el email de la service account,
    `airflow-tutorial@<project id>.iam.gserviceaccount.com`, para abrirla.
-   Luego abre su pestaña **Keys** y elige **Add key → Create new key → JSON**. El navegador descarga un archivo. Muévelo a este
-   repo como `secrets/gcp-key.json`. Git ignora todo lo que hay en `secrets/`
+   Luego abre su pestaña **Keys** y elige **Add key → Create new key →
+   JSON**. El navegador descarga un archivo. Muévelo a este repo como
+   `secrets/gcp-key.json`. Git ignora todo lo que hay en `secrets/`
    salvo `.gitkeep`, así que no puedes hacer commit de la clave por accidente.
 
    > **Ese archivo es una contraseña.** Quien lo tenga puede leer y escribir
@@ -124,16 +125,15 @@ comprueba el anterior.
    > lo pegues en chats ni lo subas a ningún sitio. Si se filtra, borra la
    > clave en **Keys** y crea otra.
 
-5. **Indica al stack cuál es tu proyecto.** Pon tu Project ID en `GCP_PROJECT_ID`, en
-   `.env`. `BQ_LOCATION` indica dónde guarda BigQuery los datos: `US` (el valor
+5. **Indica al stack cuál es tu proyecto.** Pon tu Project ID en
+   `GCP_PROJECT_ID`, en `.env`. `BQ_LOCATION` indica dónde guarda BigQuery los datos: `US` (el valor
    por defecto), `EU`, o una región concreta cerca de ti, como
    `australia-southeast1` ([la lista completa](https://cloud.google.com/bigquery/docs/locations)).
    Los datos de este tutorial son tan pequeños que cualquiera sirve. Elijas lo
    que elijas, la destination de Airbyte que creas en «2. Airbyte» necesita el
    mismo valor en su campo **Dataset location**. Decídelo antes del primer
    sync: es el que crea el dataset, y la location de un dataset no se puede
-   cambiar. Después recrea los contenedores para que lean el valor
-   nuevo:
+   cambiar. Después recrea los contenedores para que lean el valor nuevo:
 
    ```bash
    docker compose up -d
@@ -200,8 +200,9 @@ Si no llega, dónde se aumenta depende de cómo corre Docker:
    abctl local install
    ```
 
-   Airbyte queda disponible en <http://localhost:8000>. En una máquina justa de memoria,
-   `abctl local install --low-resource-mode` lo ejecuta con 2 CPUs.
+   Airbyte queda disponible en <http://localhost:8000>. En una máquina justa
+   de memoria, `abctl local install --low-resource-mode` lo ejecuta con 2
+   CPUs.
 
 3. **Consigue las credenciales e inicia sesión:**
 
@@ -280,16 +281,19 @@ Si no llega, dónde se aumenta depende de cómo corre Docker:
 #### 3. Dile a Airflow cómo llegar a Airbyte
 
 Airflow llega a Airbyte a través de una Connection (§6), con el `Client-Id` y el
-`Client-Secret` que imprimió `abctl local credentials`:
+`Client-Secret` que imprimió `abctl local credentials`. `my_airbyte_conn` es el id de
+la Connection: vale cualquier nombre, siempre que el Dag use el mismo.
+`--conn-type airbyte` es fijo: le dice a Airflow que esta Connection la
+gestiona el provider de Airbyte.
 
 ```bash
-docker compose exec airflow-scheduler airflow connections add airbyte \
+docker compose exec airflow-scheduler airflow connections add my_airbyte_conn \
     --conn-type airbyte \
     --conn-host http://host.docker.internal:8000/api/public/v1/ \
     --conn-login <client-id> --conn-password <client-secret>
 ```
 
-**Comprobación.** La última línea es ``Successfully added `conn_id`=airbyte``.
+**Comprobación.** La última línea es ``Successfully added `conn_id`=my_airbyte_conn``.
 Antes salen muchas líneas de warnings. Casi todas son `DeprecatedImportWarning`
 y `SyntaxWarning`, que aparecen mientras la CLI carga todos los providers de la
 imagen; son ruido. La penúltima, `empty cryptography key - values will not be
@@ -300,8 +304,9 @@ Dentro de un contenedor, `localhost` es el propio contenedor;
 `host.docker.internal` es tu máquina. Docker Desktop define ese nombre, y la
 línea `extra_hosts` del archivo de compose lo define en Linux.
 
-Los dos IDs de connection que copiaste en el paso 8 de «2. Airbyte» van en Variables (§6), para que el archivo del Dag no
-contenga ningún ID que solo existe en tu Airbyte:
+Los dos IDs de connection que copiaste en el paso 8 de «2. Airbyte» van en
+Variables (§6), para que el archivo del Dag no contenga ningún ID que solo
+existe en tu Airbyte:
 
 ```bash
 docker compose exec airflow-scheduler airflow variables set airbyte_projects_connection_id <projects connection id>
@@ -314,9 +319,9 @@ docker compose exec airflow-scheduler airflow variables set airbyte_tags_connect
 resultado como una tabla del warehouse. Un **proyecto de dbt** es la carpeta
 con la que trabaja dbt: los models, más archivos que dicen cómo conectarse y
 qué comprobar. Vas a crear uno ahora, en `dbt/`, la carpeta que el archivo de
-compose monta para ello. Aquí lo escribes y lo ejecutas una vez a mano;
-cuando se ejecute el Dag, su task `transform` lanzará el mismo `dbt build`
-(el paso 3 del diagrama del principio de la §9).
+compose monta para ello, y a ejecutarlo una vez a mano; cuando se ejecute el
+Dag, su task `transform` lanzará el mismo `dbt build` (el paso 3 del diagrama
+del principio de la §9).
 
 dbt está instalado en su propio virtualenv dentro de la imagen,
 `/opt/venvs/dbt`, porque sus dependencias fijan versiones que chocan con las de
@@ -389,11 +394,11 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
 ```
 
 **Comprobación.** La última línea es `All checks passed!`. Si falla, el
-mensaje indica la causa: un Project ID equivocado, ningún archivo en `secrets/gcp-key.json`, o
-una service account a la que le falta un rol.
+mensaje indica la causa: un Project ID equivocado, ningún archivo en
+`secrets/gcp-key.json`, o una service account a la que le falta un rol.
 
-**Declara las tablas sin procesar.** Una *source* en dbt es una tabla que ya está
-en BigQuery y que dbt lee pero no construye. Aquí las sources son `projects` y
+**Declara las tablas sin procesar.** Una *source* en dbt es una tabla que ya
+está en BigQuery y que dbt lee pero no construye. Aquí las sources son `projects` y
 `tags` del dataset `mlops_course`, las tablas que cargaste en el paso 2.
 Declararlas una vez permite a los models referirse a ellas por su nombre. Crea
 `dbt/dbt_transforms/models/sources.yml`:
@@ -467,11 +472,11 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
     --project-dir /opt/airflow/dbt/dbt_transforms --profiles-dir /opt/airflow/dbt/dbt_transforms
 ```
 
-**Comprobación.** `Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6`: un model y
-cinco tests. BigQuery tiene una tercera tabla, `labeled_projects`, con 764
+**Comprobación.** `Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6`:
+un model y cinco tests. BigQuery tiene una tercera tabla, `labeled_projects`, con 764
 filas. Ejecuta el comando otra vez: mismo resultado, misma tabla, porque
-`+materialized: table` hace que dbt reemplace la tabla en cada ejecución. Un test
-fallido hace que `dbt build` termine con error, que es lo que hará fallar la
+`+materialized: table` hace que dbt reemplace la tabla en cada ejecución. Un
+test fallido hace que `dbt build` termine con error, que es lo que hará fallar la
 task `transform` del Dag.
 
 ¿Atascado? El proyecto terminado está en
@@ -504,15 +509,14 @@ e.ExpectTableRowCountToBeBetween(min_value=500),
 
 `validate.run_suite(df, "projects")` valida un dataframe contra esa suite y
 devuelve un resultado con `.passed`, `.failures`, `.results`, `.suite` y una
-línea `.summary()`. (GX tiene también operators de Airflow, pero al momento de
-escribir esto (octubre de 2026) su paquete no se puede instalar junto a
-Airflow 3.3.1, así que las tasks llaman a GX
-directamente.)
+línea `.summary()`. (GX tiene también operators de Airflow, pero en octubre
+de 2026 su paquete no se puede instalar junto a Airflow 3.3.1, así que las
+tasks llaman a GX directamente.)
 
 Cada expectation es *crítica* salvo que se marque lo contrario. Una
 expectation crítica que falla hace fallar la suite; una no crítica solo
-queda registrada. La suite `tags` tiene una expectation no crítica: cada tag es uno de
-los seis conocidos. Un tag nuevo es motivo para mirar los datos, no para
+queda registrada. La suite `tags` tiene una expectation no crítica: cada tag
+es uno de los seis conocidos. Un tag nuevo es motivo para mirar los datos, no para
 detener el pipeline, así que aparece en `result.failures` pero
 `result.passed` sigue siendo verdadero.
 
@@ -541,7 +545,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
-from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
+from project_tagger_orchestration.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -567,10 +571,9 @@ def dataops():
 del standard (§6); la imagen instala los providers de Airbyte y de Google
 (`requirements-image.txt`). `AirflowFailException` y
 `OutletEventAccessorsProtocol`, el tipo de `outlet_events` (§8), vienen del
-Task SDK (§4). `from project_tagger import …` funciona porque el archivo de
-compose pone `/opt/airflow/src` en el `PYTHONPATH` de todos los servicios: el
-Dag processor lo necesita para parsear el archivo, y los procesos que ejecutan
-las tasks también.
+Task SDK (§4). Los imports de `project_tagger_orchestration` y `project_tagger`
+funcionan como en la §8, tanto cuando el Dag processor parsea el archivo
+como cuando corre una task.
 
 `max_active_runs=1` limita el Dag a un run a la vez; un segundo run espera en
 `queued` hasta que termine el primero.
@@ -578,13 +581,12 @@ las tasks también.
 Las dos primeras tasks arrancan los syncs de Airbyte y esperan a que terminen.
 Un sync puede tardar minutos, así que son **deferrable**: mientras esperan, la
 task está en estado `deferred` (§3) y es el triggerer quien vigila Airbyte, no
-un worker slot (la §11 lo explica a fondo). Añádelas dentro de
-`dataops()`:
+un worker slot (la §11 lo explica a fondo). Añádelas dentro de `dataops()`:
 
 ```python dags/03_dataops.py
     extract_and_load_projects = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_projects",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_projects_connection_id }}",
         deferrable=True,
         timeout=3600,
@@ -592,7 +594,7 @@ un worker slot (la §11 lo explica a fondo). Añádelas dentro de
     )
     extract_and_load_tags = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_tags",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_tags_connection_id }}",
         deferrable=True,
         timeout=3600,
@@ -600,16 +602,15 @@ un worker slot (la §11 lo explica a fondo). Añádelas dentro de
     )
 ```
 
-`airbyte_conn_id` nombra la Connection `airbyte` que añadiste con
-`airflow connections add`. `connection_id` es la
-connection de Airbyte que hay que sincronizar; un template (§6) la lee de una
-Variable cuando corre la task. Un sync fallido hace
-fallar la task. El outlet de cada task es el asset de una tabla sin procesar (§8);
-ningún Dag está programado con ellos, porque los datos sin procesar aún no se han
-comprobado.
+`airbyte_conn_id` nombra la Connection `my_airbyte_conn` que añadiste con
+`airflow connections add`. `connection_id` es la connection de Airbyte que hay
+que sincronizar; un template (§6) la lee de una Variable cuando corre la task.
+Un sync fallido hace fallar la task. El outlet de cada task es el asset (§8) de una
+tabla sin procesar (projects y tags) ; ningún Dag está programado con ellos, porque los datos
+sin procesar aún no se han comprobado.
 
-Después un **gate** sobre cada tabla sin procesar: una task que falla si la tabla
-no pasa su suite, y con eso detiene todo lo que va aguas abajo:
+Después un **gate** sobre cada tabla sin procesar: una task que falla si la
+tabla no pasa su suite, y con eso detiene todo lo que va aguas abajo:
 
 ```python dags/03_dataops.py
     @task
@@ -664,13 +665,12 @@ final, cuyo outlet es el asset con el que se programará `mlops`:
 
 Un `BashOperator` falla cuando su comando termina con error, así que un test de
 dbt fallido hace fallar `transform`, y la salida de dbt queda como log de la
-task.
-El outlet va en la validación final, no en `transform`, como explicó la §8: así
+task. El outlet va en la validación final, no en `transform`, como explicó la §8: así
 el evento significa "han llegado datos buenos". La suite de GX comprueba lo que
 no comprueban los tests de dbt, como el número de filas y el conjunto de tags.
 
-Por último, un **task group** y las conexiones entre tasks. `@task_group` dibuja varias
-tasks como un único nodo plegable en la vista Graph:
+Por último, un **task group** y las conexiones entre tasks. `@task_group`
+dibuja varias tasks como un único nodo plegable en la vista Graph:
 
 ```python dags/03_dataops.py
     @task_group(group_id="quality_report")
@@ -703,7 +703,8 @@ No pasan datos de las tasks de Airbyte a los gates, ni de los gates a
 dibujan con `>>` (§6). `[projects_report, tags_report] >> transform` es un
 **fan-in**: `transform` une las dos tablas, así que espera a los dos gates.
 `quality_report` recibe los tres resultados como argumentos, y ese paso de
-datos ya crea sus aristas.
+datos crea por sí solo las aristas de `validate_projects`, `validate_tags` y
+`validate_transformed` hacia `quality_report`, sin `>>`.
 
 ### Comprueba que aparecen los assets
 
@@ -716,9 +717,9 @@ docker compose exec airflow-scheduler airflow assets list -o plain
 
 **Comprobación.** Tres filas, `labeled_projects`, `raw_projects` y `raw_tags`,
 cada una con una URI como `bigquery://mlops-tutorial-123456/mlops_course/projects`:
-la tabla que representa ese asset. No ha corrido nada; ha bastado con parsear un archivo
-con `outlets=`. `production_model`, también en `assets.py`, no aparece porque ningún
-Dag se refiere a él todavía. La página Assets muestra los tres, producidos por
+la tabla que representa ese asset. No ha corrido nada; ha bastado con parsear
+un archivo con `outlets=`. `production_model`, también en `assets.py`, no
+aparece porque ningún Dag se refiere a él todavía. La página Assets muestra los tres, producidos por
 `dataops`, sin consumidor.
 
 ### Ejecútalo
@@ -732,7 +733,8 @@ detrás de otro porque `airflow dags test` ejecuta las tasks de una en una.
 
 **Comprobación.** En el log, por orden: cada task de Airbyte informando de que
 su job ha terminado; `suite=projects passed=6/6` y `suite=tags passed=5/5`; el
-`Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6` de dbt en el log de `transform`;
+`Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6` de dbt en el log
+de `transform`;
 `suite=labeled_projects passed=6/6`; y del task group,
 `projects: 6 checks, failed=none` y lo mismo para las otras dos.
 
@@ -743,14 +745,14 @@ tasks se quedan en `deferred` mientras Airbyte trabaja.
 
 ¿Falla una task? Compara con [`solutions/03_dataops.py`](../../solutions/03_dataops.py).
 Una task de Airbyte fallida suele indicar una Connection o una Variable mal
-puesta: compruébalo con `airflow connections get airbyte` y
+puesta: compruébalo con `airflow connections get my_airbyte_conn` y
 `airflow variables list`.
 
 > **`airflow dags test` no es un dry run.** Airbyte volvió a sincronizar las dos
 > tablas, dbt reconstruyó `labeled_projects`, y hay un asset event
 > `labeled_projects` real en la metadata database, visible en la página Assets
-> con el `extra` que le pusiste. Todavía no hay nada programado con ese asset, así que no pasa nada
-> más, y según la §8 no pasará: cuando `mlops` aparezca en la §10 este evento
+> con el `extra` que le pusiste. Todavía no hay nada programado con ese asset,
+> así que no pasa nada más, y según la §8 no pasará: cuando `mlops` aparezca en la §10 este evento
 > ya será historia, y Airflow no recupera eventos pasados.
 
 Ejecutar el Dag dos veces deja el warehouse igual que ejecutarlo una: cada sync
@@ -762,8 +764,9 @@ propiedad, la **idempotencia** (§6), es lo que hace seguro `retries=2` aquí.
 Ahora que tienes un Dag con schedule, los backfills tienen sentido. Un backfill
 crea a posteriori los runs de cada franja de un rango de fechas. En Airflow un
 backfill es un objeto propio, con su API, su formulario en la UI y su política
-de reprocesado (más abajo). **Haz un dry-run primero** — un backfill con el rango de fechas equivocado es
-la forma más fácil de crear treinta runs por accidente:
+de reprocesado (`--reprocess-behavior`, más abajo). **Haz un dry-run
+primero**: un backfill con el rango de fechas equivocado es la forma más fácil
+de crear treinta runs por accidente:
 
 ```bash
 docker compose exec airflow-scheduler airflow backfill create \
@@ -776,15 +779,15 @@ franja del cron diario de `dataops`. El rango incluye sus dos extremos, pero
 `--to-date 2026-02-04` significa las 00:00 de ese día, antes de que el cron se
 dispare a las 03:00, así que el 02-04 queda fuera.
 
-Quita `--dry-run` y el mismo comando crea esos tres runs, con run ids que empiezan
-por `backfill__`. Ten claro qué viene después antes de hacerlo:
+Quita `--dry-run` y el mismo comando crea esos tres runs, con run ids que
+empiezan por `backfill__`. Ten claro qué viene después antes de hacerlo:
 
 - Los runs se crean **queued**, y si el Dag está en pausa se quedan así — la
   regla de la §7 — hasta que le quites la pausa. Entonces arrancan, como mucho
   tantos a la vez como diga la opción `--max-active-runs` de `backfill create`.
 - Cada run de backfill de `dataops` que tenga éxito emite un asset event de
-  `labeled_projects` exactamente igual que un run normal (§8), así que un `mlops`
-  sin pausa entrena detrás de ellos.
+  `labeled_projects` igual que un run normal (§8), así que un `mlops` sin
+  pausa entrena detrás de ellos.
 - Cada uno vuelve a sincronizar las dos tablas desde el origen tal como está
   *ahora*. Nada en este pipeline lee una fecha: el origen no tiene historia a
   la que volver, así que aquí un backfill repite el trabajo en vez de recuperar
@@ -795,8 +798,8 @@ por `backfill__`. Ten claro qué viene después antes de hacerlo:
   página del Dag muestra un banner *Backfill in progress* con un botón de pausa
   y otro de stop; stop lo cancela. También la API — `PUT
   /api/v2/backfills/{id}/cancel`, sin token en este stack, donde todos son
-  admin. Cancelarlo marca como `failed` los runs del backfill aún en cola. Pausar el Dag es el freno de emergencia: un Dag en pausa no arranca
-  nada.
+  admin. Cancelarlo marca como `failed` los runs del backfill aún en cola.
+  Pausar el Dag es el freno de emergencia: un Dag en pausa no arranca nada.
 
 `--reprocess-behavior` decide qué hacer con las franjas que ya tienen un run —
 `none`, `failed` o `completed` — que es la diferencia entre "rellena los huecos"

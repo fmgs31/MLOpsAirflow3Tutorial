@@ -17,9 +17,9 @@ for heavy compute inside the worker — trigger a Spark/Ray/Kubernetes job and
 track it instead. If your pipeline is three scripts run once a week, cron is
 still allowed.
 
-Four processes, the metadata database, and an executor — which, as "The executor" below
-explains, is not always a process of its own. All of it is running in your stack
-right now:
+Four processes, the metadata database and an executor, which is not always a
+process of its own ("The executor", below). All of them are running in your
+stack now:
 
 | Component | Job |
 |---|---|
@@ -30,8 +30,8 @@ right now:
 | **Executor** | Where tasks actually run. `LocalExecutor` here; Celery or Kubernetes in production |
 | **Metadata DB** | State of everything: runs, task instances, XComs, connections |
 
-That table is the whole system, but a few of those rows decide almost everything
-about how your Dags behave, and they are worth more than a row each.
+The scheduler, the executor and the metadata database decide most of how your
+Dags behave, so each gets a section of its own.
 
 ### The scheduler, and why things happen "a moment later"
 
@@ -46,17 +46,16 @@ This is why nothing in Airflow is instant, and why nothing is very slow either.
 When `dataops` publishes its asset in §10, the `mlops` run does not appear
 *because* the task finished — it appears because the next scheduler loop noticed
 the event the task recorded. With a one-second sleep between loops, that gap is
-a second at most, and you will not notice it. What you *will* notice is the time
-the upstream tasks themselves take, and that has nothing to do with the
-scheduler.
+a second at most. What you *will* notice is how long the upstream tasks take,
+which has nothing to do with the scheduler.
 
 Parsing is a separate clock, and it is the one you are about to depend on. The
 Dag processor re-parses every file, changed or not, every `[dag_processor]
 min_file_process_interval` seconds and re-scans the folder for new files every
 `refresh_interval`. This stack sets both to **5**, so a file you save shows up
 in the UI within a few seconds. The defaults are 30 and 300: on a stack that
-keeps them, a brand-new file can take five minutes to appear, which looks
-exactly like a broken Dag if you do not know the number exists.
+keeps them, a brand-new file can take five minutes to appear, which looks like
+a broken Dag if you do not know the setting exists.
 
 All three numbers are settings, and you can print yours:
 
@@ -68,21 +67,19 @@ docker compose exec airflow-scheduler airflow config get-value dag_processor ref
 
 ### The executor, and what "at the same time" means
 
-The executor is the answer to "where does this task's Python actually run". The
-scheduler loop does not run your code; it only decides *that* code should run
-and hands the task to the executor, which starts it somewhere and reports back.
-(With `LocalExecutor`, that "somewhere" is a subprocess of the scheduler's own
-process, as the next paragraph explains.)
+The executor answers "where does this task's Python run?". The scheduler loop
+does not run your code; it only decides *that* code should run and hands the
+task to the executor, which starts it somewhere and reports back.
 
 `LocalExecutor` — the one in this stack — starts each task as its **own
 subprocess on the machine running the scheduler**, using Python's
 `multiprocessing`. Real parallelism, one machine's worth of it.
 `CeleryExecutor` instead drops the task on a queue for a set of long-running
 worker machines, and `KubernetesExecutor` asks Kubernetes for a fresh pod per
-task. Swapping between them changes no Dag code at all — that is the claim in
-§1, and this is the mechanism behind it.
+task. Swapping between them changes no Dag code: this is the mechanism behind
+§1's "swap the executor, not the Dag".
 
-Which is why `docker compose ps` shows you no executor container. `LocalExecutor`
+So `docker compose ps` shows no executor container. `LocalExecutor`
 is a *component of the scheduler process*, not a service: the scheduler imports
 it and it forks children from there. Change `AIRFLOW__CORE__EXECUTOR` to
 `CeleryExecutor` and workers become real machines you deploy and scale
@@ -126,19 +123,20 @@ tasks that run two at a time instead of all at once.
 Every fact Airflow knows lives in one relational database: Dag definitions as
 parsed, every Dag run, every task instance and its state and try count, XComs,
 Connections, Variables, pools, asset events, the audit log. In this stack it is
-the `postgres` container (Postgres 16). It is Airflow's own database, not to
-be confused with the databases your tasks use. When a task reads the BigQuery
-warehouse (§9), or an application's Postgres, that is a different database,
-and the task reaches it through a Connection, a hook or the tool's own client
-(§6). The same Postgres container also holds a second database, `optuna`, for
-§10; it is a neighbour of Airflow's, not part of it. The UI is a view of the metadata database. The scheduler's loop is a query against
-it. Restart the containers and nothing is lost, because the state is in the
-metadata database's volume, not in the containers — `scripts/reset.sh` deletes
-that volume, which is why it is the last resort.
+the `postgres` container (Postgres 16). It is Airflow's own database, not one
+your tasks use: when a task reads the BigQuery warehouse (§9), or an
+application's Postgres, that is a different database, reached through a
+Connection, a hook or the tool's own client (§6). The same Postgres container
+also holds a second database, `optuna`, for §10; it sits next to Airflow's,
+and is not part of it.
 
-Two consequences follow. It is the thing to back up, and it grows forever
-unless you run `airflow db clean` (§16) — a year of runs, task instances and
-XComs does not remove itself.
+The UI is a view of the metadata database, and the scheduler's loop is a
+query against it. Restart the containers and nothing is lost, because the
+state is in the metadata database's volume, not in the containers;
+`scripts/reset.sh` deletes that volume, which is why it is the last resort.
+So the metadata database is the thing to back up, and it grows forever unless
+you run `airflow db clean` (§16): a year of runs, task instances and XComs
+does not remove itself.
 
 ### The lifecycle of one task
 
@@ -196,10 +194,10 @@ everything downstream of a failure.
 
 ### Task code never touches the metadata database
 
-The architectural point worth internalising: **task code never touches the
-metadata database.** A task talks to the Task Execution API over HTTP, which is
-what makes remote workers and the Edge executor possible — and why a task cannot
-open a session on it and query `DagRun` itself.
+A task talks to the Task Execution API over HTTP, never to the metadata
+database. That is what makes remote workers and the Edge executor possible,
+and why a task cannot open a session on the metadata database and query
+`DagRun` itself.
 
 ```bash
 curl -s localhost:8080/api/v2/monitor/health

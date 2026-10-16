@@ -12,9 +12,9 @@ fails.
 | `validate_projects`, `validate_tags`, `validate_transformed` | **Great Expectations** | checks a table against a list of rules |
 | `transform` | **dbt** | builds the training table from the two raw tables (`projects` and `tags`, as Airbyte loads them), in SQL |
 
-How the pieces talk to each other when the Dag runs. Each column is one
-system, and what is written in a column happens in that system. An arrow is
-one system calling another, or data going from one to the other:
+How the pieces talk when the Dag runs. Each column is one system, and what is
+written in a column happens in that system; an arrow is one system calling
+another, or data moving between them:
 
 ```
  Airflow (Docker)              │ Airbyte (abctl)       │ BigQuery (Google Cloud)
@@ -126,7 +126,8 @@ call them. You do this once, in order: each step checks the one before it.
    This tutorial's data is small enough that any of them works. Whichever you
    pick, the Airbyte destination you create in "2. Airbyte" needs the same
    value in its **Dataset location** field. Choose before the first sync: it
-   creates the dataset, and a dataset's location cannot change. Then recreate the containers so they read the new value:
+   creates the dataset, and a dataset's location cannot change. Then recreate
+   the containers so they read the new value:
 
    ```bash
    docker compose up -d
@@ -269,16 +270,19 @@ If it is short, where to raise it depends on how Docker runs:
 #### 3. Tell Airflow how to reach Airbyte
 
 Airflow reaches Airbyte through a Connection (§6), with the `Client-Id` and
-`Client-Secret` that `abctl local credentials` printed:
+`Client-Secret` that `abctl local credentials` printed. `my_airbyte_conn` is the
+Connection id: any name works, as long as the Dag uses the same one.
+`--conn-type airbyte` is fixed: it tells Airflow the Airbyte provider handles
+this Connection.
 
 ```bash
-docker compose exec airflow-scheduler airflow connections add airbyte \
+docker compose exec airflow-scheduler airflow connections add my_airbyte_conn \
     --conn-type airbyte \
     --conn-host http://host.docker.internal:8000/api/public/v1/ \
     --conn-login <client-id> --conn-password <client-secret>
 ```
 
-**Checkpoint.** The last line is ``Successfully added `conn_id`=airbyte``.
+**Checkpoint.** The last line is ``Successfully added `conn_id`=my_airbyte_conn``.
 Above it come many lines of warnings. Most are `DeprecatedImportWarning` and
 `SyntaxWarning`, raised while the CLI loads every provider in the image; they
 are noise. The one before the last, `empty cryptography key - values will not
@@ -289,8 +293,8 @@ Inside a container, `localhost` is the container itself;
 `host.docker.internal` is your machine. Docker Desktop defines that name, and
 the compose file's `extra_hosts` line defines it on Linux.
 
-The two connection IDs you copied in step 8 of "2. Airbyte" go in Variables (§6), so the Dag file contains no ID
-that exists only in your Airbyte:
+The two connection IDs you copied in step 8 of "2. Airbyte" go in Variables
+(§6), so the Dag file contains no ID that exists only in your Airbyte:
 
 ```bash
 docker compose exec airflow-scheduler airflow variables set airbyte_projects_connection_id <projects connection id>
@@ -302,9 +306,9 @@ docker compose exec airflow-scheduler airflow variables set airbyte_tags_connect
 **dbt** runs SQL `SELECT` statements, called **models**, and saves each result
 as a table in the warehouse. A **dbt project** is the folder dbt works from:
 the models, plus files saying how to connect and what to check. You create one
-now, in `dbt/`, the folder the compose file mounts for it. Here you write it and run it once by hand; when
-the Dag runs, its `transform` task runs the same `dbt build` (step 3 in the
-diagram at the start of §9).
+now, in `dbt/`, the folder the compose file mounts for it, and run it once by
+hand; when the Dag runs, its `transform` task runs the same `dbt build` (step 3
+in the diagram at the start of §9).
 
 dbt is installed in its own virtualenv in the image, `/opt/venvs/dbt`, because
 its dependencies pin versions that clash with Airflow's (the
@@ -451,8 +455,8 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
     --project-dir /opt/airflow/dbt/dbt_transforms --profiles-dir /opt/airflow/dbt/dbt_transforms
 ```
 
-**Checkpoint.** `Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6`: one model and
-five tests. BigQuery has a third table, `labeled_projects`, with 764 rows. Run
+**Checkpoint.** `Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6`:
+one model and five tests. BigQuery has a third table, `labeled_projects`, with 764 rows. Run
 the command again: same result, same table, because `+materialized: table`
 makes dbt replace the table on every run. A failing test makes `dbt build`
 exit with an error, which is what will fail the Dag's `transform` task.
@@ -486,8 +490,9 @@ e.ExpectTableRowCountToBeBetween(min_value=500),
 
 `validate.run_suite(df, "projects")` validates a dataframe against that suite
 and returns a result with `.passed`, `.failures`, `.results`, `.suite` and a
-`.summary()` line. (GX also has Airflow operators, but at the time of writing
-(October 2026) their package cannot be installed next to Airflow 3.3.1, so the tasks call GX directly.)
+`.summary()` line. (GX also has Airflow operators, but as of October 2026 their
+package cannot be installed next to Airflow 3.3.1, so the tasks call GX
+directly.)
 
 Each expectation is *critical* unless marked otherwise. A failed critical
 expectation fails the suite; a failed non-critical one is only reported. The
@@ -519,7 +524,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, validate
-from project_tagger.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
+from project_tagger_orchestration.assets import LABELED_PROJECTS, RAW_PROJECTS, RAW_TAGS
 
 DEFAULT_ARGS = {
     "owner": "data-engineering",
@@ -545,9 +550,9 @@ def dataops():
 from the standard one (§6); the image installs the Airbyte and Google
 providers (`requirements-image.txt`). `AirflowFailException` and
 `OutletEventAccessorsProtocol`, the type of `outlet_events` (§8), come from the
-Task SDK (§4). `from project_tagger import …` works because the compose file
-puts `/opt/airflow/src` on every service's `PYTHONPATH`: the Dag processor
-needs it to parse the file, and the processes that run tasks need it too.
+Task SDK (§4). The `project_tagger_orchestration` and `project_tagger` imports
+work as in §8, both when the Dag processor parses the file and when a task
+runs.
 
 `max_active_runs=1` caps the Dag at one run at a time; a second run waits in
 `queued` until the first is done.
@@ -560,7 +565,7 @@ worker slot (§11 covers deferral in full). Add them inside `dataops()`:
 ```python dags/03_dataops.py
     extract_and_load_projects = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_projects",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_projects_connection_id }}",
         deferrable=True,
         timeout=3600,
@@ -568,7 +573,7 @@ worker slot (§11 covers deferral in full). Add them inside `dataops()`:
     )
     extract_and_load_tags = AirbyteTriggerSyncOperator(
         task_id="extract_and_load_tags",
-        airbyte_conn_id="airbyte",
+        airbyte_conn_id="my_airbyte_conn",
         connection_id="{{ var.value.airbyte_tags_connection_id }}",
         deferrable=True,
         timeout=3600,
@@ -576,10 +581,10 @@ worker slot (§11 covers deferral in full). Add them inside `dataops()`:
     )
 ```
 
-`airbyte_conn_id` names the `airbyte` Connection you added with
-`airflow connections add`. `connection_id` is the
-Airbyte connection to sync, read from a Variable by a template (§6), rendered
-when the task runs. A failed sync fails the task. Each task's outlet is a raw
+`airbyte_conn_id` names the `my_airbyte_conn` Connection you added with
+`airflow connections add`. `connection_id` is the Airbyte connection to sync,
+read from a Variable by a template (§6) when the task runs. A failed sync fails
+the task. Each task's outlet is a raw
 table's asset (§8); no Dag is scheduled on those, because raw data has not
 been checked yet.
 
@@ -676,7 +681,9 @@ No data passes from the Airbyte tasks to the gates, or from the gates to
 `transform`: each reads the warehouse itself. So those edges are drawn with
 `>>` (§6). `[projects_report, tags_report] >> transform` is a **fan-in**:
 `transform` joins the two tables, so it waits for both gates. `quality_report`
-receives the three results as arguments, and that data flow draws its edges.
+receives the three results as arguments, and that data flow alone draws the
+edges from `validate_projects`, `validate_tags` and `validate_transformed` into
+`quality_report`, with no `>>`.
 
 ### See the assets appear
 
@@ -689,9 +696,9 @@ docker compose exec airflow-scheduler airflow assets list -o plain
 
 **Checkpoint.** Three rows, `labeled_projects`, `raw_projects` and `raw_tags`,
 each with a URI such as `bigquery://mlops-tutorial-123456/mlops_course/projects`:
-the table that asset stands for. Nothing has run; parsing a file with `outlets=` was
-enough. `production_model`, also in `assets.py`, is missing because no Dag
-refers to it yet. The Assets page shows the three, produced by `dataops`, with
+the table that asset stands for. Nothing has run; parsing a file with
+`outlets=` was enough. `production_model`, also in `assets.py`, is missing
+because no Dag refers to it yet. The Assets page shows the three, produced by `dataops`, with
 no consumer.
 
 ### Run it
@@ -716,7 +723,7 @@ Airbyte works.
 
 A failed task? Compare with [`solutions/03_dataops.py`](../../solutions/03_dataops.py).
 A failed Airbyte task usually means a wrong Connection or Variable: check with
-`airflow connections get airbyte` and `airflow variables list`.
+`airflow connections get my_airbyte_conn` and `airflow variables list`.
 
 > **`airflow dags test` is not a dry run.** Airbyte re-synced both tables, dbt
 > rebuilt `labeled_projects`, and a real `labeled_projects` asset event is in
@@ -734,9 +741,8 @@ property, **idempotence** (§6), is what makes `retries=2` safe here.
 Now that you have a Dag with a schedule, backfills make sense. A backfill
 creates the runs for every slice in a date range, after the fact. In Airflow a
 backfill is an object of its own, with its own API, UI form and reprocess
-policy (further down).
-**Dry-run it first** — a backfill over the wrong date range is the easiest way
-to create thirty runs by accident:
+policy (`--reprocess-behavior`, below). **Dry-run it first**: a backfill over
+the wrong date range is the easiest way to create thirty runs by accident:
 
 ```bash
 docker compose exec airflow-scheduler airflow backfill create \
@@ -756,8 +762,7 @@ beginning `backfill__`. Know what follows before you do it:
   — the §7 rule — until you un-pause it. Then they start, at most as many at
   a time as `backfill create`'s `--max-active-runs` option says.
 - Every `dataops` backfill run that succeeds emits a `labeled_projects` asset
-  event exactly as a normal run does (§8), so an un-paused `mlops` trains after
-  them.
+  event as a normal run does (§8), so an un-paused `mlops` trains after them.
 - Each of them re-syncs both tables from the source as it is *now*. Nothing in
   this pipeline reads a date: the source has no history to go back to, so a
   backfill here re-runs the work rather than recovering past data. A pipeline
@@ -767,8 +772,8 @@ beginning `backfill__`. Know what follows before you do it:
   Dag's page shows a *Backfill in progress* banner with a pause and a stop
   button; stop cancels it. So does the API — `PUT
   /api/v2/backfills/{id}/cancel`, no token needed on this all-admins stack.
-  Cancelling marks the backfill's still-queued runs `failed`. Pausing the Dag is the emergency
-  brake: a paused Dag starts nothing.
+  Cancelling marks the backfill's still-queued runs `failed`. Pausing the Dag
+  is the emergency brake: a paused Dag starts nothing.
 
 `--reprocess-behavior` decides what to do with slices that already have a run —
 `none`, `failed` or `completed` — which is the difference between "fill the

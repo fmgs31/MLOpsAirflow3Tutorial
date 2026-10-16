@@ -85,7 +85,7 @@ WHERE tag IS NULL
 ORDER BY created_on
 ```
 
-191 rows, all dated 2021: exactly the new batch. And `tags` did not grow:
+191 rows, all dated 2021: the new batch. And `tags` did not grow:
 
 ```sql
 SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
@@ -303,8 +303,9 @@ it learns four classes, and every other tag becomes `other` (§10). The
 `f1 at promotion=… now=…` line, logged before `decide`, agrees: no drop, so
 the model is as good on the new projects as on the old ones. Retraining would
 fix nothing. The fix is to give the old rows the new vocabulary, in the
-transform, so the history and the new data use the same labels. In `labeled_projects.sql`, replace the last
-column, `t.tag`, so that the model reads:
+transform, so the history and the new data use the same labels. In
+`labeled_projects.sql`, replace the last column, `t.tag`, so that the model
+reads:
 
 ```sql
 SELECT

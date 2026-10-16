@@ -27,12 +27,12 @@ cuenta.
 **Optuna** busca hiperparámetros. Un **study** es una búsqueda, con un objetivo
 (aquí: maximizar el f1). Un **trial** es un intento: Optuna elige un valor para
 cada hiperparámetro, el código entrena y puntúa un modelo con ellos, y la
-puntuación se guarda en el study. Optuna no prueba todas las combinaciones: usa las
-puntuaciones obtenidas hasta el momento para elegir los siguientes valores. El
-study se guarda en
-una base de datos, aquí la base de datos `optuna` del Postgres del stack, así
-que varios procesos pueden añadir trials al mismo study a la vez. Eso es lo
-que permite a Airflow repartir la búsqueda entre varias tasks.
+puntuación se guarda en el study. Optuna no prueba todas las combinaciones:
+usa las puntuaciones obtenidas hasta el momento para elegir los siguientes
+valores. El study se guarda en una base de datos, aquí la base de datos
+`optuna` del Postgres del stack, así que varios procesos pueden añadir trials
+al mismo study a la vez, y eso es lo que permite a Airflow repartir la
+búsqueda entre varias tasks.
 
 **MLflow** registra experimentos. Cada entrenamiento es un **run**, con sus
 **parameters** (los hiperparámetros usados), sus **metrics** (f1,
@@ -99,8 +99,9 @@ sube con el run final.
 Funciones nuevas de la carga de trabajo: `data.save_snapshot(df, key)` escribe
 un dataframe en `data/snapshots/<key>/` y `data.load_snapshot(fp)` lo vuelve a
 leer; `data.preprocess(df)` limpia el texto y agrupa en `other` todo tag fuera
-de las cuatro clases que aprende el modelo (`config.ACCEPTED_TAGS`); `data.split(df)` devuelve un par `(train, test)` con la misma
-proporción de cada tag en los dos; `validate.check_split(train, test)` es una
+de las cuatro clases que aprende el modelo (`config.ACCEPTED_TAGS`);
+`data.split(df)` devuelve un par `(train, test)` con la misma proporción de
+cada tag en los dos; `validate.check_split(train, test)` es una
 segunda suite, sobre el split. En `train_module` (`train.py`): `create_study`,
 `run_trials`, `best_trial` y `train_model`. En `registry`: `register`,
 `load_metrics`, `get_production` y `promote`. `config.MIN_F1_TO_PROMOTE` es el
@@ -124,7 +125,7 @@ from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, registry, train as train_module, validate
-from project_tagger.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -225,8 +226,8 @@ suite a nivel de tabla no puede hacer. Mira el **split**:
 Cada problema de esos comentarios — una clase solo en train, tres filas de una
 clase, el mismo proyecto en los dos splits — supera una suite a nivel de columna
 sin ningún aviso, y aun así produce un modelo cuyo f1 sobre el conjunto de test
-no significa nada. Ese f1 es exactamente lo que `promotion_gate`, más adelante
-en esta sección, compara con el modelo en producción. Estas comprobaciones
+no significa nada. Ese f1 es lo que `promotion_gate`, más adelante en esta
+sección, compara con el modelo en producción. Estas comprobaciones
 abarcan dos dataframes, algo que una suite de GX no puede expresar (valida un
 lote de datos cada vez), así que son Python normal, con resultados en el mismo
 formato.
@@ -263,9 +264,9 @@ elemento de una lista, y cada una añade trials al mismo study. Cuatro tasks:
 una task reintentada carga el study en vez de fallar porque ya existe.
 
 `trial_budget` lee los params del Dag a través de la clave de contexto `params`
-y reparte los trials entre `n_workers` tasks: 20 entre 4 da `[5, 5, 5, 5]`. Al
-conectar las tasks, más abajo, `run_trials.partial(...).expand(n_trials=trial_budget())`
-crea una instancia de `run_trials` por cada elemento de esa lista, cuando corre
+y reparte los trials entre `n_workers` tasks: 20 entre 4 da `[5, 5, 5, 5]`.
+Al conectar las tasks, más abajo,
+`run_trials.partial(...).expand(n_trials=trial_budget())` crea una instancia de `run_trials` por cada elemento de esa lista, cuando corre
 el Dag. Cada instancia se reintenta, tiene su propio log y se inspecciona por
 separado. `.partial()` recibe los argumentos que comparten todas las
 instancias; `.expand()`, el que cambia en cada una.
@@ -280,12 +281,12 @@ de las instancias mapeadas: ese argumento es lo que la obliga a esperar a todas
 las instancias de `run_trials`, y llega como una lista, un elemento por
 instancia.
 
-**Cuántas instancias de `run_trials` corren a la vez es una decisión, y está escrita en el
-decorador de `run_trials`.** Nada en `.expand()` dice "en paralelo"; dice "estas son cuatro task
-instances separadas". Que se solapen o no es asunto del executor, acotado por el
-más restrictivo de los límites de la §3 — y `max_active_tis_per_dag=2` en esa task es
-deliberadamente el más restrictivo aquí. Así que el fan-out corre **de dos en dos,
-en dos oleadas**. Sube el tope y las cuatro se solapan; quítalo y `[core]
+**Cuántas instancias de `run_trials` corren a la vez es una decisión, escrita
+en el decorador de `run_trials`.** Nada en `.expand()` dice "en paralelo";
+dice "estas son cuatro task instances separadas". Que se solapen o no es
+asunto del executor, acotado por el más restrictivo de los límites de la §3, y
+`max_active_tis_per_dag=2` en esa task es deliberadamente el más restrictivo
+aquí. Así que el fan-out corre **de dos en dos, en dos oleadas**. Sube el tope y las cuatro se solapan; quítalo y `[core]
 max_active_tasks_per_dag` (16) es el siguiente límite. Un tope en una task de
 entrenamiento no es un ajuste de juguete: cuatro instancias a la vez son cuatro
 copias de los datos en memoria. Cuando el recurso limitado es compartido
@@ -380,10 +381,10 @@ apunta el `schedule` de un Dag hacia él y la arista aparece en el grafo de
 Assets.
 
 Las **trigger rules** son la forma en que una task declara qué tienen que haber
-hecho sus tasks aguas arriba antes de que ella corra, y el
-branching es donde necesitas una por primera vez. El join, `done`, necesita
-`none_failed_min_one_success`, porque el `all_success` por defecto lo saltaría en
-cuanto cualquiera de las ramas quedara skipped. Las útiles: `all_success` (por
+hecho sus tasks aguas arriba antes de que ella corra, y el branching es donde
+necesitas una por primera vez. El join, `done`, necesita
+`none_failed_min_one_success`, porque el `all_success` por defecto lo saltaría
+en cuanto cualquiera de las ramas quedara skipped. Las útiles: `all_success` (por
 defecto), `all_done` (corre pasara lo que pasara aguas arriba — tasks de
 limpieza), `none_failed_min_one_success` (joins después de un branch),
 `none_failed` (permite skips pero no fallos), `one_success`, `one_failed`
@@ -432,8 +433,8 @@ scheduled_dags    [{'dag_id': 'mlops', ...}]
 producing_tasks   [{'dag_id': 'dataops', 'task_id': 'validate_transformed', ...}]
 ```
 
-`producing_tasks` nombra la task exacta que lo emite; `scheduled_dags` nombra qué
-arrancará cuando lo haga. Ninguno de los dos Dags menciona al otro en ninguna
+`producing_tasks` nombra la task exacta que lo emite; `scheduled_dags` nombra
+qué arrancará cuando lo haga. Ninguno de los dos Dags menciona al otro en ninguna
 parte. La página Assets dibuja ahora el grafo entero, `dataops →
 labeled_projects → mlops → production_model`.
 
@@ -458,10 +459,10 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
 Con la primera línea no pasa nada: el schedule de `mlops` es un asset, y no ha
-llegado ningún evento. La segunda línea basta para arrancarlo todo, y no has disparado
-nada — es la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025,
-así que en el momento en que se le quita la pausa el scheduler crea el run de
-las 03:00 UTC más recientes que se perdió, y lo arranca. Espera unos minutos, y
+llegado ningún evento. La segunda línea lo arranca todo sin ningún trigger,
+por la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025, así
+que en el momento en que se le quita la pausa el scheduler crea el run de las
+03:00 UTC más recientes que se perdió, y lo arranca. Espera unos minutos, y
 luego:
 
 ```bash
@@ -475,26 +476,26 @@ termina en `T03:00:00+00:00` — la fecha de hoy, o la de ayer si aún no son la
 (El run `manual__` del `airflow dags test` de la §9 también está.) Y `mlops` tiene
 un run que nadie disparó: id que empieza por `asset_triggered__`, `running` si
 has sido rápido, `success` en cuanto terminen sus trials y el modelo final, con
-una `logical_date` **vacía** — los runs disparados por asset no tienen logical
-date, igual que un run disparado desde la CLI sin ella (§7). En la UI, abre **Assets** y verás
-la arista que lo causó.
+una `logical_date` **vacía**: los runs disparados por asset no tienen logical
+date, igual que un run disparado desde la CLI sin ella (§7). En la UI,
+**Assets** muestra la arista que lo causó.
 
 Ten claro de dónde viene la espera. Casi toda la ponen las herramientas: los
 dos syncs de Airbyte en `dataops`, y luego veinte trials y un entrenamiento
-final en `mlops`. La parte de Airflow es pequeña: un bucle del scheduler para crear el
-run de `dataops` tras quitar la pausa, y uno más para crear el run de `mlops`
+final en `mlops`. La parte de Airflow es pequeña: un bucle del scheduler para
+crear el run de `dataops` tras quitar la pausa, y uno más para crear el run de `mlops`
 cuando se registra el asset event (§3, §8). Si tras unos minutos no ha aparecido
 nada, comprueba que ambos Dags están sin pausa y que el run de `dataops` tuvo
 éxito — un `validate_transformed` fallido no emite evento, por diseño.
 
-Ahora las dos oleadas de `run_trials`. Abre ese run de `mlops` en la UI, haz clic en
-`run_trials` y lee su pestaña **Task Instances** — cuatro filas, map index
-del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan juntas; cada una de
-las otras dos arranca solo cuando ha terminado una del primer par. La vista *Show
-Gantt* (§5), disponible ahora que hay un run seleccionado, dibuja lo mismo como
-dos oleadas de barras. En el **Graph**, las cuatro
-son un único nodo colapsado hasta que subes el filtro **Min. map index** (§5). O
-léelo desde la CLI:
+Ahora las dos oleadas de `run_trials`. Abre ese run de `mlops` en la UI, haz
+clic en `run_trials` y lee su pestaña **Task Instances**: cuatro filas, map
+index del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan
+juntas; cada una de las otras dos arranca solo cuando ha terminado una del
+primer par. La vista *Show Gantt* (§5), disponible ahora que hay un run
+seleccionado, dibuja lo mismo como dos oleadas de barras. En el **Graph**, las
+cuatro son un único nodo colapsado hasta que subes el filtro **Min. map
+index** (§5). O léelo desde la CLI:
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain
@@ -532,16 +533,16 @@ con el alias `champion`.
 > `promotion_gate` lo dice.
 
 > **Pruébalo: la otra rama.** Pon el listón imposiblemente alto y mira cómo
-> `promotion_gate` elige la rama de `keep_current_model`. El umbral se lee de una variable de entorno dentro
-> del proceso de la propia task, y `airflow dags test` ejecuta las tasks en su
+> `promotion_gate` elige la rama de `keep_current_model`. El umbral se lee de
+> una variable de entorno dentro del proceso de la propia task, y `airflow dags test` ejecuta las tasks en su
 > propio proceso, así que pásale la variable a ese comando con `-e`:
 >
 > ```bash
 > docker compose exec -e PROJECT_TAGGER_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
 > ```
 >
-> `promotion_gate` escribe en el log `below threshold 0.99 - not promoting`, `promote_model`
-> queda skipped, `keep_current_model` corre, y el Dag run termina en success
+> `promotion_gate` escribe en el log `below threshold 0.99 - not promoting`,
+> `promote_model` queda skipped, `keep_current_model` corre, y el Dag run termina en success
 > igualmente. En MLflow la versión nueva queda registrada, y `champion` no se
 > ha movido.
 

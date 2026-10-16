@@ -74,8 +74,11 @@ Material de referencia: [CLI cheatsheet](docs/cheatsheet.md) ·
 
 ```
 dags/                       your workspace - empty until you write the seven Dags
+                            and the package they share (§8),
+                            project_tagger_orchestration/
 dbt/                        your dbt workspace - empty until you create the dbt project (§9)
-solutions/                  the finished version of each Dag, and of the dbt project
+solutions/                  the finished version of each Dag, of
+                            project_tagger_orchestration/, and of the dbt project
 src/project_tagger/         the ML project Airflow orchestrates (imports no Airflow)
   config.py                 names and settings: tables, MLflow, Optuna, thresholds
   data.py                   read the warehouse, snapshots, preprocessing, split
@@ -84,7 +87,6 @@ src/project_tagger/         the ML project Airflow orchestrates (imports no Airf
   registry.py               MLflow model registry: register, promote, roll back
   monitoring.py  drift.py   drift windows, alibi-detect tests, live performance
   predict.py                inference against the promoted model
-  assets.py                 the Airflow Assets the Dags share
   callbacks.py              deadline-alert callbacks
 datasets/                   the source CSVs Airbyte loads, and the later batch (§14)
 secrets/                    where your GCP key goes (ignored by git)

@@ -24,14 +24,15 @@ logical date escrita como texto: `2026-09-10`, `2026-09-10T00:00:00+00:00`,
 Las dos `start_date` solo comparten el nombre. La del run la registra Airflow
 cuando ese run arranca, y es distinta en cada run. La del Dag es un argumento
 que escribes tú (§4), es la misma para todos los runs y fija desde cuándo hay
-runs; se explica más abajo en la §7.
+runs; se explica más abajo.
 
 Con un string cron normal, como el `"0 3 * * *"` que usa `dataops`, no hay un
 periodo que esperar: el run es "el run de las 03:00", así que las cuatro
 primeras fechas de la tabla son las 03:00, y solo la `start_date` del run puede
 ser posterior. Por eso normalmente parecen una sola fecha.
 
-Los dos Dags que has escrito hasta ahora tienen `schedule=None`. Los otros valores:
+Los dos Dags que has escrito hasta ahora tienen `schedule=None`. Los otros
+valores:
 
 ```python
 schedule=None                       # manual / API only
@@ -59,7 +60,7 @@ timetable, y hay dos tipos:
   timezone="UTC")`, importado de `airflow.sdk` — delimita periodos reales. Es
   el que hay detrás de la tabla del principio de la §7. Usa este tipo cuando
   una task tenga que procesar "los datos de ayer", porque el intervalo le dice
-  exactamente qué día es ese.
+  qué día es ese.
 
 La `start_date` del Dag marca dónde empiezan las franjas: nunca se programa un
 run para una franja anterior. Solo afecta a los runs que crea el scheduler; un
@@ -71,15 +72,14 @@ muy poco: menos de una décima parte del intervalo, con un mínimo de cinco
 minutos (2,4 horas en un schedule diario). Un schedule `timedelta` arranca en
 cuanto le quitas la pausa.
 
-Tres cosas sobre scheduling que se deducen de lo anterior y que te ahorrarán una
-tarde de depuración:
+Tres cosas sobre scheduling que te ahorrarán una tarde de depuración:
 
-**`catchup` es `False` por defecto** (`[scheduler] catchup_by_default`), y
-conviene saber exactamente qué significa eso al quitar la pausa a un Dag. Quitar la pausa a un Dag con cron y un
-`start_date` de 2025 no crea un run por cada franja desde entonces. Crea **uno**,
-para la franja más reciente que el cron ya ha dejado atrás — si ahora es más tarde
-de las 03:00, las de hoy; si es más temprano, las de ayer — y lo crea inmediatamente, porque esa franja
-ya debería haberse ejecutado. A partir de ahí, uno por franja a medida que les
+**`catchup` es `False` por defecto** (`[scheduler] catchup_by_default`).
+Quitar la pausa a un Dag con cron y un `start_date` de 2025 no crea un run por
+cada franja desde entonces. Crea **uno**, para la franja más reciente que el
+cron ya ha dejado atrás (la de hoy si ahora es más tarde de las 03:00, la de
+ayer si es más temprano), y lo crea inmediatamente, porque esa franja ya
+debería haberse ejecutado. A partir de ahí, uno por franja a medida que les
 llega la hora. Lo verás en la §10: quitar la pausa a `dataops` basta para
 arrancarlo. Si *quieres* el histórico, pídelo con `catchup=True` — o haz un
 backfill solo del rango que necesitas (§9).
@@ -91,14 +91,14 @@ merece la pena mirar la pestaña **Calendar** del Dag y la columna **Next Run**
 de la lista de Dags después de escribir uno.
 
 **`logical_date` puede estar vacía.** Es la fecha que da nombre al run, y en un
-run programado sale de su franja. Un run disparado por un asset no corresponde a ninguna franja
-y no tiene logical date, y tampoco la tiene un run disparado desde la CLI o la
-REST API sin indicarla. El formulario de Trigger de la UI es la excepción:
-rellena la logical date con la hora actual, así que un run disparado desde el
-formulario tiene una salvo que vacíes el campo. Así se verá la lista de runs de
-`mlops` en la §10, con un run de cada tipo — el manual, disparado desde el
-formulario — y solo las columnas que importan aquí. El run disparado por el asset deja vacía
-la columna `logical_date`:
+run programado sale de su franja. Un run disparado por un asset no corresponde
+a ninguna franja y no tiene logical date, y tampoco la tiene un run disparado
+desde la CLI o la REST API sin indicarla. El formulario de Trigger de la UI es
+la excepción: rellena la logical date con la hora actual, así que un run
+disparado desde el formulario tiene una salvo que vacíes el campo. En la §10,
+`mlops` tiene un run de cada tipo, el manual disparado desde el formulario; su
+lista de runs, con solo las columnas que importan aquí, muestra el run
+disparado por el asset con la `logical_date` vacía:
 
 ```bash
 $ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
@@ -110,9 +110,10 @@ mlops   manual__2026-09-09T08:22:31+00:00           success  2026-09-09T08:22:32
 Usa `run_after` cuando quieras decir "cuándo le tocaba arrancar a este run":
 todo run lo tiene, con logical date o sin ella.
 
-> **La trampa que conviene conocer antes de disparar nada:** un run disparado
-> desde la CLI o la REST API **no tiene logical date** salvo que se la des, así que `logical_date` falta en el task context y `ds`,
-> `ts` y compañía están *undefined* en las plantillas. Ambas fallan en tiempo de
+> **La trampa, antes de disparar nada:** un run disparado desde la CLI o la
+> REST API **no tiene logical date** salvo que se la des, así que
+> `logical_date` falta en el task context y `ds`, `ts` y compañía están
+> *undefined* en las plantillas. Ambas fallan en tiempo de
 > ejecución, y ninguna falla bajo `airflow dags test`, que siempre aporta una
 > logical date:
 >
@@ -132,9 +133,9 @@ todo run lo tiene, con logical date o sin ella.
 ### Runs manuales
 
 Un schedule no es la única forma de arrancar un Dag. `airflow dags trigger` crea
-un run en el momento, sin esperar a ningún schedule. `hello_airflow3` es el Dag
-con el que probarlo; antes necesita `unpause`, y qué hace la pausa se explica
-después de las opciones de `trigger`:
+un run en el momento, sin esperar a ningún schedule. Pruébalo con
+`hello_airflow3`; antes necesita `unpause`, por la razón que se explica después
+de las opciones de `trigger`:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause hello_airflow3
@@ -174,18 +175,17 @@ hello_airflow3  demo    queued  2026-09-09T12:19:29.483234+00:00                
 docker compose exec airflow-scheduler airflow dags unpause hello_airflow3     # ahora arranca
 ```
 
-**Comprobación.** Ejecuta esos cuatro comandos tú mismo contra `hello_airflow3`.
-Mientras el Dag está en pausa el run está `queued` y ahí se queda por mucho que
-esperes — el scheduler lo ve en cada iteración del bucle y lo omite a propósito. Ejecuta
-`list-runs` otra vez poco después del `unpause`: muestra el mismo `run_id` como
-`success`, y su
-`start_date` — la del run, el momento en que arrancó de verdad, no la
-`start_date` del Dag de antes en la §7 — es posterior a su `run_after`: arrancó
+**Comprobación.** Ejecuta esos cuatro comandos tú mismo contra
+`hello_airflow3`. Mientras el Dag está en pausa el run está `queued` y ahí se
+queda por mucho que esperes: el scheduler lo ve en cada iteración del bucle y
+lo omite a propósito. Ejecuta `list-runs` otra vez poco después del `unpause`:
+muestra el mismo `run_id` como `success`, y su `start_date` (la del run, el
+momento en que arrancó, no la del Dag) es posterior a su `run_after`: arrancó
 cuando quitaste la pausa, no cuando lo disparaste. No se perdió nada y nada te
-avisó; simplemente estaba retenido.
+avisó; el run quedó retenido.
 
 El formulario de trigger de la UI tiene una casilla *"Unpause … on trigger"*
-precisamente para esto.
+para esto.
 
 Además de `airflow dags trigger` y el botón **Trigger** de la UI, hay dos formas
 más de arrancar un run. La REST API hace lo mismo que `trigger`, por HTTP —
