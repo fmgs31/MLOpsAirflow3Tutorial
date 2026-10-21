@@ -165,6 +165,33 @@ The SQL is not in that package: it is the dbt project you create in §9, in
 `dbt/`. Nor are the Airflow Assets the Dags share: they are orchestration, and
 you write them next to the Dags, in §8.
 
+### What changes from Made With ML's lesson
+
+This tutorial starts from Made With ML's
+[orchestration lesson](https://madewithml.com/courses/mlops/orchestration/):
+the same project, the same starting data and the same tools. What makes it
+different:
+
+- **Airflow 3.** All the code is written for Airflow 3.3.1; the original uses
+  an earlier version.
+- **Made to run, not just to read.** You write the seven Dags yourself, step
+  by step, on a Docker stack you start with one command, with solutions and
+  tests to check what you wrote. Every command has been run against a real
+  stack.
+- **A pipeline that starts itself.** New data starts training through an
+  asset, with no manual triggers (§8).
+- **The full MLOps cycle.** The model is evaluated, compared with the one in
+  production, approved by a person and promoted in MLflow (§10).
+- **Continual learning, implemented.** The original only describes it; here a
+  Dag measures drift and decides whether to continue, retrain, inspect or
+  roll back (§12).
+- **Data that changes and data that breaks.** arXiv papers that cause real
+  drift (§12), and deliveries with the failures of a real load (§14).
+- **New sections:** Airflow's components and UI (§3, §5), scheduling and
+  assets (§7, §8), sensors and events (§11), deadline alerts (§13), what to do
+  when the data goes wrong (§14), testing Dags (§15) and taking it to
+  production (§16).
+
 ---
 
 [Index](README.md) · [2. Get it running](02-get-it-running.md) →
