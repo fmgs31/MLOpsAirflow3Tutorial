@@ -157,19 +157,19 @@ def objective(trial, train_df: pd.DataFrame, val_df: pd.DataFrame, study_name: s
     return metrics["f1"]
 
 
-def run_trials(study_name: str, n_trials: int, train_df: pd.DataFrame) -> list[dict[str, Any]]:
-    """Run `n_trials` of an existing study.
+def run_trials(
+    study_name: str, n_trials: int, train_df: pd.DataFrame, val_df: pd.DataFrame
+) -> list[dict[str, Any]]:
+    """Run `n_trials` of an existing study, fitting on `train_df` and scoring on `val_df`.
 
-    The test split is never seen here: trials are scored on a validation split
-    carved out of the training data, so the test score of the final model is
-    still an honest estimate.
+    The test split is never seen here: trials are scored on the validation
+    split, so the test score of the final model is still an honest estimate.
     """
     import optuna
 
-    fit_df, val_df = data_module.split(train_df, test_size=0.2)
     study = optuna.load_study(study_name=study_name, storage=config.OPTUNA_STORAGE)
     before = {t.number for t in study.trials}
-    study.optimize(lambda t: objective(t, fit_df, val_df, study_name), n_trials=n_trials)
+    study.optimize(lambda t: objective(t, train_df, val_df, study_name), n_trials=n_trials)
     return [
         {"number": t.number, "f1": t.value, "params": t.params}
         for t in study.trials
@@ -203,29 +203,88 @@ def best_trial(study_name: str) -> dict[str, Any]:
 
 def train_model(
     params: dict[str, Any],
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
+    splits: dict[str, pd.DataFrame],
     run_name: str,
     tags: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Fit the final model and log it - params, metrics, metrics.json and the model - to MLflow."""
+    """Fit the final model on train + val, score it on test, and log it to MLflow.
+
+    The run gets the params, the metrics, `metrics.json`, the model, and
+    `split_ids.json`: which project ids were in each split. Monitoring reads
+    that file to know which rows the model has never seen, and it stays with
+    the run in MLflow when the snapshot files are long gone.
+    """
     mlflow = setup_mlflow()
     import mlflow.sklearn
 
+    # More data for the final model: the validation split has done its job.
+    train_df = pd.concat([splits["train"], splits["val"]], ignore_index=True)
     with mlflow.start_run(run_name=run_name) as run:
-        model, metrics = fit(train_df, test_df, params)
+        model, metrics = fit(train_df, splits["test"], params)
         mlflow.set_tags({"kind": "final", **(tags or {})})
         mlflow.log_params(metrics["params"])
         mlflow.log_metrics(flat_metrics(metrics))
         # The full nested metrics, for the evaluation and monitoring steps.
         mlflow.log_dict(metrics, "metrics.json")
+        mlflow.log_dict({name: df["id"].tolist() for name, df in splits.items()}, "split_ids.json")
         with quiet_skops():
             info = mlflow.sklearn.log_model(model, name="model")
     return {"run_id": run.info.run_id, "model_uri": info.model_uri, "metrics": metrics}
 
 
+def should_promote(
+    f1: float, comparison: dict[str, Any] | None, threshold: float, min_new_rows: int
+) -> tuple[bool, str]:
+    """The promotion rule. Returns the decision and why.
+
+    `f1`, the new model's on the whole test split, must clear the threshold.
+    Against a champion, `comparison` (evaluate.compare) holds both models' f1
+    on the same test rows. The `new` rows, which the champion has never seen,
+    are the closest thing to what production gets next, so they decide: the
+    new model must not score below the champion on them. The `old` rows, the
+    champion's own test rows, are a guardrail: the new model may score lower
+    on them, but not by more than chance explains - the interval of the
+    difference must reach 0. With fewer than `min_new_rows` new rows there is
+    too little to decide on, and the whole split decides.
+    """
+    if f1 < threshold:
+        return False, f"f1={f1:.4f} below threshold {threshold} - not promoting"
+    if comparison is None:
+        return True, f"f1={f1:.4f} clears threshold {threshold} and no champion - promoting"
+
+    new, old = comparison["new"], comparison["old"]
+    if new["rows"] < min_new_rows:
+        rows = comparison["all"]
+        if rows["f1"] < rows["champion_f1"]:
+            return False, (
+                f"f1={rows['f1']:.4f} below the champion's {rows['champion_f1']:.4f} "
+                f"on the same {rows['rows']} test rows - not promoting"
+            )
+        return True, (
+            f"f1={rows['f1']:.4f} clears threshold {threshold} and the champion's "
+            f"{rows['champion_f1']:.4f} on the same {rows['rows']} test rows - promoting"
+        )
+
+    if new["f1"] < new["champion_f1"]:
+        return False, (
+            f"f1={new['f1']:.4f} below the champion's {new['champion_f1']:.4f} "
+            f"on the {new['rows']} new test rows - not promoting"
+        )
+    if old["rows"] and old["difference"][1] < 0:
+        low, high = old["difference"]
+        return False, (
+            f"f1={old['f1']:.4f} on the {old['rows']} old test rows, below the champion's "
+            f"{old['champion_f1']:.4f} by more than chance (difference {low:+.4f} to {high:+.4f}) - not promoting"
+        )
+    return True, (
+        f"f1={new['f1']:.4f} clears the champion's {new['champion_f1']:.4f} on the {new['rows']} "
+        f"new test rows, and holds on the {old['rows']} old ones - promoting"
+    )
+
+
 if __name__ == "__main__":
     # A quick fit on the warehouse table, outside any Dag and without tracking.
     df = data_module.preprocess(data_module.load_labeled())
-    _, metrics = fit(*data_module.split(df))
+    parts = data_module.assign_split(df["id"])
+    _, metrics = fit(df[parts != "test"], df[parts == "test"])
     print(f"f1={metrics['f1']:.4f} accuracy={metrics['accuracy']:.4f}")

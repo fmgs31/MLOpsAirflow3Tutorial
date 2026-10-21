@@ -126,6 +126,12 @@ Hay seis tags. Los tres más raros (`reinforcement-learning`,
 ellos, así que el modelo los ve como una sola clase, `other`, junto a
 `natural-language-processing`, `computer-vision` y `mlops`.
 
+Dos entregas posteriores los amplían. En la §12, 800 papers de arXiv de
+2025–2026, extraídos para este tutorial: datos más nuevos y de otro origen son
+lo que hace que el drift le cueste f1 al modelo en producción, y que
+reentrenar lo recupere. En la §14, 191 proyectos más de Made With ML, que
+llegan con problemas.
+
 **El modelo** lee el título y la descripción de un proyecto y predice su tag.
 Es un clasificador de texto de scikit-learn (features TF-IDF y un clasificador
 lineal SGD) que entrena en más o menos un segundo, así que una búsqueda sobre
@@ -145,17 +151,17 @@ el texto que le des:
 ```
 
 **El drift** es que los datos cambien por debajo del modelo en producción. El
-Dag `monitoring` (§12) compara el cuarto más reciente de los proyectos, por
-fecha de alta, con los anteriores: si ha cambiado la proporción de cada tag, si
-ha aparecido un tag que los proyectos anteriores no tienen, si el modelo en
-producción sigue puntuando igual de bien.
+Dag `monitoring` (§12) compara los proyectos que llegaron después de entrenar
+el modelo en producción con aquellos de los que aprendió: si ha cambiado la
+proporción de cada tag, si ha aparecido un tag que el modelo nunca vio, si el
+modelo en producción sigue puntuando igual de bien.
 
 Los módulos, ninguno de los cuales importa Airflow:
 
 | Módulo | Papel |
 |---|---|
 | `config.py` | nombres y ajustes: tablas, MLflow, Optuna, umbrales |
-| `data.py` | leer el warehouse, snapshots, preprocesado del texto, split train/test |
+| `data.py` | leer el warehouse, snapshots, preprocesado del texto, el split train/validación/test |
 | `validate.py` | las suites de Great Expectations que ejecutan los gates, y las comprobaciones del split |
 | `train.py`, `evaluate.py` | el clasificador, la búsqueda con Optuna, el registro en MLflow; métricas globales y por slices de evaluación (§10) |
 | `registry.py` | el model registry de MLflow: registrar, promocionar, hacer rollback |

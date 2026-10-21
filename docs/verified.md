@@ -10,6 +10,80 @@ the record of when, and how it was measured — except what the first section
 below lists as still waiting. Nothing here is a step to run.
 Skip it, or come back when you want to know how far to trust a number.
 
+## 2026-10-17, later: the arXiv delivery and the new promotion gate
+
+§12's delivery is now 800 arXiv papers (`datasets/batch_1/`), §9 loads all
+764 Made With ML projects, §14's batch sits on top of both, and
+`promotion_gate` decides on the test rows the champion has never seen, with a
+bootstrap guardrail on the old ones. Walked from a reset stack
+(`docker compose down --volumes`, `apache/airflow:3.3.1`, BigQuery, Airbyte
+with its sources re-pointed through the public API), the solution Dags in
+`dags/`:
+
+- `pytest`: `46 passed, 1 skipped`.
+- §9: `projects`, `tags`, `labeled_projects` 764 rows, suites `6/6`, `5/5`,
+  `6/6`.
+- §10: version 1 promoted with `no champion yet` (f1 0.8788). The by-hand
+  run: `all test rows: 157` and `old test rows: 157`, no new rows, `…
+  clears threshold 0.65 and the champion's 0.8788 on the same 157 test rows -
+  promoting` (0.8911).
+- §12: `labeled_projects` 1564 rows, no `mlops` run while paused.
+  `num_current': 800`; `f1 at promotion=0.8911 now=0.8224`; `label drift
+  p=1.082e-22 length drift p=0`; reference `computer-vision` 38%, `mlops` 8%;
+  current `computer-vision` 57.5%, no `mlops`; `request_retraining`, 84 s.
+  With `drift_p_val` 0: `continue_serving` in 18 s. The retrain: test split
+  319 rows; new 162: 0.9566 against 0.8190 (+0.0787 to +0.1999); old 157:
+  0.8782 against 0.8911 (−0.0575 to +0.0241); promoted. Then `only 0 new rows
+  since version 3 was trained - nothing to measure`.
+- Offline, the same §10 → §12 with 20 unseeded searches: promoted 19 of 20
+  (the rejection by the old-row guardrail, −0.095 to −0.012); f1 drop on the
+  papers 0.049–0.099; new-row f1 0.915–0.957 against 0.828–0.847.
+- §14 day 1: `FAIL 191 not_null_labeled_projects_tag`, three tries; the 191
+  untagged rows dated 2026-09-11 to 2026-10-15; `tags` 1564. Day 2:
+  `validate_projects` fails on `title,description`, the four pairs with ids
+  3800–3803 at `2026-10-16 09:00:00`; the first sample row varies between runs
+  (`HuggingTweets` here). Day 3: `Invalid timestamp: '09/11/2026 17:19:07'`,
+  `ERROR=1 SKIP=5`; after the fix, `PASS=7`, 1755 rows. Drift alarm:
+  `num_current': 191`, label drift p=5.817e-41, length drift p=5.022e-19,
+  `new_labels=['other']`, `inspect`; the per-tag query as printed. After the
+  vocabulary fix: label drift p=0.005921, length unchanged, `f1 at
+  promotion=0.9171 now=0.9252`, `request_retraining`, 91 s. With `other` in
+  `KNOWN_RAW_TAGS`: `tags 5/5`, `labeled_projects 6/6`, no warning. The queued
+  `mlops` run: 368 test rows, 49 new; `below the champion's 0.9345 on the 49
+  new test rows - not promoting`.
+
+## 2026-10-17: Parquet snapshots, the hash split, monitoring windows, rollback
+
+From a reset stack (`docker compose down --volumes`, `apache/airflow:3.3.1`,
+BigQuery, Airbyte), with the solution Dags copied into `dags/`:
+
+- `pytest`: `44 passed, 1 skipped`. The skip is the drift test; pyarrow 25.0.0
+  reads and writes Parquet in the alibi-detect virtualenv (numpy 1.26.4,
+  pandas 2.3.3).
+- §9 with `datasets/initial/`: `projects`, `tags` and `labeled_projects` 573
+  rows each, suites `6/6`, `5/5`, `6/6`. §11: `Data is ready (573 rows)`.
+- §10: `training_split passed=5/5`; splits of 373 / 87 / 113 rows (train / val
+  / test). Version 1 promoted with `no champion yet`. The second run's
+  `test.parquet` held the same 113 ids, and `score_champion` scored version 1
+  on it at exactly the f1 it logged when trained; version 2 scored lower and
+  was not promoted. Airbyte loads `id` as NUMERIC, read as `Decimal`, which is
+  why `data.load_labeled` converts it to an integer.
+- An asset event emitted while `mlops` was paused started no run; the next
+  asset-triggered run listed it among its triggering events.
+- §12: after the full delivery, `num_current=191`, reference 457 rows; label
+  drift p=0.0001645, length drift p=0.8746; `mlops` 5.7% → 15.7%,
+  `natural-language-processing` 44% → 30%; f1 drop 0.05; run 84 s. With
+  `drift_p_val` 0.00001: `continue_serving` in 15 s. The triggered run sat
+  `queued` until `mlops` was un-paused, then promoted version 4 (0.8911 against
+  the champion's 0.8892 on the same 157 test rows). Twenty offline repeats of
+  the search on that snapshot promoted 18 times. Monitoring afterwards: `only 0
+  new rows since version 4 was trained - nothing to measure`.
+- §14, after day 3: `num_current=191`, label drift p=3.6e-21, length 0.918,
+  `new_labels=['other']`, `inspect`; after the vocabulary fix, label drift
+  p=0.996, `continue_serving`. Days 1–3 failed where §14 says.
+- Rollback (`registry.rollback`, alias removal, version tags, second rollback
+  returning `None`) is covered by the unit test, not forced on the live stack.
+
 ## 2026-10-15: four classes, and §14's checks
 
 Against the live stack (`apache/airflow:3.3.1`, BigQuery), after

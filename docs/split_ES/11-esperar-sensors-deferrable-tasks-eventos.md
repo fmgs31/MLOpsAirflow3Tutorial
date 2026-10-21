@@ -254,10 +254,12 @@ sensor acabará fallando por su `timeout` declarado: 120 segundos para
 `enough_rows`, 300 para `wait_for_table`. El run solo falla cuando los dos se
 han rendido, a los cinco minutos más o menos.
 
-Mientras esperaban, ningún sensor retuvo un worker slot: `enough_rows` no
-ocupaba ninguno entre pokes, y `wait_for_table` estaba en el triggerer. En el
-modo por defecto habrían ocupado uno cada uno durante toda la espera, sin
-hacer nada.
+`airflow dags test` no tiene workers ni triggerer: ejecuta todas las tasks, y
+el trigger de `wait_for_table`, en su propio proceso (`[DAG TEST] running
+trigger in line`). Enviado a través del scheduler, como `defer-demo`, ningún
+sensor retiene un worker slot mientras espera: `enough_rows` no ocupa ninguno
+entre pokes, y `wait_for_table` está en el triggerer. En el modo por defecto
+ocuparían uno cada uno durante toda la espera, sin hacer nada.
 
 Borra la copia cuando acabes, en el mismo editor de consultas:
 

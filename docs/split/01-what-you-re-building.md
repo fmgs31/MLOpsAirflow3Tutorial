@@ -119,6 +119,11 @@ There are six tags. The three rarest (`reinforcement-learning`,
 model sees them as one class, `other`, next to `natural-language-processing`,
 `computer-vision` and `mlops`.
 
+Two later deliveries add to it. In §12, 800 arXiv papers from 2025–2026,
+extracted for this tutorial: newer data from another source is what makes
+drift cost the production model f1, and retraining win it back.
+In §14, 191 more Made With ML projects, which arrive with problems.
+
 **The model** reads a project's title and description and predicts its tag. It
 is a scikit-learn text classifier (TF-IDF features and a linear SGD
 classifier) that trains in about a second, so a search over dozens of
@@ -137,16 +142,17 @@ whatever text it is given:
 ```
 
 **Drift** is the data changing under the production model. The `monitoring`
-Dag (§12) compares the newest quarter of the projects, by date added, with the
-older ones: has the share of each tag moved, has a tag appeared that the older
-projects do not have, does the production model still score as well.
+Dag (§12) compares the projects that arrived after the production model was
+trained with the ones it learned from: has the share of each tag moved, has a
+tag appeared that the model never saw, does the production model still score
+as well.
 
 The modules, none of which imports Airflow:
 
 | Module | Role |
 |---|---|
 | `config.py` | names and settings: tables, MLflow, Optuna, thresholds |
-| `data.py` | read the warehouse, snapshots, text preprocessing, train/test split |
+| `data.py` | read the warehouse, snapshots, text preprocessing, the train/validation/test split |
 | `validate.py` | the Great Expectations suites the gates run, and the split checks |
 | `train.py`, `evaluate.py` | the classifier, the Optuna search, MLflow logging; metrics overall and on evaluation slices (§10) |
 | `registry.py` | MLflow's model registry: register, promote, roll back |

@@ -30,8 +30,18 @@ is the point.
 This tutorial is based on Made With ML's
 [orchestration lesson](https://madewithml.com/courses/mlops/orchestration/),
 by Goku Mohandas: the same project (tagging ML projects from their title and
-description), the same data, and the same pipeline of DataOps, MLOps and
+description), its data, and the same pipeline of DataOps, MLOps and
 continual learning.
+
+The data is Made With ML's 764 projects plus 800 arXiv papers from 2025–2026,
+extracted for this tutorial. Made With ML's projects all come from one site
+and one year, so more of them change too little: the production model barely
+loses f1 on them, and retraining gains nothing beyond noise. The papers are
+real data from another source: the drift is clear, it costs the production
+model f1, and retraining wins it back. They are also newer, but date and source
+changed together, so this data cannot say how much of the drift is down to
+the date.
+[`datasets/README.md`](datasets/README.md) says how they were chosen.
 
 I wanted to learn using the latest Airflow version (v3), and I wanted a hands-on
 tutorial rather than one to read, so I asked Claude to port the Made With ML

@@ -7,6 +7,26 @@ taking tasks from a queue), `KubernetesExecutor` (a pod per task), or
 executor**, for workers outside your cluster, which the Task Execution API (§3)
 makes possible.
 
+Changing executor changes where files can live. `mlops` and `monitoring` write
+their snapshots to `data/snapshots/` (§10, §12), a folder on the one machine
+that runs every task in this stack. With Celery or Kubernetes the next task
+can run on a machine that does not have that folder, so the snapshots go to
+object storage instead, a GCS or S3 bucket every worker can reach, with a
+lifecycle rule that deletes them after a set time (retention): nothing here
+deletes them. Nothing that has to last depends on them. What each production
+model was trained and tested on is in MLflow, with its run (`split_ids.json`,
+§10).
+
+**Write, audit, publish.** In `dataops`, `dbt build` writes
+`labeled_projects`, and the checks run on it afterwards: a table that fails
+them is already published to anything that reads it without waiting for the
+asset (§14, day 1). The pattern that closes the gap is **write-audit-publish**.
+dbt builds into a staging dataset, the suites validate the table there, and
+only if they pass does a task copy it to the dataset everyone reads and emit
+the asset. A BigQuery copy job replaces the table in one step, so no reader
+sees half of it. The raw tables can skip the extra step: they are the landing
+zone, and only dbt reads them, after the suites have checked them.
+
 **Isolation.** Do not install your ML dependencies next to Airflow's. This
 stack already met the problem twice: dbt (§9) and alibi-detect (§12) pin
 versions Airflow's environment cannot accept, so each got a virtualenv of its

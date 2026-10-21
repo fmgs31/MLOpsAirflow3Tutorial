@@ -7,22 +7,23 @@
 prepare_data ─► validate_training_data ─┐
 create_study ───────────────────────────┤
 trial_budget ───────────────────────────┴─► run_trials×N ─► best_params ─► train_best
-─► evaluate_best ─► promotion_gate ─► promote_model ──────► done
-                                  └─► keep_current_model ─┘
+─► evaluate_best ─► compare_with_champion ─► promotion_gate ─► promote_model ──────► done
+                                                          └─► keep_current_model ─┘
 ```
 
 | Task | Herramienta | Qué hace |
 |---|---|---|
-| `prepare_data` | BigQuery | copia `labeled_projects` a un archivo que este run usará de principio a fin |
-| `validate_training_data` | Great Expectations | la suite de la §9 otra vez, más comprobaciones del split train/test |
+| `prepare_data` | BigQuery | copia `labeled_projects` a archivos que este run usará de principio a fin, partida una sola vez en train, validación y test |
+| `validate_training_data` | Great Expectations | la suite de la §9 otra vez, más comprobaciones del split |
 | `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna**, con tracking en **MLflow** | busca los hiperparámetros, con el trabajo repartido entre varias tasks, y registra cada trial |
 | `train_best`, `evaluate_best` | tracking de **MLflow** | entrena el modelo final y lo registra: parámetros, métricas, el archivo del modelo |
+| `compare_with_champion` | Model Registry de **MLflow** | puntúa el modelo nuevo y el modelo en producción sobre el split de test de este run |
 | `promotion_gate` → `promote_model` | Model Registry de **MLflow** | decide si el modelo nuevo pasa a producción |
 
 ### El stack de ML
 
-Dos herramientas más. Las dos corren en el stack de compose y no necesitan
-cuenta.
+Dos herramientas más, y ninguna necesita cuenta: Optuna es una librería que
+importan las tasks, y MLflow es un servicio del stack de compose.
 
 **Optuna** busca hiperparámetros. Un **study** es una búsqueda, con un objetivo
 (aquí: maximizar el f1). Un **trial** es un intento: Optuna elige un valor para
@@ -36,15 +37,16 @@ búsqueda entre varias tasks.
 
 **MLflow** registra experimentos. Cada entrenamiento es un **run**, con sus
 **parameters** (los hiperparámetros usados), sus **metrics** (f1,
-precision...) y sus **artifacts** (archivos: aquí un `metrics.json` y el propio
-modelo). Los runs pertenecen a un **experiment**, `project_tagger`. El **Model
+precision...) y sus **artifacts** (archivos: aquí `metrics.json`,
+`split_ids.json` y el propio modelo). Los runs pertenecen a un **experiment**,
+`project_tagger`. El **Model
 Registry**, también en MLflow, da a un modelo un nombre y **versiones**
 numeradas. Un **alias** es una etiqueta que puedes mover de una versión a otra.
 Este proyecto usa dos:
 
 ```
 champion             la versión en producción: la que carga predict.py
-previous_champion    la versión a la que apuntaba champion antes de su último cambio
+previous_champion    la versión a la que apuntaba champion antes de la última promoción
 ```
 
 Promocionar un modelo es mover `champion`; hacer rollback es devolverlo a donde
@@ -57,7 +59,9 @@ una carpeta propia, en un volumen de Docker, y las tasks lo encuentran en
 `http://mlflow:5000` (`MLFLOW_TRACKING_URI`). Abre su UI:
 
 **Comprobación.** <http://localhost:5000> muestra MLflow con un experiment,
-`Default`, y ningún run. `project_tagger` aparece con el primer run.
+`Default`, y ningún run. El experiment `project_tagger` todavía no existe: lo
+crea el código del Dag `mlops` (`mlflow.set_experiment` en
+`src/project_tagger/train.py`) la primera vez que registra un run.
 
 ### Cómo se hablan las piezas
 
@@ -70,7 +74,8 @@ Cada columna es un sistema, como en el diagrama de la §9:
 ─────────────────────────────┼───────────────────┼─────────────────────┼───────────────────
                              │                   │                     │
  1 prepare_data ◄──────────────────────────────────────────────────────── labeled_projects
-   guarda un snapshot en     │                   │                     │
+   guarda un snapshot y sus  │                   │                     │
+   tres splits en            │                   │                     │
    data/snapshots/           │                   │                     │
  2 validate_training_data    │                   │                     │
    (GX, sobre el snapshot)   │                   │                     │
@@ -87,27 +92,37 @@ Cada columna es un sistema, como en el diagrama de la §9:
                              │                   │  registrado como    │
                              │                   │  versión nueva      │
  7 evaluate_best ◄───────────────────────────────── su metrics.json    │
- 8 promotion_gate ◄──────────────────────────────── f1 del champion    │
- 9 promote_model ─────────────────────────────────► mueve champion     │
+ 8 compare_with_champion ◄───────────────────────── el modelo champion │
+   puntúa los dos sobre el   │                   │  y el nuevo         │
+   test: nuevas y viejas     │                   │                     │
+ 9 promotion_gate            │                   │                     │
+   umbral, después champion  │                   │                     │
+10 promote_model ─────────────────────────────────► mueve champion     │
    (o keep_current_model)    │                   │  a la versión nueva │
 ```
 
-BigQuery se lee una sola vez, en el paso 1; todas las tasks siguientes leen el
-archivo del snapshot, así que el run entero trabaja con los mismos datos. En
+BigQuery se lee una sola vez, en el paso 1; todas las tasks siguientes leen los
+archivos del snapshot, así que el run entero trabaja con los mismos datos. En
 MLflow queda un run para el study, con los trials como runs hijos debajo, más
 el run final; el archivo del modelo solo se sube con el run final.
 
 ### Constrúyelo
 
 Funciones nuevas de la carga de trabajo: `data.save_snapshot(df, key)` escribe
-un dataframe en `data/snapshots/<key>/` y `data.load_snapshot(fp)` lo vuelve a
-leer; `data.preprocess(df)` limpia el texto y agrupa en `other` todo tag fuera
-de las cuatro clases que aprende el modelo (`config.ACCEPTED_TAGS`);
-`data.split(df)` devuelve un par `(train, test)` con la misma proporción de
-cada tag en los dos; `validate.check_split(train, test)` es una
-segunda suite, sobre el split. En `train_module` (`train.py`): `create_study`,
-`run_trials`, `best_trial` y `train_model`. En `registry`: `register`,
-`load_metrics`, `get_production` y `promote`. `config.MIN_F1_TO_PROMOTE` es el
+la tabla en `data/snapshots/<key>/`, después la preprocesa, la parte y escribe
+también cada split ahí, y devuelve las rutas de los cuatro archivos
+(`data.SPLITS` nombra los tres splits, `("train", "val", "test")`);
+`data.load_snapshot(fp)` vuelve a leer uno; `data.preprocess(df)` limpia el
+texto y agrupa en `other` todo tag fuera de las cuatro clases que aprende el
+modelo (`config.ACCEPTED_TAGS`); `data.assign_split(ids)` pone cada proyecto
+en `train`, `val` o `test` según un hash de su id;
+`validate.check_split(train, val, test)` es una segunda suite, sobre el split;
+`evaluate.evaluate(model, df)` puntúa un modelo sobre un dataframe, y
+`evaluate.compare(candidate, champion, test_df, champion_ids)` puntúa dos sobre
+las mismas filas. En `train_module` (`train.py`): `create_study`,
+`run_trials`, `best_trial`, `train_model` y `should_promote`. En `registry`:
+`register`, `load_metrics`, `get_production`, `load_split_ids`, `load_model`
+(el `champion`, o una versión dada) y `promote`. `config.MIN_F1_TO_PROMOTE` es el
 f1 mínimo para pasar un modelo a producción (0.65, o el valor de
 `PROJECT_TAGGER_MIN_F1` si está definida).
 
@@ -127,7 +142,7 @@ from airflow.sdk import Asset, Param, dag, task
 from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
-from project_tagger import config, data, registry, train as train_module, validate
+from project_tagger import config, data, evaluate, registry, train as train_module, validate
 from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
@@ -159,11 +174,21 @@ def mlops():
 ```
 
 `schedule=[LABELED_PROJECTS]` es lo esencial: una lista de assets, y el Dag
-corre cuando se actualizan. Varios assets en la lista significan *todos*;
-`AssetAny(a, b)` significa cualquiera.
+corre cuando se actualizan. Varios assets en la lista significan *todos*,
+como `AssetAll(a, b)`; `AssetAny(a, b)` significa cualquiera.
 
 `params` declara el presupuesto de la búsqueda como dos params del Dag (§4):
-20 trials en total, repartidos entre 4 tasks. `run_key` convierte un run id como
+20 trials en total, repartidos entre 4 tasks. Fijan cuánto se busca, no qué se
+busca. Los hiperparámetros que ajusta Optuna, y sus rangos, están fijos en
+`objective()`, en `src/project_tagger/train.py`:
+
+| Hiperparámetro | Rango | Qué controla |
+|---|---|---|
+| `ngram_max` | de 1 a 3 | la secuencia de palabras más larga que TF-IDF convierte en feature (1 = solo palabras sueltas) |
+| `min_df` | de 1 a 3 | los términos que aparecen en menos proyectos que este número se descartan |
+| `alpha` | de 1e-6 a 1e-2, en escala logarítmica | la fuerza de la regularización del clasificador SGD: más alta da un modelo más simple |
+
+`run_key` convierte un run id como
 `manual__2026-02-01T03:00:00+00:00` en algo que se puede usar sin problema
 como nombre de archivo y de study.
 
@@ -177,20 +202,20 @@ haberse disparado a mano, y el modelo se entrena con los datos tal como están
     @task
     def prepare_data(
         *, triggering_asset_events: Mapping[Asset, Sequence[Any]], run_id: str
-    ) -> str:
+    ) -> dict[str, str]:
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
         config.ensure_dirs()
-        fp = data.save_snapshot(data.load_labeled(), run_key(run_id))
-        print(f"snapshot: {fp}")
-        return str(fp)
+        paths = data.save_snapshot(data.load_labeled(), run_key(run_id))
+        print(f"snapshot: {paths}")
+        return paths
 
     @task
-    def validate_training_data(snapshot_fp: str) -> dict[str, Any]:
-        df = data.load_snapshot(snapshot_fp)
+    def validate_training_data(paths: dict[str, str]) -> dict[str, Any]:
+        df = data.load_snapshot(paths["snapshot"])
         table = validate.run_suite(df, "labeled_projects")
-        split = validate.check_split(*data.split(data.preprocess(df)))
+        split = validate.check_split(*(data.load_snapshot(paths[name]) for name in data.SPLITS))
         print(f"{table.summary()} {split.summary()}")
         if not (table.passed and split.passed):
             raise AirflowFailException(
@@ -207,33 +232,62 @@ haberse disparado a mano, y el modelo se entrena con los datos tal como están
 `run_id` es otra clave del contexto (§4), recibida por nombre.
 
 `prepare_data` lee la tabla del warehouse una vez y la escribe en un
-**snapshot**, un archivo con el nombre del run, y todas las tasks posteriores
-leen ese archivo. La tabla puede cambiar mientras un run está en marcha (si un
+**snapshot**: archivos en una carpeta con el nombre del run, que leen todas las
+tasks posteriores. La tabla puede cambiar mientras un run está en marcha (si un
 run de `dataops` termina mientras tanto), y con el snapshot todas las tasks de
 este run trabajan con las mismas filas, incluida una task que se reintenta una
-hora después. La task devuelve la ruta del archivo: los XComs llevan un puntero a
-los datos, no los datos (§6).
+hora después. Los archivos son Parquet, no CSV: un archivo Parquet guarda el
+tipo de cada columna, así que cada columna vuelve tal como se escribió,
+`created_on` como timestamp y no como string. Un CSV es solo texto, y los
+tipos se vuelven a adivinar en cada lectura. La task devuelve las rutas de los
+archivos, un dict pequeño: los XComs llevan un puntero a los datos, no los
+datos (§6).
 
-La segunda mitad de la comprobación de `validate_training_data` es algo que una
-suite a nivel de tabla no puede hacer. Mira el **split**:
+`data.save_snapshot` escribe cuatro archivos: la tabla tal como se leyó
+(`labeled_projects.parquet`), que comprueba la suite de la §9, y las filas
+preprocesadas partidas en tres: `train.parquet`, `val.parquet` y
+`test.parquet`. La búsqueda entrena con train y puntúa cada trial con
+validación; el modelo final se entrena con las dos y se puntúa con test, que
+nada ha visto antes.
+
+El split se **escribe una sola vez**. Si cada task lo recalculara, todas
+dependerían de que el código, las librerías y la semilla fueran idénticos donde
+corre cada una: una task reintentada tras un despliegue podría entrenar con
+unas filas y evaluar con otras, sin ningún aviso. Escrito una vez, todas las
+tasks leen las mismas filas, y quedan guardadas las filas de cada modelo.
+
+El split de cada fila lo **decide su id**. `data.assign_split` convierte con un
+hash el id de cada proyecto en un número del 0 al 99: por debajo de 20 es test,
+de 20 a 35 validación, el resto train (`config.TEST_PCT` y `config.VAL_PCT`).
+Así un proyecto cae en el mismo split en todos los runs, y ningún modelo entrena
+con una fila que es de test para otro. Eso permite a `promotion_gate`, más
+adelante en esta sección, puntuar el modelo nuevo y el de producción sobre las
+mismas filas de test, y a la monitorización (§12) saber qué filas no ha visto
+nunca el modelo en producción. El coste: el split deja de ser estratificado (la
+misma proporción de cada tag en cada split). Con cientos de filas las
+proporciones salen parecidas, y la comprobación del split detecta una clase
+ausente o escasa.
+
+Esa comprobación es la segunda mitad de `validate_training_data`, y una suite a
+nivel de tabla no puede hacerla:
 
 ```python
 # src/project_tagger/validate.py — check_split()
 ("split_is_non_empty",          ...,  critical)
-("classes_in_both_splits",      ...,  critical)   # a class only in train
-("min_rows_per_class:20",       ...,  critical)   # 3 rows of a class in train
-("no_id_leakage",               ...,  critical)   # the same project in both
-("test_fraction_between_0.1_and_0.4", ..., non-critical)
+("classes_in_every_split",      ...,  critical)   # a class missing from test
+("min_rows_per_class:20",       ...,  critical)   # 3 rows of a class in train + val
+("no_id_leakage",               ...,  critical)   # the same project in two splits
+("fractions_near_target",       ...,  non-critical)
 ```
 
-Cada problema de esos comentarios — una clase solo en train, tres filas de una
-clase, el mismo proyecto en los dos splits — supera una suite a nivel de columna
-sin ningún aviso, y aun así produce un modelo cuyo f1 sobre el conjunto de test
-no significa nada. Ese f1 es lo que `promotion_gate`, más adelante en esta
-sección, compara con el modelo en producción. Estas comprobaciones
-abarcan dos dataframes, algo que una suite de GX no puede expresar (valida un
-lote de datos cada vez), así que son Python normal, con resultados en el mismo
-formato.
+Cada problema de esos comentarios — una clase que falta en test, tres filas de
+una clase, el mismo proyecto en dos splits — pasa sin aviso una suite a nivel
+de columna, y aun así deja sin sentido el f1 de test, que es lo que
+`promotion_gate` compara con el modelo en producción. El mínimo de filas por
+clase cuenta train y validación juntos, porque el modelo final aprende de los
+dos. Estas comprobaciones abarcan tres dataframes y una suite de GX valida un
+lote cada vez, así que son Python normal, con resultados en el mismo formato
+que la suite.
 
 **Búsqueda distribuida.** Un study de Optuna por run, y después **dynamic
 task mapping**: mientras corre el Dag, Airflow crea una task instance por cada
@@ -250,9 +304,9 @@ elemento de una lista, y cada una añade trials al mismo study. Cuatro tasks:
         return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
 
     @task(max_active_tis_per_dag=2)
-    def run_trials(n_trials: int, study_name: str, snapshot_fp: str) -> list[dict[str, Any]]:
-        train_df, _ = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
-        results = train_module.run_trials(study_name, n_trials, train_df)
+    def run_trials(n_trials: int, study_name: str, paths: dict[str, str]) -> list[dict[str, Any]]:
+        train_df, val_df = data.load_snapshot(paths["train"]), data.load_snapshot(paths["val"])
+        results = train_module.run_trials(study_name, n_trials, train_df, val_df)
         print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
         return results
 
@@ -278,9 +332,9 @@ el Dag. Cada instancia se reintenta, tiene su propio log y se inspecciona por
 separado. `.partial()` recibe los argumentos que comparten todas las
 instancias; `.expand()`, el que cambia en cada una.
 
-`run_trials` puntúa cada trial sobre un split de validación sacado de los datos
-de entrenamiento, y registra cada trial en MLflow como un **run hijo**: un run
-con padre, que la UI de MLflow pliega debajo de él. El split de test no se ve
+`run_trials` entrena cada trial con el split de entrenamiento, lo puntúa sobre
+el split de validación, y registra cada trial en MLflow como un **run hijo**:
+un run con padre, que la UI de MLflow pliega debajo de él. El split de test no se ve
 en ningún momento de la búsqueda, así que la puntuación de test del modelo
 final sigue siendo una estimación honesta.
 
@@ -319,17 +373,22 @@ copias de los datos en memoria. Cuando el recurso limitado es compartido
 Ahora el modelo final, y el **promotion gate**, que decide si pasa a
 producción. A diferencia de los gates de la §9, el gate no falla la task cuando
 la respuesta es no: es un *branch*, una task que elige cuál de dos **ramas**
-del Dag sigue. Añade `train_best`, `evaluate_best`, `promotion_gate`,
-`promote_model` y los dos `EmptyOperator` que necesitan las ramas:
+del Dag sigue. Añade `train_best`, `evaluate_best`, `compare_with_champion`,
+`promotion_gate`, `promote_model` y los dos `EmptyOperator` que necesitan las
+ramas:
 
 ```python dags/04_mlops.py
     @task
-    def train_best(best: dict[str, Any], snapshot_fp: str, *, run_id: str) -> dict[str, Any]:
-        train_df, test_df = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+    def train_best(best: dict[str, Any], paths: dict[str, str], *, run_id: str) -> dict[str, Any]:
+        splits = {name: data.load_snapshot(paths[name]) for name in data.SPLITS}
         trained = train_module.train_model(
-            best["params"], train_df, test_df,
+            best["params"], splits,
             run_name=f"final-{run_key(run_id)}",
-            tags={"airflow_run_id": run_id, "best_trial_run_id": best["mlflow_run_id"]},
+            tags={
+                "airflow_run_id": run_id,
+                "best_trial_run_id": best["mlflow_run_id"],
+                "snapshot_path": paths["snapshot"],
+            },
         )
         version = registry.register(trained["model_uri"])
         print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
@@ -342,20 +401,39 @@ del Dag sigue. Añade `train_best`, `evaluate_best`, `promotion_gate`,
             print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
         return {**trained, "metrics": metrics}
 
-    @task.branch
-    def promotion_gate(evaluation: dict[str, Any]) -> str:
-        f1 = evaluation["metrics"]["f1"]
-        threshold = config.MIN_F1_TO_PROMOTE
-        current = registry.get_production()
-        current_f1 = current["metrics"]["f1"] if current else 0.0
+    @task
+    def compare_with_champion(evaluation: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
+        champion = registry.get_production()
+        if champion is None:
+            print("no champion yet")
+            return None
+        seen = [i for ids in registry.load_split_ids(champion["run_id"]).values() for i in ids]
+        comparison = evaluate.compare(
+            registry.load_model(version=evaluation["version"]),
+            registry.load_model(),
+            data.load_snapshot(paths["test"]),
+            seen,
+        )
+        for name, part in comparison.items():
+            if part["rows"]:
+                low, high = part["difference"]
+                print(
+                    f"{name} test rows: {part['rows']}, f1={part['f1']:.4f}, "
+                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}, "
+                    f"difference {low:+.4f} to {high:+.4f}"
+                )
+        return comparison
 
-        if f1 < threshold:
-            print(f"f1={f1:.4f} below threshold {threshold} - not promoting")
-            return "keep_current_model"
-        if f1 < current_f1:
-            print(f"f1={f1:.4f} below production {current_f1:.4f} - not promoting")
-            return "keep_current_model"
-        return "promote_model"
+    @task.branch
+    def promotion_gate(evaluation: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+        promote, reason = train_module.should_promote(
+            evaluation["metrics"]["f1"],
+            comparison,
+            config.MIN_F1_TO_PROMOTE,
+            config.MIN_NEW_TEST_ROWS,
+        )
+        print(reason)
+        return "promote_model" if promote else "keep_current_model"
 
     @task(outlets=[PRODUCTION_MODEL])
     def promote_model(
@@ -374,12 +452,17 @@ del Dag sigue. Añade `train_best`, `evaluate_best`, `promotion_gate`,
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 ```
 
-`train_best` entrena el modelo final sobre todo el split de entrenamiento con
-los hiperparámetros del mejor trial, lo puntúa sobre el split de test y lo
-guarda en MLflow, con el archivo del modelo incluido, como un run propio, fuera
-del study: no es un intento más de la búsqueda. Sus tags lo enlazan con el run
-de Airflow que lo creó y con el trial del que salen sus hiperparámetros.
-Después lo **registra** en
+`train_best` entrena el modelo final con los hiperparámetros del mejor trial
+sobre los splits de entrenamiento y validación juntos (el de validación ya ha
+cumplido su función, elegir esos hiperparámetros, y más filas dan un modelo
+mejor), lo puntúa sobre el split de test y lo guarda en MLflow, con el archivo
+del modelo incluido, como un run propio, fuera del study: no es un intento más
+de la búsqueda. Sus tags lo enlazan con el run de Airflow que lo creó, con el
+trial del que salen sus hiperparámetros y con el snapshot con el que se
+entrenó (`snapshot_path`). El run guarda además `split_ids.json`, los ids de
+proyecto de cada split: aquello con lo que se construyó el modelo se queda con
+él en MLflow aunque la carpeta del snapshot ya no exista, y la §12 lo lee.
+Después la task **registra** el modelo en
 el registry: cada modelo final pasa a ser una versión nueva de `project_tagger`,
 se promocione o no, así que un candidato rechazado sigue ahí para
 inspeccionarlo. La task devuelve un run id, un número de versión y un f1:
@@ -392,11 +475,71 @@ transformers, BERT o LLMs). No son las franjas de tiempo de la §7; sirven para
 pillar un modelo cuyo f1 global parece bueno mientras falla con un tipo de
 entrada.
 
-Un `@task.branch` devuelve el `task_id` que hay que ejecutar; la otra rama queda
-**skipped**, no failed. Un candidato que no llega al umbral, o que puntúa por
-debajo del champion actual, es un desenlace normal: el run tiene éxito y
+`compare_with_champion` carga el modelo en producción y la versión que
+`train_best` acaba de registrar, y puntúa los dos sobre el split de test de
+este run. El champion también tiene el f1 que registró cuando se entrenó, pero
+ese se midió sobre el split de test de otro run, con otras filas; compararlo
+con el f1 del modelo nuevo sería comparar dos exámenes, no dos modelos. Sobre
+las mismas filas la comparación es justa, y el split por hash hace que esas
+filas sean honestas para los dos: ninguna fila de test ha estado nunca en los
+datos de entrenamiento de ningún modelo, tampoco en los del champion. Hay un
+caso que el hash no ve: el mismo proyecto enviado otra vez con otro id, que
+podría dejar una copia en test y la otra en train; la suite de `projects` lo
+para en `dataops` (`ExpectCompoundColumnsToBeUnique` sobre title y
+description, §9) antes de que llegue aquí.
+
+Pero no todas esas filas son iguales. `evaluate.compare` las separa según el
+`split_ids.json` del champion, y puntúa los dos modelos en cada parte:
+
+| Parte | Filas | Qué dice |
+|---|---|---|
+| `new` | filas de test cuyo id no está en ninguno de los splits del champion: llegaron al warehouse después de que se entrenara | cómo le va a cada modelo con datos como los que producción recibe a continuación |
+| `old` | las filas de test del propio champion | si el modelo nuevo conserva lo que el champion sabía hacer |
+| `all` | las dos | el split entero |
+
+Un reentrenamiento existe para mejorar con los datos nuevos, así que deciden
+las filas `new`: el f1 del modelo nuevo sobre ellas no puede quedar por debajo
+del del champion. Testear con datos más nuevos que aquellos con los que se
+entrenó un modelo se llama test **out-of-time**, y es lo más cerca de
+producción que llega un test set. Las filas `old` son un **guardarraíl**: un
+modelo que aprende los datos nuevos olvidando los viejos no ha mejorado (la
+§12 lo llama catastrophic forgetting), así que una pérdida clara ahí también
+lo bloquea. Un conjunto que se guarda para esto, casos pasados que un modelo
+nuevo tiene que seguir acertando, es un **regression set**; muchos equipos
+mantienen uno a mano, un *golden set*.
+
+"Clara" necesita un número, porque un split de test de este tamaño tiene
+ruido: con unas 150 filas, una sola fila mueve más de medio punto de f1, y dos
+modelos igual de buenos pueden diferir en un par de puntos por la suerte de qué
+filas cayeron en test. `evaluate.difference_interval` mide esa suerte con un
+**bootstrap pareado**: saca tantas filas como hay, al azar y con reemplazo,
+puntúa los dos modelos sobre esa misma muestra y guarda la diferencia; lo
+repite mil veces. El 95% central de esas diferencias, el `difference … to …`
+del log, es cuánto podría moverse la diferencia por azar. Un intervalo entero
+por debajo de 0 significa que el modelo nuevo es peor más allá de lo que
+explica el azar, y solo entonces bloquea el guardarraíl. Tiene semilla fija,
+así que las mismas filas dan siempre el mismo intervalo.
+
+Con menos de 30 filas nuevas (`config.MIN_NEW_TEST_ROWS`) hay demasiado pocos
+datos nuevos para decidir, y decide el split entero: el modelo nuevo no puede
+quedar por debajo del champion sobre todo él. Es el caso de esta sección, en
+la que cada run ve las mismas 764 filas. En la §12 llegan filas nuevas, y se
+aplica la regla completa.
+
+`compare_with_champion` es una task propia para que el Graph la muestre y su
+log diga con qué versión comparó, parte por parte. Recibe la salida de
+`evaluate_best`, que lleva la versión nueva, así que corre después de ella. Un test set sigue siendo una
+estimación: la última palabra sobre un modelo la tiene el tráfico real, que es
+para lo que están las estrategias de despliegue del final de la §12.
+
+`promotion_gate` aplica la regla de `train_module.should_promote`: el f1 del
+modelo nuevo tiene que superar el umbral y, frente a un champion, no puede
+quedar por debajo de él en las filas nuevas ni claramente por debajo en las
+viejas. Un `@task.branch` devuelve el `task_id` que hay que ejecutar; la otra
+rama queda **skipped**, no failed. Un candidato que no llega al umbral, o que
+pierde contra el champion, es un desenlace normal: el run tiene éxito y
 producción se queda como estaba. `promote_model` mueve el alias `champion` y
-emite el segundo asset, `production_model`, que todavía no consume nadie;
+emite el asset propio de `mlops`, `production_model`, que todavía no consume nadie;
 apunta el `schedule` de un Dag hacia él y la arista aparece en el grafo de
 Assets.
 
@@ -413,16 +556,16 @@ limpieza), `none_failed_min_one_success` (joins después de un branch),
 Termina el archivo conectando las tasks:
 
 ```python dags/04_mlops.py
-    snapshot = prepare_data()
-    gate = validate_training_data(snapshot)
+    paths = prepare_data()
+    gate = validate_training_data(paths)
     study = create_study()
-    results = run_trials.partial(study_name=study, snapshot_fp=snapshot).expand(
+    results = run_trials.partial(study_name=study, paths=paths).expand(
         n_trials=trial_budget()
     )
     gate >> results
 
-    evaluation = evaluate_best(train_best(best_params(study, results), snapshot))
-    decision = promotion_gate(evaluation)
+    evaluation = evaluate_best(train_best(best_params(study, results), paths))
+    decision = promotion_gate(evaluation, compare_with_champion(evaluation, paths))
 
     decision >> promote_model(evaluation) >> done
     decision >> keep_current_model >> done
@@ -433,9 +576,11 @@ mlops()
 
 `gate >> results` coloca `validate_training_data` aguas arriba de *todas* las
 instancias mapeadas de `run_trials`, sin llevar datos: solo fija el orden.
-Ningún trial arranca sobre datos que no han pasado sus comprobaciones. Las dos
-líneas `decision >>` le dan a `promotion_gate` sus dos ramas y las unen en
-`done`.
+Ningún trial arranca sobre datos que no han pasado sus comprobaciones.
+`promotion_gate` recibe los resultados de `evaluate_best` y de
+`compare_with_champion`, que a su vez espera a `evaluate_best`, así que las
+tres corren en ese orden. Las dos líneas `decision >>` le
+dan sus dos ramas y las unen en `done`.
 
 ### Comprueba las conexiones
 
@@ -461,7 +606,7 @@ labeled_projects → mlops → production_model`.
 La página del propio `mlops` puede mostrar las mismas conexiones. Ábrela, cambia
 a **Graph** y ve cambiando **Options → Dependencies** (§5):
 
-- **Only tasks** — las doce tasks que acabas de escribir, nada más.
+- **Only tasks** — las trece tasks que acabas de escribir, nada más.
 - **External conditions** — las mismas tasks, más `labeled_projects` entrando
   en el Dag y `production_model` saliendo de `promote_model`.
 - **All Dag Dependencies** — la cadena que dibuja la página Assets: `dataops`
@@ -525,7 +670,8 @@ Cuatro filas de `run_trials` con `map_index` de 0 a 3; la 2 y la 3 arrancan
 cada una después de que haya terminado una de la 0 y la 1. Y
 `keep_current_model` está `skipped` mientras `promote_model` está `success`:
 `promotion_gate` eligió la rama de `promote_model`, porque el f1 del modelo final
-superó el umbral y no había modelo en producción al que batir.
+superó el umbral y no había modelo en producción al que batir
+(`compare_with_champion` escribió `no champion yet`).
 
 Después mira lo que el run ha dejado en MLflow, en <http://localhost:5000>:
 
@@ -535,9 +681,10 @@ Despliega el run del study para ver sus veinte hijos, de `…-trial-0` a
 `-trial-19`, y ordena por la columna `f1` para ver la búsqueda en acción. Abre
 el run del study: `best_f1` es la puntuación del mejor trial, y el tag
 `best_trial_run_id` lo identifica. Abre el run final: sus parameters son los del mejor trial,
-sus metrics incluyen el f1 por tag y por slice, y en **Artifacts** están
-`metrics.json` y el modelo. En **Models**, `project_tagger` tiene la versión 1,
-con el alias `champion`.
+sus metrics incluyen el f1 por tag y por slice, sus tags incluyen
+`snapshot_path`, y en **Artifacts** están `metrics.json`, `split_ids.json` y el
+modelo. En **Models**, `project_tagger` tiene la versión 1, con el alias
+`champion`.
 
 > **Pruébalo, una vez más a mano:**
 >
@@ -550,9 +697,12 @@ con el alias `champion`.
 > Cada éxito del productor emite un evento, sin importar cómo se arrancó el
 > productor — y el consumidor se ejecuta con él (los eventos que llegan
 > mientras `mlops` está ocupado comparten su siguiente run, §8). Que la versión
-> 2 pase a ser `champion` depende de su f1 frente al de la versión 1: mismos
-> datos, otra búsqueda, así que puede pasar o no, y el log de
-> `promotion_gate` lo dice.
+> 2 pase a ser `champion` depende de su f1 frente al de la versión 1, los dos
+> sobre el split de test de este run. Mismos datos, así que el mismo split (los
+> `test.parquet` de los dos runs tienen los mismos ids), y ninguna fila nueva:
+> `compare_with_champion` escribe `all test rows` y `old test rows`, las mismas
+> filas, y `promotion_gate` decide con el split entero, `… on the same … test
+> rows`. Otra búsqueda, así que puede pasar o no.
 
 > **Pruébalo: la otra rama.** Pon el listón imposiblemente alto y mira cómo
 > `promotion_gate` elige la rama de `keep_current_model`. El umbral se lee de

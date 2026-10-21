@@ -56,7 +56,10 @@ Optuna y MLflow corren de verdad, pero contra archivos SQLite en una carpeta
 temporal: el test apunta allí `config.OPTUNA_STORAGE` y
 `config.MLFLOW_TRACKING_URI` con el `monkeypatch` de pytest, que sustituye un
 valor mientras dura un test, y después ejecuta la búsqueda, entrena,
-registra, promociona y hace rollback. El test de drift necesita alibi-detect,
+registra, promociona y hace rollback. Los tests de monitorización reciben un
+modelo en producción de la misma forma: `monkeypatch` sustituye
+`registry.get_production` y `registry.load_split_ids` por funciones que
+devuelven un champion inventado y sus ids de split. El test de drift necesita alibi-detect,
 que solo está instalado en su propio virtualenv (§12), así que en el entorno de
 Airflow se **salta** (skip), no falla.
 
@@ -95,12 +98,12 @@ docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 un contenedor de usar y tirar que el archivo de compose define bajo un profile,
 que `run` crea para ese comando y que `--rm` elimina después.
 
-**Comprobación.** Una fila de puntos, una `s`, y `41 passed, 1 skipped`,
+**Comprobación.** Una fila de puntos, una `s`, y `46 passed, 1 skipped`,
 en bastante menos de un minuto:
 
 ```
-............................s.............                               [100%]
-41 passed, 1 skipped in 20.75s
+..............................s................                          [100%]
+46 passed, 1 skipped in 23.78s
 ```
 
 La `s` es el test de drift, que se salta por el motivo que da «Tests

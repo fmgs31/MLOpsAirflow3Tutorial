@@ -8,9 +8,11 @@ model rather than in the warehouse.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from project_tagger import config
@@ -54,29 +56,48 @@ def load_tags() -> pd.DataFrame:
 
 
 def load_labeled() -> pd.DataFrame:
-    return load_table(config.LABELED_PROJECTS_TABLE, config.LABELED_PROJECTS_COLUMNS)
+    df = load_table(config.LABELED_PROJECTS_TABLE, config.LABELED_PROJECTS_COLUMNS)
+    # Airbyte loads the CSV's `id` as a NUMERIC column, which arrives as Python
+    # Decimals (`Decimal('6.000000000')`). A project id is an integer: convert
+    # it once, here, so the split hash and the ids MLflow keeps see `6`.
+    df["id"] = df["id"].astype("int64")
+    return df
 
 
 # --- Snapshots ------------------------------------------------------------------
 # The warehouse table can change while a Dag run is in flight. Each mlops run
-# copies it once to a file named after the run, and every task of that run
-# reads the file: all of them see the same rows, and a retried task sees the
-# rows the first attempt saw.
+# copies it once to a folder named after the run, splits it there, and every
+# task of that run reads those files: all of them see the same rows, and a
+# retried task sees the rows the first attempt saw.
+#
+# Parquet, not CSV: a Parquet file stores each column's type, so every column
+# comes back as it was written - `created_on` as a timestamp, not a string. A
+# CSV is only text, and the types are guessed again on every read.
+
+SPLITS = ("train", "val", "test")
 
 
-def snapshot_path(run_key: str) -> Path:
-    return config.SNAPSHOTS_DIR / run_key / "labeled_projects.csv"
+def save_snapshot(df: pd.DataFrame, run_key: str) -> dict[str, str]:
+    """Write the table as read, and its preprocessed splits, under `SNAPSHOTS_DIR/<run_key>/`.
 
+    Returns the paths: `snapshot` (the table as read, for the table-level
+    suite), and `train`, `val` and `test` (the model input, one file each).
+    """
+    folder = config.SNAPSHOTS_DIR / run_key
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = {"snapshot": folder / "labeled_projects.parquet"}
+    df.to_parquet(paths["snapshot"], index=False)
 
-def save_snapshot(df: pd.DataFrame, run_key: str) -> Path:
-    fp = snapshot_path(run_key)
-    fp.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(fp, index=False)
-    return fp
+    processed = preprocess(df)
+    parts = assign_split(processed["id"])
+    for name in SPLITS:
+        paths[name] = folder / f"{name}.parquet"
+        processed[parts == name].reset_index(drop=True).to_parquet(paths[name], index=False)
+    return {name: str(fp) for name, fp in paths.items()}
 
 
 def load_snapshot(fp: str | Path) -> pd.DataFrame:
-    return pd.read_csv(fp)
+    return pd.read_parquet(fp)
 
 
 # --- Preprocessing ---------------------------------------------------------------
@@ -104,16 +125,16 @@ def preprocess(df: pd.DataFrame, collapse_tags: bool = True) -> pd.DataFrame:
     return df[["id", "created_on", "title", "description", "text", "tag"]].reset_index(drop=True)
 
 
-def split(
-    df: pd.DataFrame, test_size: float = 0.2, seed: int = 42
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Stratified train/test split without pulling in sklearn's splitter."""
-    test_parts, train_parts = [], []
-    for _, group in df.groupby("tag"):
-        group = group.sample(frac=1.0, random_state=seed)
-        n_test = max(1, int(len(group) * test_size))
-        test_parts.append(group.iloc[:n_test])
-        train_parts.append(group.iloc[n_test:])
-    train = pd.concat(train_parts).sample(frac=1.0, random_state=seed).reset_index(drop=True)
-    test = pd.concat(test_parts).sample(frac=1.0, random_state=seed).reset_index(drop=True)
-    return train, test
+def assign_split(ids: pd.Series) -> pd.Series:
+    """'train', 'val' or 'test' for each id - the same for an id in every run.
+
+    The part comes from a hash of the id, not from a shuffle: a project that
+    was in the test split once is in it every time, so no model is ever
+    trained on a row another model was tested on. `hashlib`, not Python's
+    `hash()`, which gives a different number in every process.
+    """
+    bucket = ids.astype(str).map(lambda i: int(hashlib.sha256(i.encode()).hexdigest(), 16) % 100)
+    parts = np.select(
+        [bucket < config.TEST_PCT, bucket < config.TEST_PCT + config.VAL_PCT], ["test", "val"], "train"
+    )
+    return pd.Series(parts, index=ids.index)

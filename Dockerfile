@@ -20,10 +20,12 @@ RUN python -m venv /opt/venvs/dbt && \
 # alibi-detect needs numpy<2, and numpy<2 has no build for the image's Python
 # 3.13, so this virtualenv gets a Python 3.12 of its own. `uv` (shipped in the
 # image) downloads it; keeping it under /opt/venvs makes it readable whatever
-# user the containers run as.
+# user the containers run as. pyarrow lets pandas read the Parquet windows the
+# monitoring Dag writes (§12); it is the version Airflow's own environment has.
 ENV UV_PYTHON_INSTALL_DIR=/opt/venvs/python
 RUN uv venv --python 3.12 /opt/venvs/alibi && \
-    uv pip install --python /opt/venvs/alibi/bin/python --no-cache "alibi-detect==0.13.0" "pandas<3"
+    uv pip install --python /opt/venvs/alibi/bin/python --no-cache \
+      "alibi-detect==0.13.0" "pandas<3" "pyarrow==25.0.0"
 
 COPY requirements-image.txt /tmp/requirements-image.txt
 

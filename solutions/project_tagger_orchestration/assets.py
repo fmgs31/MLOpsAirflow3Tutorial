@@ -44,9 +44,10 @@ RAW_TAGS = Asset(
     extra={"layer": "raw", "owner": "data-engineering"},
 )
 
-# Produced by `mlops` when a model clears the promotion gate - that is, when
-# the registry's `champion` alias moves. Nothing is scheduled on it yet - point
-# a Dag's `schedule` at it and the edge appears in the UI's Assets graph.
+# Produced whenever the registry's `champion` alias moves: by `mlops` when a
+# model clears the promotion gate, and by `monitoring` when it rolls back.
+# Nothing is scheduled on it yet - point a Dag's `schedule` at it and the edge
+# appears in the UI's Assets graph.
 PRODUCTION_MODEL = Asset(
     name="production_model",
     group="model",

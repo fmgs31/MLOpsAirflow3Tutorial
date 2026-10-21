@@ -14,23 +14,24 @@ dispara el monitor de drift de la §12.
 | Día 1 | 191 proyectos nuevos | sus tags todavía no llegaron | `transform`: falla un test de dbt |
 | Día 2 | los tags, y otra vez los proyectos | cuatro proyectos viejos reenviados con ids nuevos | `validate_projects`: falla una suite de GX |
 | Día 3 | los proyectos, corregidos | las fechas de los proyectos nuevos vienen en otro formato | `transform`: el model no se puede construir, y ningún control lo vio venir |
-| — | (los mismos datos) | desde 2021 los tags usan otro vocabulario | `monitoring`: drift |
+| — | (los mismos datos) | desde el 11 de septiembre de 2026 los tags usan otro vocabulario | `monitoring`: drift |
 
 ### El lote
 
 Los archivos están en [`datasets/batch_2/`](../../datasets/batch_2/). Los 191
 proyectos son reales: el holdout set de Made With ML, proyectos del mismo
-sitio que no están en `datasets/projects.csv`. Sus fechas se movieron un año
-hacia adelante, para que sean las filas más nuevas del warehouse, y los tres
-primeros problemas de la tabla se añadieron encima. El cuarto no se añadió:
+sitio que no están en `datasets/projects.csv`. Sus fechas se movieron a las
+cinco semanas siguientes al paper de arXiv más nuevo de la §12, para que sean
+las filas más nuevas del warehouse, y los tres primeros problemas de la tabla
+se añadieron encima. El cuarto no se añadió:
 Made With ML publicó estos tags con los tres más raros ya fusionados en
 `other`. [`scripts/make_batch_2.py`](../../scripts/make_batch_2.py) genera los
 archivos, y [`datasets/README.md`](../../datasets/README.md) detalla qué trae
 cada uno.
 
 Cada sync de la §9 es **Full Refresh Overwrite**, así que cada archivo es la
-tabla entera tal como la exportaría el origen ese día: las 764 filas
-originales y después las nuevas. Una entrega es un cambio de URL en una source
+tabla entera tal como la exportaría el origen ese día: las 1564 filas que ya
+había enviado y después las nuevas. Una entrega es un cambio de URL en una source
 de Airbyte: en Airbyte, abre **Sources**, elige la source, reemplaza su
 **URL** y guarda.
 
@@ -64,7 +65,8 @@ docker compose exec airflow-scheduler airflow dags trigger dataops
 
 **Comprobación.** En la UI, el run falla en `transform` después de unos
 minutos. Los dos syncs y las dos tasks `validate_*` están en verde,
-`transform` en rojo y `validate_transformed` en `upstream_failed`.
+`transform` en rojo, y `validate_transformed` y `quality_report.summarize` en
+`upstream_failed`.
 
 **Lee el fallo.** Abre el log de `transform`. Cerca del final:
 
@@ -88,13 +90,14 @@ WHERE tag IS NULL
 ORDER BY created_on
 ```
 
-191 filas, todas de 2021: el lote nuevo. Y `tags` no creció:
+191 filas, todas con fecha desde el 11 de septiembre de 2026: el lote nuevo.
+Y `tags` no creció:
 
 ```sql
 SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
 ```
 
-`n` es 764. Llegaron los proyectos y no sus etiquetas: el etiquetado viene
+`n` es 1564. Llegaron los proyectos y no sus etiquetas: el etiquetado viene
 después de que se envía un proyecto, y va atrasado. No hay nada roto.
 
 **Dónde va el arreglo: en ningún lado, todavía.** Volver a ejecutar da el
@@ -105,8 +108,13 @@ avisar. Hay que esperar las etiquetas.
 El fallo muestra dos cosas más. Primero, `labeled_projects` ya tiene las 191
 filas sin tag: `dbt build` escribe la tabla y después la testea. Lo que las
 mantuvo lejos del entrenamiento es el gate que viene después:
-`validate_transformed` no corrió, así que no se emitió ningún asset event.
-Segundo, la espera: `transform` corrió tres veces, con un minuto entre cada
+`validate_transformed` no corrió, así que no se emitió ningún asset event. Ese
+gate solo protege a lo que espera al asset. Lo que lee la tabla por su cuenta
+recibe las 191 filas sin tag: `monitoring` (§12), programado con un cron y no
+con el asset, y un run de `mlops` arrancado a mano, al que solo para su propia
+comprobación, `validate_training_data` (§10). La §16 muestra el patrón que
+evita que una tabla que no pasa sus tests llegue a publicarse. Segundo, la
+espera: `transform` corrió tres veces, con un minuto entre cada
 una, porque `dataops` da `retries=2` a todas sus tasks. Los reintentos sirven
 cuando la causa se va sola, como un error de red o una API ocupada; un
 problema de datos falla igual cada vez. Por eso los gates de GX lanzan
@@ -136,14 +144,15 @@ docker compose exec airflow-scheduler airflow dags trigger dataops
 
 **Comprobación.** Esta vez el run falla en menos de un minuto, en
 `validate_projects`, sin reintentos. `validate_tags` está en verde, y
-`transform` y `validate_transformed` en `upstream_failed`.
+`transform`, `validate_transformed` y `quality_report.summarize` en
+`upstream_failed`.
 
 **Lee el fallo.** El log de `validate_projects` termina con la expectation que
 falló y algunas de las filas que la rompieron:
 
 ```
 projects failed validation: [{'expectation': 'expect_compound_columns_to_be_unique:title,description', ...
-'details': "[{'title': 'Coloring Greyscale Images', ...
+'details': "[{'title': '…', 'description': '…'}, ...
 ```
 
 Dos proyectos con el mismo título y la misma descripción. Encuéntralos todos:
@@ -156,7 +165,7 @@ HAVING COUNT(*) > 1
 ```
 
 Cuatro filas. Cada una junta un proyecto de 2020 con una copia bajo un id
-nuevo, del 2438 al 2441, las cuatro con fecha `2021-10-06 09:00:00`. La
+nuevo, del 3800 al 3803, las cuatro con fecha `2026-10-16 09:00:00`. La
 exportación volvió a mandar cuatro proyectos viejos como si fueran nuevos.
 
 **Dónde va el arreglo: en el origen.** El bug está en el origen, y quien lo
@@ -189,7 +198,7 @@ log es distinto:
 ```
 ERROR creating sql table model mlops_course.labeled_projects
 ...
-Invalid timestamp: '06/30/2021 03:58:46'
+Invalid timestamp: '09/11/2026 17:19:07'
 Done. PASS=0 WARN=0 ERROR=1 SKIP=5 NO-OP=0 REUSED=0 TOTAL=6
 ```
 
@@ -249,13 +258,14 @@ SQL.
 que no hay nada que volver a extraer: vuelve a ejecutar `transform` y lo que
 viene después. Eso es lo que da ELT (§9). En la UI, abre este run fallido,
 haz clic en `transform` y elige **Clear Task Instance**. **Downstream** ya
-está seleccionado, así que `validate_transformed` también se limpia. Elige
+está seleccionado, así que `validate_transformed` y `quality_report.summarize`
+también se limpian. Elige
 **Confirm**.
 
 **Comprobación.** `transform` vuelve a correr en el mismo run y su log termina
 con `Done. PASS=7 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7`: ahora un
 model y seis tests. `validate_transformed` pasa, con el mismo aviso sobre
-`other`, y el run queda en `success`. `labeled_projects` tiene 955 filas.
+`other`, y el run queda en `success`. `labeled_projects` tiene 1755 filas.
 
 Los tres días hicieron tres preguntas distintas: si había que arreglar algo
 (día 1, no), de quién era el arreglo (día 2, del origen) y dónde iba (día 3,
@@ -272,15 +282,15 @@ monitor de la §12:
 docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
-**Comprobación.** `decide` registra un label drift con p-value cerca de
-`1e-17`, un length drift cerca de `0.91` y `new_labels=['other']`, y no toma
-ni `continue_serving` ni la rama de reentrenamiento: `Branch into inspect`.
-Después:
+**Comprobación.** `prepare_windows` registra `'num_current': 191`. `decide`
+registra un label drift con p-value cerca de `6e-41`, un length drift cerca de
+`5e-19` y `new_labels=['other']`, y no toma ni `continue_serving` ni la rama de
+reentrenamiento: `Branch into inspect`. Después:
 
 ```
 MANUAL INSPECTION NEEDED
   new labels: ['other']
-  current distribution: {'mlops': 0.092..., 'other': 0.108..., 'time-series': 0.016..., ...}
+  current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
 ```
 
 El run termina ahí, en segundos, sin reentrenar nada. Es la regla con la que
@@ -289,32 +299,33 @@ el espacio de labels se movió, y reentrenar con datos que nadie entiende
 todavía es como sale a producción un modelo peor. Una alarma de drift es una
 pregunta; la inspección te toca a ti.
 
-La ventana actual es el último cuarto: los 191 proyectos nuevos y 48 de los
-viejos más recientes. En su distribución, `other` está cerca del 11%, cuando
-antes no aparecía, y `reinforcement-learning`, `graph-learning` y
-`time-series` bajan al 1–2%. Mira esos cuatro tags por año:
+La ventana actual son exactamente los 191 proyectos nuevos: ninguno de sus ids
+está en el `split_ids.json` del modelo en producción. En su distribución,
+`other` está cerca del 14%, cuando las filas de las que aprendió el modelo no
+lo tienen nunca, y `reinforcement-learning`, `graph-learning` y `time-series`
+no aparecen. Mira cuándo se usó cada uno de esos cuatro tags:
 
 ```sql
-SELECT EXTRACT(YEAR FROM created_on) AS year, tag, COUNT(*) AS n
+SELECT tag, COUNT(*) AS n, DATE(MIN(created_on)) AS first, DATE(MAX(created_on)) AS last
 FROM `<project id>.mlops_course.labeled_projects`
 WHERE tag IN ('other', 'reinforcement-learning', 'graph-learning', 'time-series')
-GROUP BY year, tag
-ORDER BY year, tag
+GROUP BY tag
+ORDER BY first
 ```
 
 ```
-2020  graph-learning           33
-2020  reinforcement-learning   45
-2020  time-series              28
-2021  other                    26
+graph-learning          41  2020-02-24  2026-02-09
+reinforcement-learning  73  2020-02-28  2026-09-10
+time-series             58  2020-04-06  2026-08-11
+other                   26  2026-09-11  2026-10-13
 ```
 
-Los proyectos no cambiaron; cambiaron las etiquetas. Desde 2021, el origen
-escribe esos tres tags como `other`, que es la misma fusión que ya hace el
+Los tres tags se acaban donde empieza `other`. Desde el 11 de septiembre de
+2026, el origen los escribe como `other`, que es la misma fusión que ya hace el
 modelo: aprende cuatro clases, y todo otro tag pasa a `other` (§10). La línea
 `f1 at promotion=… now=…`, registrada antes de `decide`, coincide: no hay
 caída, así que el modelo funciona igual de bien con los proyectos nuevos que
-con los viejos. Reentrenar no arreglaría nada. El arreglo es darles a las
+con su split de test. Reentrenar no arreglaría esto. El arreglo es darles a las
 filas viejas el vocabulario nuevo, en el transform, para que el historial y
 los datos nuevos usen las mismas etiquetas. En `labeled_projects.sql`,
 reemplaza la última columna, `t.tag`, para que el model quede así:
@@ -346,9 +357,22 @@ vez al monitor:
 docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
-**Comprobación.** Label drift cerca de `0.46`, length drift cerca de `0.91`,
-`new_labels=[]`, y `decide` toma `continue_serving`. El run termina en
-segundos.
+**Comprobación.** `new_labels=[]`, así que `decide` ya no se para en
+`inspect`. El label drift queda ahora cerca de `0.006`, el length drift sigue
+cerca de `5e-19`, y `decide` toma `request_retraining`: el run espera la
+aprobación, como en la §12, y termina dejando en cola un run de `mlops`, que
+sigue en cola mientras `mlops` esté en pausa.
+
+Los dos tests siguen informando de drift, y los dos tienen razón. Estos 191
+son proyectos de Made With ML, como los 764 de la §9, pero el modelo aprendió
+de esos y de los papers de arXiv de la §12 juntos. Al lado de esa mezcla, los
+proyectos nuevos son más cortos, 17 palabras de mediana frente a 22, y tienen
+el doble de `mlops`, un 8 % frente a un 4 %. Y el f1 no bajó. Drift es una
+diferencia, no un daño: un test de drift dice que los datos se movieron, y
+solo la comprobación de rendimiento dice si eso hizo daño. La política de la
+§12 reentrena en los dos casos, a costa de un entrenamiento, y el gate de
+`mlops` decide si el resultado sale a producción; una política que solo
+reentrenara ante una caída del f1 tomaría aquí `continue_serving`.
 
 Queda un cabo suelto: cada run de `dataops` sigue avisando sobre `other`, en
 `validate_tags` y en `validate_transformed`. Un aviso que siempre está deja de
@@ -380,8 +404,12 @@ y ninguno de los dos logs de validación tiene ya el aviso.
 docker compose exec airflow-scheduler airflow dags unpause mlops
 ```
 
-Los proyectos nuevos están cargados, revisados y etiquetados igual que los
-viejos, y el próximo modelo va a entrenar con ellos. Las sources se quedan con
+El run de `mlops` que dejó en cola el monitor arranca, y entrena con los 1755
+proyectos. Es bien posible que su gate se quede con el modelo actual: el f1 no
+bajó, así que hay poco que ganar en las 49 filas de test nuevas, y `below the
+champion's … on the 49 new test rows - not promoting` es un desenlace normal.
+Los proyectos nuevos están cargados, revisados y etiquetados igual
+que los viejos, y desde ahora cada modelo entrena con ellos. Las sources se quedan con
 sus URLs del día 2 y del día 3: ahora esos son tus datos.
 
 ---

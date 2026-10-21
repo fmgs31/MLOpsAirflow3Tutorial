@@ -221,8 +221,9 @@ If it is short, where to raise it depends on how Docker runs:
    | URL | `https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/projects.csv` | `https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/tags.csv` |
 
    The dataset name becomes the table name in BigQuery. The files are in this
-   repo's [`datasets/`](../../datasets/): the projects, and their tags in a
-   separate table, joined by `id`.
+   repo's [`datasets/`](../../datasets/): 764 projects from Made With ML, and
+   their tags in a separate table, joined by `id`. More projects arrive in
+   §12 and §14.
 
 5. **Create the destination**, where Airbyte writes. **Destinations → New
    destination → BigQuery**:

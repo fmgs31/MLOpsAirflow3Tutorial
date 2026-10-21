@@ -10,6 +10,87 @@ registro de cuándo, y de cómo se midió — salvo lo que la primera sección d
 abajo lista como pendiente. Nada de esto es un paso que ejecutar.
 Sáltatelo, o vuelve cuando quieras saber hasta qué punto fiarte de un número.
 
+## 2026-10-17, más tarde: la entrega de arXiv y el promotion gate nuevo
+
+La entrega de la §12 son ahora 800 papers de arXiv (`datasets/batch_1/`), la
+§9 carga los 764 proyectos de Made With ML, el lote de la §14 va encima de
+los dos, y `promotion_gate` decide con las filas de test que el champion nunca
+vio, con un guardarraíl por bootstrap sobre las viejas. Recorrido desde un
+stack reiniciado (`docker compose down --volumes`, `apache/airflow:3.3.1`,
+BigQuery, Airbyte con sus sources reapuntadas por la API pública), con los
+Dags de solución en `dags/`:
+
+- `pytest`: `46 passed, 1 skipped`.
+- §9: `projects`, `tags`, `labeled_projects` con 764 filas, suites `6/6`,
+  `5/5`, `6/6`.
+- §10: la versión 1 se promocionó con `no champion yet` (f1 0,8788). El run a
+  mano: `all test rows: 157` y `old test rows: 157`, ninguna fila nueva, `…
+  clears threshold 0.65 and the champion's 0.8788 on the same 157 test rows -
+  promoting` (0,8911).
+- §12: `labeled_projects` con 1564 filas, ningún run de `mlops` en pausa.
+  `num_current': 800`; `f1 at promotion=0.8911 now=0.8224`; `label drift
+  p=1.082e-22 length drift p=0`; referencia `computer-vision` 38 %, `mlops`
+  8 %; actual `computer-vision` 57,5 %, sin `mlops`; `request_retraining`,
+  84 s. Con `drift_p_val` 0: `continue_serving` en 18 s. El reentrenamiento:
+  split de test de 319 filas; nuevas 162: 0,9566 frente a 0,8190 (+0,0787 a
+  +0,1999); viejas 157: 0,8782 frente a 0,8911 (−0,0575 a +0,0241);
+  promocionado. Después, `only 0 new rows since version 3 was trained -
+  nothing to measure`.
+- Fuera del stack, la misma §10 → §12 con 20 búsquedas sin semilla:
+  promocionó 19 de 20 (el rechazo, del guardarraíl de las filas viejas,
+  −0,095 a −0,012); caída del f1 sobre los papers 0,049–0,099; f1 en las filas
+  nuevas 0,915–0,957 frente a 0,828–0,847.
+- §14 día 1: `FAIL 191 not_null_labeled_projects_tag`, tres intentos; las 191
+  filas sin tag con fechas del 2026-09-11 al 2026-10-15; `tags` 1564. Día 2:
+  `validate_projects` falla en `title,description`, los cuatro pares con ids
+  3800–3803 a `2026-10-16 09:00:00`; la primera fila de ejemplo cambia entre
+  runs (`HuggingTweets` aquí). Día 3: `Invalid timestamp: '09/11/2026
+  17:19:07'`, `ERROR=1 SKIP=5`; tras el arreglo, `PASS=7`, 1755 filas. La
+  alarma de drift: `num_current': 191`, label drift p=5.817e-41, length drift
+  p=5.022e-19, `new_labels=['other']`, `inspect`; la query por tag tal como
+  aparece. Tras el arreglo del vocabulario: label drift p=0.005921, length
+  igual, `f1 at promotion=0.9171 now=0.9252`, `request_retraining`, 91 s. Con
+  `other` en `KNOWN_RAW_TAGS`: `tags 5/5`, `labeled_projects 6/6`, sin aviso.
+  El run de `mlops` en cola: 368 filas de test, 49 nuevas; `below the
+  champion's 0.9345 on the 49 new test rows - not promoting`.
+
+## 2026-10-17: snapshots en Parquet, el split por hash, las ventanas de monitorización, el rollback
+
+Desde un stack reiniciado (`docker compose down --volumes`,
+`apache/airflow:3.3.1`, BigQuery, Airbyte), con los Dags de solución copiados
+en `dags/`:
+
+- `pytest`: `44 passed, 1 skipped`. El skip es el test de drift; pyarrow
+  25.0.0 lee y escribe Parquet en el virtualenv de alibi-detect (numpy 1.26.4,
+  pandas 2.3.3).
+- §9 con `datasets/initial/`: `projects`, `tags` y `labeled_projects` con 573
+  filas cada una, suites `6/6`, `5/5`, `6/6`. §11: `Data is ready (573 rows)`.
+- §10: `training_split passed=5/5`; splits de 373 / 87 / 113 filas (train /
+  val / test). La versión 1 se promocionó con `no champion yet`. El
+  `test.parquet` del segundo run tenía los mismos 113 ids, y `score_champion`
+  puntuó la versión 1 sobre él exactamente con el f1 que registró al
+  entrenarse; la versión 2 puntuó menos y no se promocionó. Airbyte carga `id`
+  como NUMERIC, que llega como `Decimal`, y por eso `data.load_labeled` lo
+  convierte en entero.
+- Un asset event emitido con `mlops` en pausa no arrancó ningún run; el
+  siguiente run disparado por asset lo listó entre sus eventos.
+- §12: tras la entrega completa, `num_current=191`, referencia de 457 filas;
+  label drift p=0.0001645, length drift p=0.8746; `mlops` 5,7 % → 15,7 %,
+  `natural-language-processing` 44 % → 30 %; caída del f1 de 0,05; run de
+  84 s. Con `drift_p_val` 0.00001: `continue_serving` en 15 s. El run
+  disparado quedó en `queued` hasta quitarle la pausa a `mlops`, y entonces
+  promocionó la versión 4 (0,8911 frente al 0,8892 del champion sobre las
+  mismas 157 filas de test). Veinte repeticiones de la búsqueda fuera del
+  stack sobre ese snapshot promocionaron 18 veces. La monitorización después:
+  `only 0 new rows since version 4 was trained - nothing to measure`.
+- §14, después del día 3: `num_current=191`, label drift p=3,6e-21, length
+  0,918, `new_labels=['other']`, `inspect`; tras el arreglo del vocabulario,
+  label drift p=0,996, `continue_serving`. Los días 1–3 fallaron donde dice
+  la §14.
+- El rollback (`registry.rollback`, el borrado del alias, los tags de versión,
+  un segundo rollback que devuelve `None`) lo cubre el test unitario; no se
+  forzó en el stack vivo.
+
 ## 2026-10-15: cuatro clases, y los controles de la §14
 
 Contra el stack real (`apache/airflow:3.3.1`, BigQuery), después de cambiar

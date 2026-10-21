@@ -11,6 +11,9 @@ apache-airflow-providers-google
 
 # BigQuery -> pandas (the mlops and monitoring Dags read the warehouse).
 google-cloud-bigquery[pandas]
+# Parquet, for the snapshots the mlops and monitoring Dags write (§10, §12).
+# The BigQuery client brings it too; declared because this code uses it directly.
+pyarrow
 
 # Data validation (§9, §10), hyperparameter search (§10), experiment tracking
 # and model registry (§10, §12).

@@ -245,9 +245,12 @@ eventually fails on its declared `timeout`: 120 seconds for `enough_rows`, 300
 for `wait_for_table`. The run fails only once both have given up, after about
 five minutes.
 
-While they waited, neither sensor held a worker slot: `enough_rows` was out of
-its slot between pokes, and `wait_for_table` was in the triggerer. In the
-default mode they would have held one each for the whole wait, doing nothing.
+`airflow dags test` has no workers and no triggerer: it runs every task, and
+`wait_for_table`'s trigger, in its own process (`[DAG TEST] running trigger in
+line`). Sent through the scheduler, as `defer-demo` was, neither sensor holds a
+worker slot while it waits: `enough_rows` is out of its slot between pokes, and
+`wait_for_table` is in the triggerer. In the default mode they would hold one
+each for the whole wait, doing nothing.
 
 Drop the copy when you are done, in the same query editor:
 

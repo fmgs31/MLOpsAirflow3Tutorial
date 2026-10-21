@@ -31,8 +31,19 @@ escribes tú, que es la idea.
 Este tutorial se basa en el
 [tutorial de orquestación](https://madewithml.com/courses/mlops/orchestration/)
 de Made With ML, de Goku Mohandas: el mismo proyecto (etiquetar proyectos de ML
-a partir de su título y su descripción), los mismos datos y el mismo pipeline
-de DataOps, MLOps y continual learning.
+a partir de su título y su descripción), sus datos y el mismo pipeline de
+DataOps, MLOps y continual learning.
+
+Los datos son los 764 proyectos de Made With ML más 800 papers de arXiv de
+2025–2026, extraídos para este tutorial. Los proyectos de Made With ML vienen
+todos de un mismo sitio y un mismo año, así que más de ellos cambian demasiado
+poco: el modelo en producción apenas pierde f1 con ellos, y reentrenar no gana
+nada más allá del ruido. Los papers son datos reales de otro origen: el drift
+es claro, le cuesta f1 al modelo en producción, y el reentrenamiento lo
+recupera. También son más nuevos, pero fecha y origen
+cambian a la vez, así que estos datos no dicen cuánto del drift se debe a la
+fecha.
+[`datasets/README.md`](datasets/README.md) explica cómo se eligieron.
 
 Quería aprender con la nueva versión de Airflow (la 3), y quería un tutorial
 práctico en vez de uno para leer, así que le pedí a Claude que adaptara la

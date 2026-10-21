@@ -2,19 +2,21 @@
 """Build datasets/batch_2/: the later deliveries §14 loads, problems included.
 
 The new projects are real: Made With ML's `holdout.csv`, 191 projects that are
-not in `datasets/projects.csv`. Two things are changed so they behave as a
-batch that arrives after the original data, and the problems are added on top:
+not in `datasets/projects.csv`. They arrive after §12's delivery, so the
+files start from `datasets/batch_1/`, and the problems are added on top:
 
-* every `created_on` moves forward one year (2020 -> 2021), so the batch is
-  the newest data in the warehouse;
+* the `created_on` dates, March to October 2020, are moved to the five weeks
+  after the newest paper in `batch_1/` (11 September to 15 October 2026), in
+  the same order and with the same relative spacing, so the batch is the
+  newest data in the warehouse;
 * day 1 has the new projects but not their tags;
 * day 2 has the tags, and four old projects re-sent under new ids;
 * day 3 drops the re-sent rows, and writes the new projects' dates as
   `MM/DD/YYYY HH:MM:SS`.
 
 The tags are left as upstream wrote them. Upstream had already collapsed the
-three rarest tags into `other`, which the original `tags.csv` never uses: that
-change is real, not added here.
+three rarest tags into `other`, which neither `tags.csv` nor `batch_1/`
+uses: that change is real, not added here.
 
     python scripts/make_batch_2.py
 
@@ -41,8 +43,12 @@ HOLDOUT_URL = (
 
 # Old projects the day-2 export sends again, each under a new id.
 RESENT_IDS = ["65", "847", "1668", "2268"]
-FIRST_NEW_ID = 2438  # one above the largest id in projects.csv
-RESENT_ON = "2021-10-06 09:00:00"
+FIRST_NEW_ID = 3800  # one above the largest id in batch_1/projects.csv
+RESENT_ON = "2026-10-16 09:00:00"
+
+# Where the holdout's dates are moved to (see the docstring).
+NEW_START = datetime(2026, 9, 11)
+NEW_END = datetime(2026, 10, 15, 23, 59, 59)
 
 STANDARD = "%Y-%m-%d %H:%M:%S"
 DAY3_FORMAT = "%m/%d/%Y %H:%M:%S"
@@ -70,14 +76,17 @@ def main() -> None:
     with urllib.request.urlopen(HOLDOUT_URL) as response:
         holdout = read_rows(response.read().decode("utf-8"))
 
-    projects_text = (DATASETS / "projects.csv").read_bytes().decode("utf-8")
-    tags_text = (DATASETS / "tags.csv").read_bytes().decode("utf-8")
+    projects_text = (DATASETS / "batch_1" / "projects.csv").read_bytes().decode("utf-8")
+    tags_text = (DATASETS / "batch_1" / "tags.csv").read_bytes().decode("utf-8")
     originals = {row["id"]: row for row in read_rows(projects_text)}
 
-    new = []
-    for row in holdout:
-        created = datetime.strptime(row["created_on"], STANDARD)
-        new.append({**row, "created_on": created.replace(year=created.year + 1).strftime(STANDARD)})
+    created = [datetime.strptime(row["created_on"], STANDARD) for row in holdout]
+    first, last = min(created), max(created)
+    scale = (NEW_END - NEW_START) / (last - first)
+    new = [
+        {**row, "created_on": (NEW_START + (when - first) * scale).strftime(STANDARD)}
+        for row, when in zip(holdout, created)
+    ]
 
     resent = [
         {**originals[old_id], "id": str(FIRST_NEW_ID + i), "created_on": RESENT_ON}

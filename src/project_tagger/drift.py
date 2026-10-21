@@ -11,8 +11,9 @@ p-value below the threshold means drift.
 
 alibi-detect pins numpy<2, which Airflow 3.3.1 cannot accept, so this module
 runs in its own virtualenv (/opt/venvs/alibi, see Dockerfile) through
-`@task.external_python`. That is why it imports only numpy, pandas and
-alibi-detect - nothing else from this package, and nothing from Airflow.
+`@task.external_python`. That is why it imports only numpy, pandas (with
+pyarrow, to read Parquet) and alibi-detect - nothing else from this package,
+and nothing from Airflow.
 """
 
 from __future__ import annotations
@@ -59,10 +60,17 @@ def distribution(tags: pd.Series) -> dict[str, float]:
     return {str(tag): float(share) for tag, share in tags.value_counts(normalize=True).items()}
 
 
-def detect_drift(reference_fp: str, current_fp: str, p_val: float = 0.05) -> dict[str, Any]:
-    """Compare the two windows written by `monitoring.prepare_windows`."""
-    reference = pd.read_csv(reference_fp)
-    current = pd.read_csv(current_fp)
+def detect_drift(
+    reference_fp: str | None, current_fp: str | None, p_val: float = 0.05
+) -> dict[str, Any] | None:
+    """Compare the two windows written by `monitoring.prepare_windows`.
+
+    None when it wrote none: no champion, or too few new rows to measure.
+    """
+    if reference_fp is None or current_fp is None:
+        return None
+    reference = pd.read_parquet(reference_fp)
+    current = pd.read_parquet(current_fp)
     return {
         "label_drift": label_drift(reference["tag"], current["tag"], p_val),
         "length_drift": length_drift(reference["text"], current["text"], p_val),

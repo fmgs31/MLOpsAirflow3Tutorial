@@ -7,16 +7,18 @@ the data passed validation.
 Also shown:
 
 * **A snapshot and a validation gate before training** - the warehouse table
-  is copied once per run, and that copy is what gets validated and trained on,
-  including the split, which no table-level suite can see.
+  is copied once per run and split once, by a hash of each project's id, and
+  those files are what gets validated and trained on, including the split,
+  which no table-level suite can see.
 * **Distributed tuning with dynamic task mapping** - one Optuna study, stored
   in a database, and one `run_trials` task instance per worker, fanned out at
   runtime. Every worker adds trials to the same study.
 * **Experiment tracking** - the study is an MLflow run with one child run per
   trial, and the final model is a run of its own, registered as a new version.
-* **Branching as a promotion gate** - a model that misses the f1 threshold does
-  not reach production, and the Dag run still succeeds (a rejected candidate is
-  a normal outcome, not a failure).
+* **Branching as a promotion gate** - a model that misses the f1 threshold, or
+  scores below the production model on the test rows that model has never
+  seen, does not reach production, and the Dag run still succeeds (a rejected
+  candidate is a normal outcome, not a failure).
 * **XCom discipline** - tasks exchange paths, run ids and metric dicts. The
   models live in MLflow and the data in the warehouse and on disk.
 
@@ -38,7 +40,7 @@ from airflow.sdk import Asset, Param, dag, task
 from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
-from project_tagger import config, data, registry, train as train_module, validate
+from project_tagger import config, data, evaluate, registry, train as train_module, validate
 from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
 
 DEFAULT_ARGS = {
@@ -74,19 +76,19 @@ def mlops():
     @task
     def prepare_data(
         *, triggering_asset_events: Mapping[Asset, Sequence[Any]], run_id: str
-    ) -> str:
-        """Inspect what triggered us, then pin the rows this run will use."""
+    ) -> dict[str, str]:
+        """Inspect what triggered us, then pin and split the rows this run will use."""
         for asset, events in triggering_asset_events.items():
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
 
         config.ensure_dirs()
-        fp = data.save_snapshot(data.load_labeled(), run_key(run_id))
-        print(f"snapshot: {fp}")
-        return str(fp)
+        paths = data.save_snapshot(data.load_labeled(), run_key(run_id))
+        print(f"snapshot: {paths}")
+        return paths
 
     @task
-    def validate_training_data(snapshot_fp: str) -> dict[str, Any]:
+    def validate_training_data(paths: dict[str, str]) -> dict[str, Any]:
         """The gate between the warehouse and the trainer.
 
         `dataops` already validated `labeled_projects` - but that was a
@@ -95,9 +97,9 @@ def mlops():
         plus a split that no single-table suite can inspect, so both are
         checked here.
         """
-        df = data.load_snapshot(snapshot_fp)
+        df = data.load_snapshot(paths["snapshot"])
         table = validate.run_suite(df, "labeled_projects")
-        split = validate.check_split(*data.split(data.preprocess(df)))
+        split = validate.check_split(*(data.load_snapshot(paths[name]) for name in data.SPLITS))
         print(f"{table.summary()} {split.summary()}")
 
         if not (table.passed and split.passed):
@@ -123,10 +125,10 @@ def mlops():
         return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
 
     @task(max_active_tis_per_dag=2)
-    def run_trials(n_trials: int, study_name: str, snapshot_fp: str) -> list[dict[str, Any]]:
+    def run_trials(n_trials: int, study_name: str, paths: dict[str, str]) -> list[dict[str, Any]]:
         """One task instance per worker; each adds `n_trials` trials to the shared study."""
-        train_df, _ = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
-        results = train_module.run_trials(study_name, n_trials, train_df)
+        train_df, val_df = data.load_snapshot(paths["train"]), data.load_snapshot(paths["val"])
+        results = train_module.run_trials(study_name, n_trials, train_df, val_df)
         print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
         return results
 
@@ -142,14 +144,19 @@ def mlops():
         return best
 
     @task
-    def train_best(best: dict[str, Any], snapshot_fp: str, *, run_id: str) -> dict[str, Any]:
-        """Fit on the full training split, score on the test split, log and register in MLflow."""
-        train_df, test_df = data.split(data.preprocess(data.load_snapshot(snapshot_fp)))
+    def train_best(best: dict[str, Any], paths: dict[str, str], *, run_id: str) -> dict[str, Any]:
+        """Fit on train + val, score on test, log and register in MLflow."""
+        splits = {name: data.load_snapshot(paths[name]) for name in data.SPLITS}
         trained = train_module.train_model(
-            best["params"], train_df, test_df,
+            best["params"], splits,
             run_name=f"final-{run_key(run_id)}",
-            # Links the final run back to the trial it took its params from.
-            tags={"airflow_run_id": run_id, "best_trial_run_id": best["mlflow_run_id"]},
+            # Links the final run back to the Airflow run, the trial it took
+            # its params from, and the files it was trained on.
+            tags={
+                "airflow_run_id": run_id,
+                "best_trial_run_id": best["mlflow_run_id"],
+                "snapshot_path": paths["snapshot"],
+            },
         )
         version = registry.register(trained["model_uri"])
         print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
@@ -164,21 +171,42 @@ def mlops():
             print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
         return {**trained, "metrics": metrics}
 
-    @task.branch
-    def promotion_gate(evaluation: dict[str, Any]) -> str:
-        """Return the task_id to run. The other branch is skipped, not failed."""
-        f1 = evaluation["metrics"]["f1"]
-        threshold = config.MIN_F1_TO_PROMOTE
-        current = registry.get_production()
-        current_f1 = current["metrics"]["f1"] if current else 0.0
+    @task
+    def compare_with_champion(evaluation: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
+        """Both models on this run's test split, new rows and old. None if nothing is promoted."""
+        champion = registry.get_production()
+        if champion is None:
+            print("no champion yet")
+            return None
+        # Every id the champion's training run had, in any split.
+        seen = [i for ids in registry.load_split_ids(champion["run_id"]).values() for i in ids]
+        comparison = evaluate.compare(
+            registry.load_model(version=evaluation["version"]),
+            registry.load_model(),
+            data.load_snapshot(paths["test"]),
+            seen,
+        )
+        for name, part in comparison.items():
+            if part["rows"]:
+                low, high = part["difference"]
+                print(
+                    f"{name} test rows: {part['rows']}, f1={part['f1']:.4f}, "
+                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}, "
+                    f"difference {low:+.4f} to {high:+.4f}"
+                )
+        return comparison
 
-        if f1 < threshold:
-            print(f"f1={f1:.4f} below threshold {threshold} - not promoting")
-            return "keep_current_model"
-        if f1 < current_f1:
-            print(f"f1={f1:.4f} below production {current_f1:.4f} - not promoting")
-            return "keep_current_model"
-        return "promote_model"
+    @task.branch
+    def promotion_gate(evaluation: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+        """Return the task_id to run. The other branch is skipped, not failed."""
+        promote, reason = train_module.should_promote(
+            evaluation["metrics"]["f1"],
+            comparison,
+            config.MIN_F1_TO_PROMOTE,
+            config.MIN_NEW_TEST_ROWS,
+        )
+        print(reason)
+        return "promote_model" if promote else "keep_current_model"
 
     @task(outlets=[PRODUCTION_MODEL])
     def promote_model(
@@ -200,18 +228,18 @@ def mlops():
     # the default `all_success` would skip it after any branch skip.
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 
-    snapshot = prepare_data()
-    gate = validate_training_data(snapshot)
+    paths = prepare_data()
+    gate = validate_training_data(paths)
     study = create_study()
-    results = run_trials.partial(study_name=study, snapshot_fp=snapshot).expand(
+    results = run_trials.partial(study_name=study, paths=paths).expand(
         n_trials=trial_budget()
     )
     # No data flows from the gate to the trainers, only permission to run: every
     # mapped instance waits on it.
     gate >> results
 
-    evaluation = evaluate_best(train_best(best_params(study, results), snapshot))
-    decision = promotion_gate(evaluation)
+    evaluation = evaluate_best(train_best(best_params(study, results), paths))
+    decision = promotion_gate(evaluation, compare_with_champion(evaluation, paths))
 
     decision >> promote_model(evaluation) >> done
     decision >> keep_current_model >> done

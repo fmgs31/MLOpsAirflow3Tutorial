@@ -20,6 +20,7 @@ apache-airflow-providers-standard>=1.18.0
 apache-airflow-providers-airbyte
 apache-airflow-providers-google
 google-cloud-bigquery[pandas]
+pyarrow
 great_expectations
 optuna
 mlflow-skinny

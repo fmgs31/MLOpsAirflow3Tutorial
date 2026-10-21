@@ -52,7 +52,10 @@ windows all take a dataframe, not a table name. Optuna and MLflow run for
 real, but against SQLite files in a temporary folder: the test points
 `config.OPTUNA_STORAGE` and `config.MLFLOW_TRACKING_URI` there with pytest's
 `monkeypatch`, which replaces a value for the length of one test, then tunes,
-trains, registers, promotes and rolls back. The drift test needs alibi-detect, which lives only in its own virtualenv (§12),
+trains, registers, promotes and rolls back. The monitoring tests get a
+production model the same way: `monkeypatch` replaces
+`registry.get_production` and `registry.load_split_ids` with functions that
+return a made-up champion and its split ids. The drift test needs alibi-detect, which lives only in its own virtualenv (§12),
 so in Airflow's environment it is **skipped**, not failed.
 
 **Data tests** — the GX suites and dbt's tests (§9). They are tests too, but on
@@ -86,12 +89,12 @@ docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 a one-off container the compose file defines under a profile, which `run`
 creates for that command and `--rm` removes afterwards.
 
-**Checkpoint.** A row of dots, one `s`, and `41 passed, 1 skipped`, in
+**Checkpoint.** A row of dots, one `s`, and `46 passed, 1 skipped`, in
 well under a minute:
 
 ```
-............................s.............                               [100%]
-41 passed, 1 skipped in 20.75s
+..............................s................                          [100%]
+46 passed, 1 skipped in 23.78s
 ```
 
 The `s` is the drift test, skipped for the reason given under "Unit tests on

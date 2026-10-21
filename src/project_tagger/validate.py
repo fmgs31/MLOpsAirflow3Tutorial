@@ -123,57 +123,66 @@ def run_suite(df: pd.DataFrame, suite_name: str) -> SuiteResult:
 
 def check_split(
     train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
     test_df: pd.DataFrame,
     min_rows_per_class: int = config.MIN_ROWS_PER_CLASS,
 ) -> SuiteResult:
-    """Sanity-check a train/test split before anything is fitted on it.
+    """Sanity-check a train/validation/test split before anything is fitted on it.
 
     A table-level suite cannot see any of this. `labeled_projects` can pass every
-    column expectation and still split into a train set missing a class, a test
-    set with three rows of one, or two sets sharing ids. Each produces a model
-    whose held-out metric means nothing - and the promotion gate downstream
-    compares exactly that metric against production.
+    column expectation and still split into a training set missing a class, a
+    test set with three rows of one, or two sets sharing ids. Each produces a
+    model whose held-out metric means nothing - and the promotion gate
+    downstream compares exactly that metric against production.
 
-    These checks span two dataframes, which a GX suite (one batch at a time)
-    does not express, so they are plain Python returning the same result shape.
+    These checks span several dataframes, which a GX suite (one batch at a
+    time) does not express, so they are plain Python returning the same
+    result shape.
     """
-    train_tags, test_tags = set(train_df["tag"]), set(test_df["tag"])
+    splits = {"train": train_df, "val": val_df, "test": test_df}
+    tags = {name: set(df["tag"]) for name, df in splits.items()}
+    all_tags = set().union(*tags.values())
+    missing = {name: sorted(all_tags - found) for name, found in tags.items() if all_tags - found}
+    # The final model learns from train + val, so that is where a class needs rows.
+    learned = pd.concat([train_df, val_df])
     scarce = {
         str(tag): int(n)
-        for tag, n in train_df["tag"].value_counts().items()
+        for tag, n in learned["tag"].value_counts().items()
         if n < min_rows_per_class
     }
-    total = len(train_df) + len(test_df)
-    test_fraction = len(test_df) / total if total else 0.0
+    shared = [
+        f"{a}/{b}"
+        for a, b in (("train", "val"), ("train", "test"), ("val", "test"))
+        if not set(splits[a]["id"]).isdisjoint(set(splits[b]["id"]))
+    ]
+    total = sum(len(df) for df in splits.values())
+    fraction = {name: len(df) / total if total else 0.0 for name, df in splits.items()}
 
     checks: list[tuple[str, bool, bool, str]] = [
-        ("split_is_non_empty", bool(len(train_df) and len(test_df)), True, ""),
-        (
-            "classes_in_both_splits",
-            train_tags == test_tags,
-            True,
-            f"train-only={sorted(train_tags - test_tags)} "
-            f"test-only={sorted(test_tags - train_tags)}",
-        ),
+        ("split_is_non_empty", all(len(df) for df in splits.values()), True, ""),
+        ("classes_in_every_split", not missing, True, f"missing: {missing}" if missing else ""),
         (
             f"min_rows_per_class:{min_rows_per_class}",
             not scarce,
             True,
-            f"under-represented in train: {scarce}" if scarce else "",
+            f"under-represented in train + val: {scarce}" if scarce else "",
         ),
         (
             "no_id_leakage",
-            set(train_df["id"]).isdisjoint(set(test_df["id"])),
+            not shared,
             True,
-            "the same project in both splits inflates the held-out metric",
+            f"ids shared by {shared}: the same project on both sides inflates the held-out metric"
+            if shared
+            else "",
         ),
         (
-            "test_fraction_between_0.1_and_0.4",
-            0.1 <= test_fraction <= 0.4,
+            "fractions_near_target",
+            abs(fraction["test"] - config.TEST_PCT / 100) <= 0.05
+            and abs(fraction["val"] - config.VAL_PCT / 100) <= 0.05,
             # Non-critical: an odd ratio is worth seeing in the logs, but it is a
             # judgement call, not a broken snapshot.
             False,
-            f"test_fraction={test_fraction:.3f}",
+            f"val={fraction['val']:.3f} test={fraction['test']:.3f}",
         ),
     ]
 

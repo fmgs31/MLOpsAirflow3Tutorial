@@ -17,7 +17,8 @@ from pathlib import Path
 # /opt/airflow/src/project_tagger/config.py -> /opt/airflow
 PROJECT_ROOT = Path(os.getenv("PROJECT_TAGGER_PROJECT_ROOT", Path(__file__).resolve().parents[2]))
 
-# Local scratch space: each mlops run pins the exact rows it trained on here.
+# Local scratch space: each mlops run pins the exact rows it trained on here,
+# and each monitoring run the windows it measured.
 DATA_DIR = Path(os.getenv("PROJECT_TAGGER_DATA_DIR", PROJECT_ROOT / "data"))
 SNAPSHOTS_DIR = DATA_DIR / "snapshots"
 
@@ -77,14 +78,29 @@ OPTUNA_STORAGE = os.getenv("OPTUNA_STORAGE", "sqlite:///optuna.db")
 # The gate the mlops Dag enforces before a model can be promoted.
 MIN_F1_TO_PROMOTE = float(os.getenv("PROJECT_TAGGER_MIN_F1", "0.65"))
 
-# Fewer rows than this for a class in the training split and its metrics are
-# noise: the mlops Dag refuses to train on such a snapshot.
+# Against a champion, the test rows it has never seen decide (train.should_promote),
+# once there are at least this many; with fewer, the whole test split decides.
+MIN_NEW_TEST_ROWS = int(os.getenv("PROJECT_TAGGER_MIN_NEW_TEST_ROWS", "30"))
+
+# How each mlops run splits the rows, by a hash of the project id (see
+# data.assign_split): this share of the ids is the test split, this share the
+# validation split, and the rest is the training split.
+TEST_PCT = 20
+VAL_PCT = 16
+
+# Fewer rows than this for a class in what the final model learns from (train
+# + validation) and its metrics are noise: the mlops Dag refuses to train on
+# such a snapshot.
 MIN_ROWS_PER_CLASS = int(os.getenv("PROJECT_TAGGER_MIN_ROWS_PER_CLASS", "20"))
 
 # --- Monitoring (§12) ----------------------------------------------------------
 # alibi-detect lives in its own virtualenv (see Dockerfile); the monitoring Dag
 # runs its drift checks with this interpreter.
 ALIBI_PYTHON = os.getenv("PROJECT_TAGGER_ALIBI_PYTHON", "/opt/venvs/alibi/bin/python")
+
+# Fewer rows than this that the champion has never seen, and there is nothing
+# to measure yet: the monitoring Dag keeps serving and checks again next run.
+MIN_MONITOR_ROWS = int(os.getenv("PROJECT_TAGGER_MIN_MONITOR_ROWS", "50"))
 
 
 def table_id(table: str) -> str:

@@ -7,6 +7,27 @@ configurados a la vez. También existe el **Edge
 executor**, para workers fuera de tu clúster, algo que es posible gracias a la
 Task Execution API (§3).
 
+Cambiar de executor cambia dónde pueden vivir los archivos. `mlops` y
+`monitoring` escriben sus snapshots en `data/snapshots/` (§10, §12), una
+carpeta en la única máquina que corre todas las tasks de este stack. Con
+Celery o Kubernetes la siguiente task puede correr en una máquina que no tiene
+esa carpeta, así que los snapshots van a almacenamiento de objetos, un bucket
+de GCS o S3 al que llegan todos los workers, con una regla de ciclo de vida que
+los borra pasado un tiempo (retención): aquí nada los borra. Nada que tenga
+que durar depende de ellos. Con qué se entrenó y se evaluó cada modelo en
+producción está en MLflow, con su run (`split_ids.json`, §10).
+
+**Write, audit, publish.** En `dataops`, `dbt build` escribe
+`labeled_projects`, y las comprobaciones corren sobre ella después: una tabla
+que no las pasa ya está publicada para todo lo que la lee sin esperar al asset
+(§14, día 1). El patrón que cierra ese hueco es **write-audit-publish**
+(escribir, auditar, publicar). dbt construye en un dataset de staging, las
+suites validan la tabla allí, y solo si pasan una task la copia al dataset que
+lee todo el mundo y emite el asset. Un copy job de BigQuery sustituye la tabla
+en un solo paso, así que ningún lector ve media tabla. Las tablas sin procesar
+pueden saltarse ese paso: son la zona de aterrizaje, y solo las lee dbt,
+después de que las suites las hayan comprobado.
+
 **Aislamiento.** No instales tus dependencias de ML junto a las de Airflow.
 Este stack ya se ha topado con el problema dos veces: dbt (§9) y alibi-detect
 (§12) fijan versiones que el entorno de Airflow no puede aceptar, así que cada uno

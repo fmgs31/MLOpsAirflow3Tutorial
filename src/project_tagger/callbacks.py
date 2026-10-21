@@ -1,4 +1,4 @@
-"""Callbacks used by Deadline Alerts (the Airflow 3 replacement for SLAs).
+"""Callbacks used by Deadline Alerts.
 
 A deadline callback is referenced by dotted path, so this module has to be
 importable by whichever process runs it: the executor for `SyncCallback`, the
@@ -20,7 +20,6 @@ log = logging.getLogger(__name__)
 def deadline_missed(**kwargs: Any) -> None:
     """Fires when a Dag run passes its deadline without finishing."""
     log.warning("DEADLINE MISSED: %s", kwargs)
-    print(f"DEADLINE MISSED: {kwargs}")
 
 
 async def deadline_missed_async(**kwargs: Any) -> None:
