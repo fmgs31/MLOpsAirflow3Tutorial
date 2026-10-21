@@ -7,8 +7,8 @@ triggers it.
 prepare_data ─► validate_training_data ─┐
 create_study ───────────────────────────┤
 trial_budget ───────────────────────────┴─► run_trials×N ─► best_params ─► train_best
-─► evaluate_best ─► compare_with_champion ─► promotion_gate ─► promote_model ──────► done
-                                                          └─► keep_current_model ─┘
+─► evaluate_best ─► compare_with_champion ─► promotion_gate ─► approve_promotion ─► promote_model ──► done
+                                                          └─► keep_current_model ──────────────────┘
 ```
 
 | Task | Tool | What it does |
@@ -18,7 +18,7 @@ trial_budget ──────────────────────�
 | `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna**, tracked in **MLflow** | searches the hyperparameters, spread over several tasks, and records every trial |
 | `train_best`, `evaluate_best` | **MLflow** tracking | fits the final model and records it: parameters, metrics, the model file |
 | `compare_with_champion` | **MLflow** Model Registry | scores the new model and the production model on this run's test split |
-| `promotion_gate` → `promote_model` | **MLflow** Model Registry | decides whether the new model goes to production |
+| `promotion_gate` → `approve_promotion` → `promote_model` | **MLflow** Model Registry, and a person | the gate decides whether the new model may go to production, a person approves it in the Airflow UI, and the registry moves it there |
 
 ### The ML stack
 
@@ -37,10 +37,10 @@ spread the search over several tasks.
 **MLflow** records experiments. Each training is a **run**, with its
 **parameters** (the hyperparameters used), its **metrics** (f1, precision...)
 and its **artifacts** (files: here `metrics.json`, `split_ids.json` and the
-model itself). Runs
-belong to an **experiment**, `project_tagger`. The **Model Registry**, also in
-MLflow, gives a model a name and numbered **versions**. An **alias** is a label
-you move from one version to another. This project uses two:
+model itself). Runs belong to an **experiment**, `project_tagger`. The
+**Model Registry**, also in MLflow, gives a model a name and numbered
+**versions**. An **alias** is a label you move from one version to another.
+This project uses two:
 
 ```
 champion             the version in production: what predict.py loads
@@ -105,23 +105,16 @@ file is uploaded only with the final run.
 
 ### Build it
 
-New workload functions: `data.save_snapshot(df, key)` writes the table to
-`data/snapshots/<key>/`, then preprocesses it, splits it and writes each split
-there too, and returns the paths of the four files (`data.SPLITS` names the
-three splits, `("train", "val", "test")`); `data.load_snapshot(fp)` reads one
-back; `data.preprocess(df)` cleans the text and collapses every tag outside
-the four classes the model learns (`config.ACCEPTED_TAGS`) into `other`;
-`data.assign_split(ids)` puts each project in `train`, `val` or `test` by a
-hash of its id;
-`validate.check_split(train, val, test)` is a second suite, on the split;
-`evaluate.evaluate(model, df)` scores a model on a dataframe, and
-`evaluate.compare(candidate, champion, test_df, champion_ids)` scores two on
-the same rows. In `train_module` (`train.py`): `create_study`, `run_trials`,
-`best_trial`, `train_model` and `should_promote`. In `registry`: `register`,
-`load_metrics`, `get_production`, `load_split_ids`, `load_model` (the
-`champion`, or a given version) and `promote`.
-`config.MIN_F1_TO_PROMOTE` is the minimum f1 for moving a model to production
-(0.65, or the value of `PROJECT_TAGGER_MIN_F1` if set).
+New workload functions: `data.save_snapshot(df, key)` writes the table and its
+three splits (`data.SPLITS`: `train`, `val`, `test`) to
+`data/snapshots/<key>/` and returns their paths, and `data.load_snapshot(fp)`
+reads one back. Before splitting, `data.preprocess(df)` cleans the text and
+collapses every tag outside the four classes the model learns
+(`config.ACCEPTED_TAGS`) into `other`. `validate.check_split` is a second
+suite, on the split, and `evaluate.compare` scores two models on the same
+rows. The rest, in `train_module` (`train.py`) and `registry`, do what their
+names say. `config.MIN_F1_TO_PROMOTE` is the minimum f1 for moving a model to
+production (0.65, or the value of `PROJECT_TAGGER_MIN_F1` if set).
 
 Create `dags/04_mlops.py`:
 
@@ -131,10 +124,12 @@ Create `dags/04_mlops.py`:
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import timedelta
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.sdk import Asset, Param, dag, task
 from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
@@ -364,8 +359,8 @@ Now the final model, and the **promotion gate**, which decides whether it goes
 to production. Unlike the gates in §9, the gate does not fail the task when the
 answer is no: it is a *branch task*, a task that picks which of the Dag's two
 **branches** continues. Add `train_best`, `evaluate_best`, `compare_with_champion`,
-`promotion_gate`, `promote_model` and the two `EmptyOperator`s the branches
-need:
+`promotion_gate`, `approve_promotion`, `promote_model` and the two
+`EmptyOperator`s the branches need:
 
 ```python dags/04_mlops.py
     @task
@@ -406,11 +401,9 @@ need:
         )
         for name, part in comparison.items():
             if part["rows"]:
-                low, high = part["difference"]
                 print(
                     f"{name} test rows: {part['rows']}, f1={part['f1']:.4f}, "
-                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}, "
-                    f"difference {low:+.4f} to {high:+.4f}"
+                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}"
                 )
         return comparison
 
@@ -423,7 +416,18 @@ need:
             config.MIN_NEW_TEST_ROWS,
         )
         print(reason)
-        return "promote_model" if promote else "keep_current_model"
+        return "approve_promotion" if promote else "keep_current_model"
+
+    approve_promotion = ApprovalOperator(
+        task_id="approve_promotion",
+        subject="Promote the new tag classifier?",
+        body=(
+            "The new version passed promotion_gate.\n\n"
+            "Read compare_with_champion's log, then approve to move `champion` to it."
+        ),
+        defaults="Approve",
+        response_timeout=timedelta(seconds=60),
+    )
 
     @task(outlets=[PRODUCTION_MODEL])
     def promote_model(
@@ -469,14 +473,10 @@ champion also has the f1 it logged when it was trained, but that was measured
 on another run's test split, on other rows; comparing it with the new model's
 f1 would compare two exams, not two models. On the same rows the comparison
 is fair, and the hash split makes those rows honest for both: no test row has
-ever been in any model's training data, the champion's included. One case the
-hash cannot see is the same project sent again under a new id, which could
-put one copy in test and the other in train; the `projects` suite stops that
-in `dataops` (`ExpectCompoundColumnsToBeUnique` on title and description, §9)
-before it gets here.
+ever been in any model's training data, the champion's included.
 
-The same rows are not all alike, though. `evaluate.compare` splits them by
-the champion's `split_ids.json`, and scores both models on each part:
+`evaluate.compare` also splits the test rows by the champion's
+`split_ids.json`, and scores both models on each part:
 
 | Part | Rows | What it says |
 |---|---|---|
@@ -485,45 +485,37 @@ the champion's `split_ids.json`, and scores both models on each part:
 | `all` | both | the whole split |
 
 A retrain exists to do better on the new data, so the `new` rows decide: the
-new model's f1 on them must not be below the champion's. Testing on data
-newer than what a model was trained on is called an **out-of-time** test, and
-it is the closest a test set gets to production. The `old` rows are a
-**guardrail**: a model that learns the new data by forgetting the old has
-not improved (§12 calls it catastrophic forgetting), so a clear loss there
-blocks it too. A set kept for this, past cases a new model must still get
-right, is a **regression set**; teams often curate one by hand, a *golden
-set*.
-
-"Clear" needs a number, because a test split this size is noisy: with about
-150 rows, one row is worth more than half a point of f1, and two models of the
-same quality can differ by a couple of points by the luck of which rows ended
-up in test. `evaluate.difference_interval` measures that luck with a
-**paired bootstrap**: draw as many rows as there are, at random and with
-replacement, score both models on that same draw, keep the difference; repeat
-a thousand times. The middle 95% of those differences, the `difference … to
-…` in the log, is how far the difference could move by chance. An interval
-entirely below 0 means the new model is worse by more than chance explains,
-and only then does the guardrail block. It is seeded, so the same rows always
-give the same interval.
-
-With fewer than 30 new rows (`config.MIN_NEW_TEST_ROWS`) there is too little
-new data to decide on, and the whole split decides instead: the new model
-must not be below the champion on all of it. That is the case in this
-section, where every run sees the same 764 rows. In §12 new rows arrive, and
-the full rule applies.
+new model's f1 on them must not be below the champion's. With fewer than 30
+new rows (`config.MIN_NEW_TEST_ROWS`) there is too little new data to decide
+on, and the whole split decides instead. That is the case in this section,
+where every run sees the same 764 rows; in §12 new rows arrive. The `old`
+part is in the log for you to read; §12 comes back to it.
 
 `compare_with_champion` is a task of its own so that the Graph shows it and
 its log names the version it compared with, part by part. It takes
-`evaluate_best`'s output, which carries the new version, so it runs after it. A test set is still an estimate: the
-last word on a model is live traffic, which is what the deployment strategies
-at the end of §12 are for.
+`evaluate_best`'s output, which carries the new version, so it runs after it.
 
 `promotion_gate` applies the rule in `train_module.should_promote`: the new
-model's f1 must clear the threshold, and, against a champion, must not be
-below it on the new rows nor clearly below it on the old ones. A
+model's f1 must clear the threshold and, against a champion, must not be
+below it on the new rows, or on the whole split when there are too few. A
 `@task.branch` returns the `task_id` to run; the other branch is **skipped**,
 not failed. A candidate that misses the threshold, or loses to the champion,
 is a normal outcome: the run succeeds and production is left alone.
+
+A model the gate lets through still waits for a person. `approve_promotion`
+is a **human-in-the-loop** task, one that waits for a person to answer.
+`ApprovalOperator` parks it in `awaiting_input` and shows a prompt in the UI,
+on the task instance's **Required Actions** tab and under Browse → **Required
+Actions** (§5). On **Approve**, `promote_model` runs; on **Reject**, it is
+skipped and production is left alone. `defaults` is the answer applied if
+nobody responds within `response_timeout`: sixty seconds here so the lesson's
+runs finish; give it hours in production. The gate checks the numbers; the
+person checks what numbers miss, with `compare_with_champion`'s log and the
+new version in MLflow in front of them. Airflow records the answer: the
+choice, when, and *by whom*. A run that timed out and fell back to its
+`defaults` stores the choice with the "who" left empty, which is how you tell
+"a person approved this" from "nobody was looking".
+
 `promote_model` moves the `champion` alias and emits `mlops`'s own asset,
 `production_model`, which nothing consumes yet; point a Dag's `schedule` at it
 and the edge appears in the Assets graph.
@@ -551,7 +543,7 @@ Finish the file with the wiring:
     evaluation = evaluate_best(train_best(best_params(study, results), paths))
     decision = promotion_gate(evaluation, compare_with_champion(evaluation, paths))
 
-    decision >> promote_model(evaluation) >> done
+    decision >> approve_promotion >> promote_model(evaluation) >> done
     decision >> keep_current_model >> done
 
 
@@ -563,7 +555,8 @@ instance of `run_trials`, carrying no data, only the order: no trial starts on
 data that failed its checks. `promotion_gate` takes the results of
 `evaluate_best` and `compare_with_champion`, which itself waits for
 `evaluate_best`, so the three run in that order. The two
-`decision >>` lines give it its two branches and join them at `done`.
+`decision >>` lines give it its two branches, the first through
+`approve_promotion`, and join them at `done`.
 
 ### See the wiring
 
@@ -589,7 +582,7 @@ production_model`.
 `mlops`'s own page can show the same connections. Open it, switch to **Graph**,
 and change **Options → Dependencies** (§5):
 
-- **Only tasks** — the thirteen tasks you just wrote, nothing else.
+- **Only tasks** — the fourteen tasks you just wrote, nothing else.
 - **External conditions** — the same tasks, plus `labeled_projects` flowing
   into the Dag and `production_model` coming out of `promote_model`.
 - **All Dag Dependencies** — the chain the Assets page draws: `dataops` with
@@ -610,7 +603,10 @@ Nothing happens on the first line: `mlops`'s schedule is an asset, and no
 event has arrived. The second line starts everything without a trigger, by the
 §7 rule: `dataops` has a cron and a 2025 `start_date`, so the moment it is
 un-paused the scheduler creates the run for the most recent 03:00 UTC it
-missed, and starts it. Give it a few minutes, then:
+missed, and starts it. Give it a few minutes. Near the end, the `mlops` run
+stops at `approve_promotion`: open the run in the UI, click
+`approve_promotion`, and answer the prompt on its **Required Actions** tab, or
+leave it and the default approves it after 60 seconds. Then:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs dataops -o plain
@@ -628,7 +624,8 @@ triggered from the CLI without one (§7). In the UI, **Assets** shows the edge
 that caused it.
 
 Know where the wait comes from. Almost all of it is the tools: the two Airbyte
-syncs in `dataops`, then twenty trials and a final fit in `mlops`. The Airflow
+syncs in `dataops`, then twenty trials and a final fit in `mlops`, and up to a
+minute at `approve_promotion`. The Airflow
 part is small: one scheduler loop to create the `dataops` run after the
 un-pause, and one more to create the `mlops` run once the asset event is
 recorded (§3, §8). If nothing has appeared after a few minutes, check that both
@@ -648,10 +645,12 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 ```
 
 Four `run_trials` rows with `map_index` 0–3; 2 and 3 each start after one of
-0 and 1 has ended. And `keep_current_model` is `skipped` while `promote_model`
-is `success`: `promotion_gate` took the `promote_model` branch, because the
-final model's f1 cleared the threshold and there was no production model to
-beat (`compare_with_champion` logged `no champion yet`).
+0 and 1 has ended. And `keep_current_model` is `skipped` while
+`approve_promotion` and `promote_model` are `success`: `promotion_gate` took
+the `approve_promotion` branch, because the final model's f1 cleared the
+threshold and there was no production model to beat (`compare_with_champion`
+logged `no champion yet`), and the approval came from you or from the
+default.
 
 Then look at what the run left in MLflow, at <http://localhost:5000>:
 
@@ -681,7 +680,7 @@ the per-tag and per-slice f1, its tags include `snapshot_path`, and under
 > same ids), and no new rows: `compare_with_champion` logs `all test rows` and
 > `old test rows`, the same rows, and `promotion_gate` decides on the whole
 > split, `… on the same … test rows`. A different search, so it can go either
-> way.
+> way. If the gate lets it through, `approve_promotion` waits for you again.
 
 > **Try it, the other branch.** Set the bar impossibly high and watch
 > `promotion_gate` take the `keep_current_model` branch. The threshold is read
@@ -693,8 +692,9 @@ the per-tag and per-slice f1, its tags include `snapshot_path`, and under
 > docker compose exec -e PROJECT_TAGGER_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
 > ```
 >
-> `promotion_gate` logs `below threshold 0.99 - not promoting`, `promote_model`
-> is skipped, `keep_current_model` runs, and the Dag run still succeeds. In
+> `promotion_gate` logs `below threshold 0.99 - not promoting`,
+> `approve_promotion` and `promote_model` are skipped, so nobody is asked,
+> `keep_current_model` runs, and the Dag run still succeeds. In
 > MLflow the new version is registered, and `champion` has not moved.
 
 Stuck anywhere? [`solutions/04_mlops.py`](../../solutions/04_mlops.py).

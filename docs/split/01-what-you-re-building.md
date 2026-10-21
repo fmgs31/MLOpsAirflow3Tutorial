@@ -39,12 +39,12 @@ dataops:  extract & load ─► validate ─► transform ─► validate_transf
           (Airbyte)          (GX)       (dbt)         (GX)                  │ emits
                                                               Asset: labeled_projects
                                                                             │ triggers
-mlops:    prepare ─► validate ─► tune×N ─► train ─► evaluate ─► gate ───────┴─► promote
-                     (GX)        (Optuna)  (MLflow)                             (MLflow registry)
+mlops:    prepare ─► validate ─► tune×N ─► train ─► evaluate ─► gate ───────┴─► approve ─► promote
+                     (GX)        (Optuna)  (MLflow)                             (a person)  (MLflow registry)
                                                                             │ emits
                                                               Asset: production_model
 
-monitoring:  measure ─► decide ─► {continue | inspect | rollback | approve ─► retrain}
+monitoring:  measure ─► decide ─► {continue | inspect | rollback | retrain}
              (alibi-detect)
 ```
 

@@ -241,18 +241,16 @@ def should_promote(
     Against a champion, `comparison` (evaluate.compare) holds both models' f1
     on the same test rows. The `new` rows, which the champion has never seen,
     are the closest thing to what production gets next, so they decide: the
-    new model must not score below the champion on them. The `old` rows, the
-    champion's own test rows, are a guardrail: the new model may score lower
-    on them, but not by more than chance explains - the interval of the
-    difference must reach 0. With fewer than `min_new_rows` new rows there is
-    too little to decide on, and the whole split decides.
+    new model must not score below the champion on them. With fewer than
+    `min_new_rows` new rows there is too little to decide on, and the whole
+    split decides.
     """
     if f1 < threshold:
         return False, f"f1={f1:.4f} below threshold {threshold} - not promoting"
     if comparison is None:
         return True, f"f1={f1:.4f} clears threshold {threshold} and no champion - promoting"
 
-    new, old = comparison["new"], comparison["old"]
+    new = comparison["new"]
     if new["rows"] < min_new_rows:
         rows = comparison["all"]
         if rows["f1"] < rows["champion_f1"]:
@@ -270,15 +268,9 @@ def should_promote(
             f"f1={new['f1']:.4f} below the champion's {new['champion_f1']:.4f} "
             f"on the {new['rows']} new test rows - not promoting"
         )
-    if old["rows"] and old["difference"][1] < 0:
-        low, high = old["difference"]
-        return False, (
-            f"f1={old['f1']:.4f} on the {old['rows']} old test rows, below the champion's "
-            f"{old['champion_f1']:.4f} by more than chance (difference {low:+.4f} to {high:+.4f}) - not promoting"
-        )
     return True, (
-        f"f1={new['f1']:.4f} clears the champion's {new['champion_f1']:.4f} on the {new['rows']} "
-        f"new test rows, and holds on the {old['rows']} old ones - promoting"
+        f"f1={new['f1']:.4f} clears the champion's {new['champion_f1']:.4f} "
+        f"on the {new['rows']} new test rows - promoting"
     )
 
 

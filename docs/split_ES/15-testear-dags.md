@@ -98,12 +98,12 @@ docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 un contenedor de usar y tirar que el archivo de compose define bajo un profile,
 que `run` crea para ese comando y que `--rm` elimina después.
 
-**Comprobación.** Una fila de puntos, una `s`, y `46 passed, 1 skipped`,
+**Comprobación.** Una fila de puntos, una `s`, y `45 passed, 1 skipped`,
 en bastante menos de un minuto:
 
 ```
-..............................s................                          [100%]
-46 passed, 1 skipped in 23.78s
+..............................s...............                           [100%]
+45 passed, 1 skipped in 23.78s
 ```
 
 La `s` es el test de drift, que se salta por el motivo que da «Tests

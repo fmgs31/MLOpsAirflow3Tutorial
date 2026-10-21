@@ -189,7 +189,7 @@ two tasks with a dependency between them.
 The rest you will meet as you go: `up_for_retry` between attempts (§4),
 `skipped` from a branch (§10), `up_for_reschedule` from a sensor that exits
 between pokes and `deferred` from one suspended onto the triggerer (§11),
-`awaiting_input` while a human decides (§12), and `upstream_failed` on
+`awaiting_input` while a human decides (§10), and `upstream_failed` on
 everything downstream of a failure.
 
 ### Task code never touches the metadata database

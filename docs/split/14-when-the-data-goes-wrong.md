@@ -21,8 +21,8 @@ The files are in [`datasets/batch_2/`](../../datasets/batch_2/). The 191
 projects are real: Made With ML's holdout set, projects from the same site
 that are not in `datasets/projects.csv`. Their dates are moved to the five
 weeks after the newest arXiv paper of §12, so they are the newest rows in the
-warehouse, and the first three problems in the table are added on top. The fourth is not added: Made With ML
-published these tags with the three rarest ones already merged into `other`.
+warehouse, and the first three problems in the table are added on top. The
+fourth is not added: Made With ML published these tags with the three rarest ones already merged into `other`.
 [`scripts/make_batch_2.py`](../../scripts/make_batch_2.py) builds the files,
 and [`datasets/README.md`](../../datasets/README.md) lists what each one
 contains.
@@ -343,9 +343,8 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 
 **Checkpoint.** `new_labels=[]`, so `decide` no longer stops at `inspect`.
 Label drift is now around `0.006`, length drift still around `5e-19`, and
-`decide` takes `request_retraining`: the run waits out the approval, as in
-§12, and ends by queueing a run of `mlops`, which stays queued while `mlops`
-is paused.
+`decide` takes `trigger_retraining`, as in §12, and queues a run of `mlops`,
+which stays queued while `mlops` is paused.
 
 Both tests still report drift, and both are right. These 191 are Made With ML
 projects, like the 764 of §9, but the model learned from those and from the
@@ -391,9 +390,11 @@ docker compose exec airflow-scheduler airflow dags unpause mlops
 The `mlops` run the monitor queued starts, and trains on all 1755 projects.
 Its gate may well keep the current model: the f1 did not drop, so there is
 little to win on the 49 new test rows, and `below the champion's … on the 49
-new test rows - not promoting` is a normal outcome. The new projects are in, checked and labelled the same way as the old ones,
-and from now on every model trains on them. The sources keep their day 2 and day 3
-URLs: that is your data now.
+new test rows - not promoting` is a normal outcome; if the gate lets it
+through, `approve_promotion` waits for you, as in §10. The new projects are in,
+checked and labelled the same way as the old ones, and from now on every model
+trains on them. The sources keep their day 2 and day 3 URLs: that is your data
+now.
 
 ---
 

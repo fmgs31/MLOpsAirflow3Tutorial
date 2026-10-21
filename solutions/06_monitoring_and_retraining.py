@@ -17,10 +17,8 @@ Pieces on show:
   libraries Airflow's own environment cannot have, so they run in a separate
   virtualenv baked into the image.
 * `@task.branch` picking one arm of the response.
-* `ApprovalOperator` (human-in-the-loop): retraining waits for a person to
-  click Approve in the UI. `defaults` + `response_timeout` mean an unattended
-  run still resolves instead of hanging forever.
-* `TriggerDagRunOperator` for cross-Dag orchestration.
+* `TriggerDagRunOperator` for cross-Dag orchestration. Retraining needs no
+  approval here: what reaches production is approved in `mlops`.
 
 Run it:
     airflow dags test monitoring
@@ -28,12 +26,10 @@ Run it:
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
 from airflow.sdk.exceptions import AirflowSkipException
@@ -104,7 +100,7 @@ def monitoring_dag():
     ) -> str:
         if windows["version"] is None:
             print("No production model yet - train one.")
-            return "request_retraining"
+            return "trigger_retraining"
         if drift is None or performance is None:
             print(
                 f"only {windows['num_current']} new rows since version {windows['version']} "
@@ -131,7 +127,7 @@ def monitoring_dag():
             or label["p_val"] < params["drift_p_val"]           # target drift
             or length["p_val"] < params["drift_p_val"]          # data drift
         ):
-            return "request_retraining"
+            return "trigger_retraining"
         return "continue_serving"
 
     continue_serving = EmptyOperator(task_id="continue_serving")
@@ -161,22 +157,6 @@ def monitoring_dag():
         print(f"champion -> version {champion['version']} (retired {champion['rolled_back_version']}: {reason})")
         return champion
 
-    # Human-in-the-loop gate. The task sits in `awaiting_input` and shows a
-    # prompt in the UI; on Reject, everything downstream is skipped.
-    request_retraining = ApprovalOperator(
-        task_id="request_retraining",
-        subject="Retrain the tag classifier?",
-        body=(
-            "Monitoring detected drift or a performance drop.\n\n"
-            "Approve to trigger the `mlops` Dag on the current data."
-        ),
-        # No answer within the window resolves to `defaults`, so an unattended
-        # run still completes. Give it hours in production; kept short here so
-        # `airflow dags test monitoring` finishes.
-        defaults="Approve",
-        response_timeout=timedelta(seconds=60),
-    )
-
     trigger_retraining = TriggerDagRunOperator(
         task_id="trigger_retraining",
         trigger_dag_id="mlops",
@@ -193,7 +173,7 @@ def monitoring_dag():
     branch >> continue_serving
     branch >> inspect(drift)
     branch >> rollback(performance)
-    branch >> request_retraining >> trigger_retraining
+    branch >> trigger_retraining
 
 
 monitoring_dag()

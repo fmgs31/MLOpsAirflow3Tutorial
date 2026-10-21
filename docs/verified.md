@@ -10,6 +10,31 @@ the record of when, and how it was measured — except what the first section
 below lists as still waiting. Nothing here is a step to run.
 Skip it, or come back when you want to know how far to trust a number.
 
+## 2026-10-21: the approval moved to promotion
+
+`ApprovalOperator` left `monitoring` (`request_retraining`) for `mlops`
+(`approve_promotion`, between `promotion_gate` and `promote_model`); §12's
+`decide` now branches straight to `trigger_retraining`. Not walked live. Both
+solution Dags were built in the scheduler container: `mlops` has 14 tasks,
+`promotion_gate → approve_promotion, keep_current_model`,
+`approve_promotion → promote_model`; `monitoring` has 8, `decide →
+continue_serving, inspect, rollback, trigger_retraining`. `ApprovalOperator`'s
+Reject behaviour (skips the task directly downstream unless
+`ignore_downstream_trigger_rules=True`) was read from
+`apache-airflow-providers-standard` 1.17.0 in the image.
+
+## 2026-10-21: the old-row guardrail removed
+
+`promotion_gate` no longer has the bootstrap guardrail on the old test rows:
+the new rows decide, or the whole split with fewer than 30 of them.
+`compare_with_champion` still logs `all`, `new` and `old`, without an
+interval. Not re-walked live. `pytest` on `tests/test_project_tagger.py`:
+`19 passed, 1 skipped`; the full suite's count in §15 (`45 passed, 1
+skipped`) is the 2026-10-17 count less the removed bootstrap test. By the
+2026-10-17 numbers below, every run promotes in §12: the new-row f1 range
+(0.915–0.957) lies above the champion's (0.828–0.847), and the one offline
+rejection came from the guardrail.
+
 ## 2026-10-17, later: the arXiv delivery and the new promotion gate
 
 §12's delivery is now 800 arXiv papers (`datasets/batch_1/`), §9 loads all

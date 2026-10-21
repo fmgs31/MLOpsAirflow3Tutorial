@@ -7,8 +7,8 @@
 prepare_data ─► validate_training_data ─┐
 create_study ───────────────────────────┤
 trial_budget ───────────────────────────┴─► run_trials×N ─► best_params ─► train_best
-─► evaluate_best ─► compare_with_champion ─► promotion_gate ─► promote_model ──────► done
-                                                          └─► keep_current_model ─┘
+─► evaluate_best ─► compare_with_champion ─► promotion_gate ─► approve_promotion ─► promote_model ──► done
+                                                          └─► keep_current_model ──────────────────┘
 ```
 
 | Task | Herramienta | Qué hace |
@@ -18,7 +18,7 @@ trial_budget ──────────────────────�
 | `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna**, con tracking en **MLflow** | busca los hiperparámetros, con el trabajo repartido entre varias tasks, y registra cada trial |
 | `train_best`, `evaluate_best` | tracking de **MLflow** | entrena el modelo final y lo registra: parámetros, métricas, el archivo del modelo |
 | `compare_with_champion` | Model Registry de **MLflow** | puntúa el modelo nuevo y el modelo en producción sobre el split de test de este run |
-| `promotion_gate` → `promote_model` | Model Registry de **MLflow** | decide si el modelo nuevo pasa a producción |
+| `promotion_gate` → `approve_promotion` → `promote_model` | Model Registry de **MLflow**, y una persona | el gate decide si el modelo nuevo puede pasar a producción, una persona lo aprueba en la UI de Airflow, y el registry lo pasa |
 
 ### El stack de ML
 
@@ -39,8 +39,7 @@ búsqueda entre varias tasks.
 **parameters** (los hiperparámetros usados), sus **metrics** (f1,
 precision...) y sus **artifacts** (archivos: aquí `metrics.json`,
 `split_ids.json` y el propio modelo). Los runs pertenecen a un **experiment**,
-`project_tagger`. El **Model
-Registry**, también en MLflow, da a un modelo un nombre y **versiones**
+`project_tagger`. El **Model Registry**, también en MLflow, da a un modelo un nombre y **versiones**
 numeradas. Un **alias** es una etiqueta que puedes mover de una versión a otra.
 Este proyecto usa dos:
 
@@ -109,22 +108,15 @@ el run final; el archivo del modelo solo se sube con el run final.
 ### Constrúyelo
 
 Funciones nuevas de la carga de trabajo: `data.save_snapshot(df, key)` escribe
-la tabla en `data/snapshots/<key>/`, después la preprocesa, la parte y escribe
-también cada split ahí, y devuelve las rutas de los cuatro archivos
-(`data.SPLITS` nombra los tres splits, `("train", "val", "test")`);
-`data.load_snapshot(fp)` vuelve a leer uno; `data.preprocess(df)` limpia el
-texto y agrupa en `other` todo tag fuera de las cuatro clases que aprende el
-modelo (`config.ACCEPTED_TAGS`); `data.assign_split(ids)` pone cada proyecto
-en `train`, `val` o `test` según un hash de su id;
-`validate.check_split(train, val, test)` es una segunda suite, sobre el split;
-`evaluate.evaluate(model, df)` puntúa un modelo sobre un dataframe, y
-`evaluate.compare(candidate, champion, test_df, champion_ids)` puntúa dos sobre
-las mismas filas. En `train_module` (`train.py`): `create_study`,
-`run_trials`, `best_trial`, `train_model` y `should_promote`. En `registry`:
-`register`, `load_metrics`, `get_production`, `load_split_ids`, `load_model`
-(el `champion`, o una versión dada) y `promote`. `config.MIN_F1_TO_PROMOTE` es el
-f1 mínimo para pasar un modelo a producción (0.65, o el valor de
-`PROJECT_TAGGER_MIN_F1` si está definida).
+la tabla y sus tres splits (`data.SPLITS`: `train`, `val`, `test`) en
+`data/snapshots/<key>/` y devuelve sus rutas, y `data.load_snapshot(fp)`
+vuelve a leer uno. Antes de partir, `data.preprocess(df)` limpia el texto y
+agrupa en `other` todo tag fuera de las cuatro clases que aprende el modelo
+(`config.ACCEPTED_TAGS`). `validate.check_split` es una segunda suite, sobre el
+split, y `evaluate.compare` puntúa dos modelos sobre las mismas filas. El
+resto, en `train_module` (`train.py`) y `registry`, hacen lo que dicen sus
+nombres. `config.MIN_F1_TO_PROMOTE` es el f1 mínimo para pasar un modelo a
+producción (0.65, o el valor de `PROJECT_TAGGER_MIN_F1` si está definida).
 
 Crea `dags/04_mlops.py`:
 
@@ -134,10 +126,12 @@ Crea `dags/04_mlops.py`:
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import timedelta
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.sdk import Asset, Param, dag, task
 from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
@@ -374,8 +368,8 @@ Ahora el modelo final, y el **promotion gate**, que decide si pasa a
 producción. A diferencia de los gates de la §9, el gate no falla la task cuando
 la respuesta es no: es un *branch*, una task que elige cuál de dos **ramas**
 del Dag sigue. Añade `train_best`, `evaluate_best`, `compare_with_champion`,
-`promotion_gate`, `promote_model` y los dos `EmptyOperator` que necesitan las
-ramas:
+`promotion_gate`, `approve_promotion`, `promote_model` y los dos
+`EmptyOperator` que necesitan las ramas:
 
 ```python dags/04_mlops.py
     @task
@@ -416,11 +410,9 @@ ramas:
         )
         for name, part in comparison.items():
             if part["rows"]:
-                low, high = part["difference"]
                 print(
                     f"{name} test rows: {part['rows']}, f1={part['f1']:.4f}, "
-                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}, "
-                    f"difference {low:+.4f} to {high:+.4f}"
+                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}"
                 )
         return comparison
 
@@ -433,7 +425,18 @@ ramas:
             config.MIN_NEW_TEST_ROWS,
         )
         print(reason)
-        return "promote_model" if promote else "keep_current_model"
+        return "approve_promotion" if promote else "keep_current_model"
+
+    approve_promotion = ApprovalOperator(
+        task_id="approve_promotion",
+        subject="Promote the new tag classifier?",
+        body=(
+            "The new version passed promotion_gate.\n\n"
+            "Read compare_with_champion's log, then approve to move `champion` to it."
+        ),
+        defaults="Approve",
+        response_timeout=timedelta(seconds=60),
+    )
 
     @task(outlets=[PRODUCTION_MODEL])
     def promote_model(
@@ -482,14 +485,10 @@ ese se midió sobre el split de test de otro run, con otras filas; compararlo
 con el f1 del modelo nuevo sería comparar dos exámenes, no dos modelos. Sobre
 las mismas filas la comparación es justa, y el split por hash hace que esas
 filas sean honestas para los dos: ninguna fila de test ha estado nunca en los
-datos de entrenamiento de ningún modelo, tampoco en los del champion. Hay un
-caso que el hash no ve: el mismo proyecto enviado otra vez con otro id, que
-podría dejar una copia en test y la otra en train; la suite de `projects` lo
-para en `dataops` (`ExpectCompoundColumnsToBeUnique` sobre title y
-description, §9) antes de que llegue aquí.
+datos de entrenamiento de ningún modelo, tampoco en los del champion.
 
-Pero no todas esas filas son iguales. `evaluate.compare` las separa según el
-`split_ids.json` del champion, y puntúa los dos modelos en cada parte:
+`evaluate.compare` además separa las filas de test según el `split_ids.json`
+del champion, y puntúa los dos modelos en cada parte:
 
 | Parte | Filas | Qué dice |
 |---|---|---|
@@ -499,46 +498,40 @@ Pero no todas esas filas son iguales. `evaluate.compare` las separa según el
 
 Un reentrenamiento existe para mejorar con los datos nuevos, así que deciden
 las filas `new`: el f1 del modelo nuevo sobre ellas no puede quedar por debajo
-del del champion. Testear con datos más nuevos que aquellos con los que se
-entrenó un modelo se llama test **out-of-time**, y es lo más cerca de
-producción que llega un test set. Las filas `old` son un **guardarraíl**: un
-modelo que aprende los datos nuevos olvidando los viejos no ha mejorado (la
-§12 lo llama catastrophic forgetting), así que una pérdida clara ahí también
-lo bloquea. Un conjunto que se guarda para esto, casos pasados que un modelo
-nuevo tiene que seguir acertando, es un **regression set**; muchos equipos
-mantienen uno a mano, un *golden set*.
-
-"Clara" necesita un número, porque un split de test de este tamaño tiene
-ruido: con unas 150 filas, una sola fila mueve más de medio punto de f1, y dos
-modelos igual de buenos pueden diferir en un par de puntos por la suerte de qué
-filas cayeron en test. `evaluate.difference_interval` mide esa suerte con un
-**bootstrap pareado**: saca tantas filas como hay, al azar y con reemplazo,
-puntúa los dos modelos sobre esa misma muestra y guarda la diferencia; lo
-repite mil veces. El 95% central de esas diferencias, el `difference … to …`
-del log, es cuánto podría moverse la diferencia por azar. Un intervalo entero
-por debajo de 0 significa que el modelo nuevo es peor más allá de lo que
-explica el azar, y solo entonces bloquea el guardarraíl. Tiene semilla fija,
-así que las mismas filas dan siempre el mismo intervalo.
-
-Con menos de 30 filas nuevas (`config.MIN_NEW_TEST_ROWS`) hay demasiado pocos
-datos nuevos para decidir, y decide el split entero: el modelo nuevo no puede
-quedar por debajo del champion sobre todo él. Es el caso de esta sección, en
-la que cada run ve las mismas 764 filas. En la §12 llegan filas nuevas, y se
-aplica la regla completa.
+del del champion. Con menos de 30 filas nuevas (`config.MIN_NEW_TEST_ROWS`)
+hay demasiado pocos datos nuevos para decidir, y decide el split entero. Es el
+caso de esta sección, en la que cada run ve las mismas 764 filas; en la §12
+llegan filas nuevas. La parte `old` está en el log para que la leas; la §12
+vuelve a ella.
 
 `compare_with_champion` es una task propia para que el Graph la muestre y su
 log diga con qué versión comparó, parte por parte. Recibe la salida de
-`evaluate_best`, que lleva la versión nueva, así que corre después de ella. Un test set sigue siendo una
-estimación: la última palabra sobre un modelo la tiene el tráfico real, que es
-para lo que están las estrategias de despliegue del final de la §12.
+`evaluate_best`, que lleva la versión nueva, así que corre después de ella.
 
 `promotion_gate` aplica la regla de `train_module.should_promote`: el f1 del
 modelo nuevo tiene que superar el umbral y, frente a un champion, no puede
-quedar por debajo de él en las filas nuevas ni claramente por debajo en las
-viejas. Un `@task.branch` devuelve el `task_id` que hay que ejecutar; la otra
+quedar por debajo de él en las filas nuevas, o en el split entero cuando hay
+demasiado pocas. Un `@task.branch` devuelve el `task_id` que hay que ejecutar; la otra
 rama queda **skipped**, no failed. Un candidato que no llega al umbral, o que
 pierde contra el champion, es un desenlace normal: el run tiene éxito y
-producción se queda como estaba. `promote_model` mueve el alias `champion` y
+producción se queda como estaba.
+
+Un modelo que el gate deja pasar todavía espera a una persona.
+`approve_promotion` es una task **human-in-the-loop**, una task que espera a
+que una persona responda. `ApprovalOperator` la aparca en `awaiting_input` y
+muestra un aviso en la UI, en la pestaña **Required Actions** de la task
+instance y bajo Browse → **Required Actions** (§5). Con **Approve**, corre
+`promote_model`; con **Reject**, queda skipped y producción se queda como
+estaba. `defaults` es la respuesta que se aplica si nadie responde antes de
+`response_timeout`: sesenta segundos aquí para que los runs de la lección
+terminen; dale horas en producción. El gate comprueba los números; la persona
+comprueba lo que los números no ven, con el log de `compare_with_champion` y
+la versión nueva en MLflow delante. Airflow registra la respuesta: la
+decisión, cuándo, y *quién*. Un run que agotó el timeout y aplicó sus
+`defaults` guarda la decisión con el "quién" vacío, que es cómo distingues
+"una persona aprobó esto" de "no había nadie mirando".
+
+`promote_model` mueve el alias `champion` y
 emite el asset propio de `mlops`, `production_model`, que todavía no consume nadie;
 apunta el `schedule` de un Dag hacia él y la arista aparece en el grafo de
 Assets.
@@ -567,7 +560,7 @@ Termina el archivo conectando las tasks:
     evaluation = evaluate_best(train_best(best_params(study, results), paths))
     decision = promotion_gate(evaluation, compare_with_champion(evaluation, paths))
 
-    decision >> promote_model(evaluation) >> done
+    decision >> approve_promotion >> promote_model(evaluation) >> done
     decision >> keep_current_model >> done
 
 
@@ -579,8 +572,8 @@ instancias mapeadas de `run_trials`, sin llevar datos: solo fija el orden.
 Ningún trial arranca sobre datos que no han pasado sus comprobaciones.
 `promotion_gate` recibe los resultados de `evaluate_best` y de
 `compare_with_champion`, que a su vez espera a `evaluate_best`, así que las
-tres corren en ese orden. Las dos líneas `decision >>` le
-dan sus dos ramas y las unen en `done`.
+tres corren en ese orden. Las dos líneas `decision >>` le dan sus dos ramas,
+la primera a través de `approve_promotion`, y las unen en `done`.
 
 ### Comprueba las conexiones
 
@@ -606,7 +599,7 @@ labeled_projects → mlops → production_model`.
 La página del propio `mlops` puede mostrar las mismas conexiones. Ábrela, cambia
 a **Graph** y ve cambiando **Options → Dependencies** (§5):
 
-- **Only tasks** — las trece tasks que acabas de escribir, nada más.
+- **Only tasks** — las catorce tasks que acabas de escribir, nada más.
 - **External conditions** — las mismas tasks, más `labeled_projects` entrando
   en el Dag y `production_model` saliendo de `promote_model`.
 - **All Dag Dependencies** — la cadena que dibuja la página Assets: `dataops`
@@ -627,8 +620,11 @@ Con la primera línea no pasa nada: el schedule de `mlops` es un asset, y no ha
 llegado ningún evento. La segunda línea lo arranca todo sin ningún trigger,
 por la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025, así
 que en el momento en que se le quita la pausa el scheduler crea el run de las
-03:00 UTC más recientes que se perdió, y lo arranca. Espera unos minutos, y
-luego:
+03:00 UTC más recientes que se perdió, y lo arranca. Espera unos minutos.
+Cerca del final, el run de `mlops` se detiene en `approve_promotion`: abre el
+run en la UI, haz clic en `approve_promotion` y responde al aviso en su
+pestaña **Required Actions**, o déjalo y el default lo aprueba a los 60
+segundos. Luego:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs dataops -o plain
@@ -647,7 +643,8 @@ date, igual que un run disparado desde la CLI sin ella (§7). En la UI,
 
 Ten claro de dónde viene la espera. Casi toda la ponen las herramientas: los
 dos syncs de Airbyte en `dataops`, y luego veinte trials y un entrenamiento
-final en `mlops`. La parte de Airflow es pequeña: un bucle del scheduler para
+final en `mlops`, y hasta un minuto en `approve_promotion`. La parte de
+Airflow es pequeña: un bucle del scheduler para
 crear el run de `dataops` tras quitar la pausa, y uno más para crear el run de `mlops`
 cuando se registra el asset event (§3, §8). Si tras unos minutos no ha aparecido
 nada, comprueba que ambos Dags están sin pausa y que el run de `dataops` tuvo
@@ -668,10 +665,11 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <th
 
 Cuatro filas de `run_trials` con `map_index` de 0 a 3; la 2 y la 3 arrancan
 cada una después de que haya terminado una de la 0 y la 1. Y
-`keep_current_model` está `skipped` mientras `promote_model` está `success`:
-`promotion_gate` eligió la rama de `promote_model`, porque el f1 del modelo final
-superó el umbral y no había modelo en producción al que batir
-(`compare_with_champion` escribió `no champion yet`).
+`keep_current_model` está `skipped` mientras `approve_promotion` y
+`promote_model` están `success`: `promotion_gate` eligió la rama de
+`approve_promotion`, porque el f1 del modelo final superó el umbral y no había
+modelo en producción al que batir (`compare_with_champion` escribió `no
+champion yet`), y la aprobación vino de ti o del default.
 
 Después mira lo que el run ha dejado en MLflow, en <http://localhost:5000>:
 
@@ -702,7 +700,8 @@ modelo. En **Models**, `project_tagger` tiene la versión 1, con el alias
 > `test.parquet` de los dos runs tienen los mismos ids), y ninguna fila nueva:
 > `compare_with_champion` escribe `all test rows` y `old test rows`, las mismas
 > filas, y `promotion_gate` decide con el split entero, `… on the same … test
-> rows`. Otra búsqueda, así que puede pasar o no.
+> rows`. Otra búsqueda, así que puede pasar o no. Si el gate la deja pasar,
+> `approve_promotion` vuelve a esperarte.
 
 > **Pruébalo: la otra rama.** Pon el listón imposiblemente alto y mira cómo
 > `promotion_gate` elige la rama de `keep_current_model`. El umbral se lee de
@@ -714,8 +713,9 @@ modelo. En **Models**, `project_tagger` tiene la versión 1, con el alias
 > ```
 >
 > `promotion_gate` escribe en el log `below threshold 0.99 - not promoting`,
-> `promote_model` queda skipped, `keep_current_model` corre, y el Dag run termina en success
-> igualmente. En MLflow la versión nueva queda registrada, y `champion` no se
+> `approve_promotion` y `promote_model` quedan skipped, así que no se le
+> pregunta a nadie, `keep_current_model` corre, y el Dag run termina en
+> success igualmente. En MLflow la versión nueva queda registrada, y `champion` no se
 > ha movido.
 
 ¿Atascado en algún punto? [`solutions/04_mlops.py`](../../solutions/04_mlops.py).

@@ -215,8 +215,8 @@ def local_tracking(tmp_path, monkeypatch):
 
 
 def _comparison(new: tuple, old: tuple, all_: tuple) -> dict:
-    """evaluate.compare's shape: each part is (rows, new model's f1, champion's f1, interval)."""
-    keys = ("rows", "f1", "champion_f1", "difference")
+    """evaluate.compare's shape: each part is (rows, new model's f1, champion's f1)."""
+    keys = ("rows", "f1", "champion_f1")
     return {name: dict(zip(keys, part)) for name, part in (("new", new), ("old", old), ("all", all_))}
 
 
@@ -229,25 +229,14 @@ def test_should_promote() -> None:
     assert rule(0.80, None)[0]  # no champion yet
     assert not rule(0.60, None)[0]  # below the threshold
 
-    # Enough new rows: they decide, and the old rows are a guardrail.
-    noise = (-0.04, 0.02)  # a difference chance can explain
-    clear_loss = (-0.09, -0.01)
-    assert rule(0.80, _comparison((40, 0.85, 0.75, noise), (100, 0.89, 0.90, noise), (140, 0.88, 0.86, noise)))[0]
-    promote, reason = rule(
-        0.80, _comparison((40, 0.74, 0.75, noise), (100, 0.95, 0.90, noise), (140, 0.90, 0.86, noise))
-    )
+    # Enough new rows: they decide.
+    assert rule(0.80, _comparison((40, 0.85, 0.75), (100, 0.89, 0.90), (140, 0.88, 0.86)))[0]
+    promote, reason = rule(0.80, _comparison((40, 0.74, 0.75), (100, 0.95, 0.90), (140, 0.90, 0.86)))
     assert not promote and "new test rows" in reason  # loses on the new rows, whatever the total says
-    promote, reason = rule(
-        0.80, _comparison((40, 0.85, 0.75, noise), (100, 0.85, 0.90, clear_loss), (140, 0.85, 0.86, noise))
-    )
-    assert not promote and "more than chance" in reason  # forgets the old data
 
     # Too few new rows: the whole test split decides.
-    nothing = (0, None, None, None)
-    assert rule(0.80, _comparison(nothing, (100, 0.86, 0.85, noise), (100, 0.86, 0.85, noise)))[0]
-    promote, reason = rule(
-        0.80, _comparison((5, 1.0, 0.6, noise), (100, 0.84, 0.85, noise), (105, 0.85, 0.86, noise))
-    )
+    assert rule(0.80, _comparison((0, None, None), (100, 0.86, 0.85), (100, 0.86, 0.85)))[0]
+    promote, reason = rule(0.80, _comparison((5, 1.0, 0.6), (100, 0.84, 0.85), (105, 0.85, 0.86)))
     assert not promote and "same 105 test rows" in reason
 
 
@@ -269,19 +258,6 @@ def test_compare_splits_the_test_rows_by_what_the_champion_saw() -> None:
     # Ids 1-60 are the NLP rows: the old part, where only the new model is right.
     assert comparison["old"]["f1"] == 1.0 and comparison["old"]["champion_f1"] == 0.0
     assert comparison["new"]["f1"] == 0.0
-    # Right on every old row against wrong on every one: no draw of rows changes that.
-    assert comparison["old"]["difference"] == (1.0, 1.0)
-
-
-def test_difference_interval_is_seeded_and_brackets_noise() -> None:
-    from project_tagger import evaluate
-
-    y = ["a", "b"] * 50
-    one_off = list(y)
-    one_off[0] = "b"  # one mistake in 100 rows
-    interval = evaluate.difference_interval(y, one_off, y)
-    assert interval == evaluate.difference_interval(y, one_off, y)  # same rows, same interval
-    assert interval[0] < 0 <= interval[1]  # one row is within chance
 
 
 @pytest.mark.slow

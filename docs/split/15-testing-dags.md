@@ -89,12 +89,12 @@ docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 a one-off container the compose file defines under a profile, which `run`
 creates for that command and `--rm` removes afterwards.
 
-**Checkpoint.** A row of dots, one `s`, and `46 passed, 1 skipped`, in
+**Checkpoint.** A row of dots, one `s`, and `45 passed, 1 skipped`, in
 well under a minute:
 
 ```
-..............................s................                          [100%]
-46 passed, 1 skipped in 23.78s
+..............................s...............                           [100%]
+45 passed, 1 skipped in 23.78s
 ```
 
 The `s` is the drift test, skipped for the reason given under "Unit tests on

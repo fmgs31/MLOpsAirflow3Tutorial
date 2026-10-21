@@ -195,7 +195,7 @@ ellas.
 El resto los irás conociendo sobre la marcha: `up_for_retry` entre intentos (§4),
 `skipped` desde un branch (§10), `up_for_reschedule` desde un sensor que libera
 su slot entre pokes y `deferred` desde uno suspendido en el triggerer (§11),
-`awaiting_input` mientras decide una persona (§12), y `upstream_failed` en todo
+`awaiting_input` mientras decide una persona (§10), y `upstream_failed` en todo
 lo que hay aguas abajo de un fallo.
 
 ### El código de una task nunca toca la metadata database

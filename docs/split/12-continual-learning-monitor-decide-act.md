@@ -1,9 +1,9 @@
 ## 12. Continual learning: monitor, decide, act
 
 **Continual**, not continuous: the system repeats *with breaks*, and the breaks
-are deliberate. A monitor fires, something is decided — by a person where it
-matters — and then the pipeline runs. The approval gate this section builds,
-`request_retraining`, is that decision, built into the Dag as a task.
+are deliberate. A monitor fires, something is decided, and then the pipeline
+runs. Where it matters, a person decides: what reaches production waits for
+`approve_promotion`, the approval task of §10.
 
 What you are watching for is **drift**, in three flavours:
 
@@ -38,7 +38,7 @@ A monitoring event has four sensible responses, and
 | Response | When | What happens |
 |---|---|---|
 | **continue** | drift and performance within limits | nothing; keep serving |
-| **improve** | f1 dropped, or the input or label distribution moved | ask a human, then trigger `mlops` |
+| **improve** | f1 dropped, or the input or label distribution moved | trigger `mlops`, whose gate and approval decide what ships (§10) |
 | **inspect** | an unseen label appeared | stop and page someone — the label space changed |
 | **rollback** | performance collapsed | re-point production at the previous model |
 
@@ -64,13 +64,10 @@ How the pieces talk when the Dag runs. Each column is one system, as in the
    continue_serving             │                   │
    inspect                      │                   │
    rollback ─────────────────────────────────────────► moves champion back
-   request_retraining:          │                   │  to previous_champion
-     a person approves in       │                   │
-     the UI, then               │                   │
-     trigger_retraining         │                   │
-       │ starts a run of        │                   │
-       ▼                        │                   │
-     mlops Dag (§10)            │                   │
+   trigger_retraining           │                   │  to previous_champion
+     │ starts a run of          │                   │
+     ▼                          │                   │
+   mlops Dag (§10)              │                   │
 ```
 
 ### New data arrives
@@ -149,12 +146,10 @@ recorded with the run that used it:
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.providers.standard.operators.hitl import ApprovalOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
 from airflow.sdk.exceptions import AirflowSkipException
@@ -250,7 +245,7 @@ Then decide:
     ) -> str:
         if windows["version"] is None:
             print("No production model yet - train one.")
-            return "request_retraining"
+            return "trigger_retraining"
         if drift is None or performance is None:
             print(
                 f"only {windows['num_current']} new rows since version {windows['version']} "
@@ -275,7 +270,7 @@ Then decide:
             or label["p_val"] < params["drift_p_val"]           # target drift
             or length["p_val"] < params["drift_p_val"]          # data drift
         ):
-            return "request_retraining"
+            return "trigger_retraining"
         return "continue_serving"
 ```
 
@@ -284,13 +279,12 @@ was given. The first two checks come before any policy: no production model
 means there is one to train, and no current window means there is nothing to
 judge yet. After them, each retraining condition watches one of the three
 kinds of drift in the table. Note the ordering: **a new label routes to
-`inspect`, not to `request_retraining`.** Retraining on data whose label space
+`inspect`, not to `trigger_retraining`.** Retraining on data whose label space
 you have not understood yet is how you ship a worse model with full
 confidence.
 
-Now the four branches `decide` can pick. Three are simple; the fourth is a
-**human-in-the-loop** gate (a task that waits for a person to answer), `ApprovalOperator`, followed
-by the task that starts another Dag:
+Now the four branches `decide` can pick. Three are simple; the fourth starts
+another Dag:
 
 ```python dags/06_monitoring_and_retraining.py
     continue_serving = EmptyOperator(task_id="continue_serving")
@@ -317,17 +311,6 @@ by the task that starts another Dag:
         print(f"champion -> version {champion['version']} (retired {champion['rolled_back_version']}: {reason})")
         return champion
 
-    request_retraining = ApprovalOperator(
-        task_id="request_retraining",
-        subject="Retrain the tag classifier?",
-        body=(
-            "Monitoring detected drift or a performance drop.\n\n"
-            "Approve to trigger the `mlops` Dag on the current data."
-        ),
-        defaults="Approve",
-        response_timeout=timedelta(seconds=60),
-    )
-
     trigger_retraining = TriggerDagRunOperator(
         task_id="trigger_retraining",
         trigger_dag_id="mlops",
@@ -337,34 +320,22 @@ by the task that starts another Dag:
     )
 ```
 
-`ApprovalOperator` parks the task in `awaiting_input` and shows a prompt in the
-UI, on the task instance's **Required Actions** tab and under Browse →
-**Required Actions**. On **Reject**, everything downstream is skipped.
-`defaults` is the answer applied if nobody responds within `response_timeout`:
-sixty seconds here so the lesson finishes; give it hours in production. `TriggerDagRunOperator` starts another Dag: it creates a
-`manual__` run of `mlops` with the `conf` given, and with
-`wait_for_completion=False` it does not stay around to watch it.
+`TriggerDagRunOperator` starts another Dag: it creates a `manual__` run of
+`mlops` with the `conf` given, and with `wait_for_completion=False` it does
+not stay around to watch it. No approval stands before it: a retrain changes
+nothing in production, and the model it produces still has to pass
+`promotion_gate` and `approve_promotion` (§10).
 
 `rollback` moves the registry's `champion` alias back to `previous_champion`.
 Nothing is redeployed and no file is copied: whatever loads
 `models:/project_tagger@champion` gets the previous version from its next
-load on. That is what makes a rollback cheap enough to automate. Three details
-in `registry.rollback` and in the task keep it safe to automate:
-
-- It **removes the `previous_champion` alias** instead of reusing
-  `registry.promote`. Promoting would keep the version being retired as the
-  new `previous_champion`, and a second rollback, the next day, would put the
-  bad model back in production. With the alias gone, there is nothing to go
-  back to until the next promotion, and a second rollback returns `None`.
-- It **tags the retired version** in the registry: `rolled_back=true`, and
-  `rolled_back_reason` with the f1 drop. The MLflow UI shows on that version
-  why it left production.
-- The task **emits `production_model`**, the asset `promote_model` emits in
-  §10, with the versions in the event's `extra`: a rollback changes the model
-  in production as much as a promotion does, and the asset's events should say
-  so (§8). When there is nothing to roll back to, the task raises
-  `AirflowSkipException`: a skipped task emits no asset event, and the run
-  shows that nothing changed.
+load on. That is what makes a rollback cheap enough to automate.
+`registry.rollback` also deletes the `previous_champion` alias, so a second
+rollback cannot put the bad model back, and tags the retired version with
+`rolled_back_reason`, which the MLflow UI shows. The task emits
+`production_model`, like `promote_model` in §10: a rollback changes the model
+in production as much as a promotion does. With nothing to roll back to, it
+raises `AirflowSkipException`, and a skipped task emits no asset event.
 
 Finish with the wiring:
 
@@ -377,7 +348,7 @@ Finish with the wiring:
     branch >> continue_serving
     branch >> inspect(drift)
     branch >> rollback(performance)
-    branch >> request_retraining >> trigger_retraining
+    branch >> trigger_retraining
 
 
 monitoring_dag()
@@ -392,19 +363,6 @@ There is no join at the end, because nothing needs to run after all of them.
 docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
-> **This command takes about 80 seconds and looks frozen for 60 of them.**
-> `request_retraining` is the human-in-the-loop gate: it enters
-> `awaiting_input` and waits out its full 60-second `response_timeout` before
-> defaulting to Approve, unless someone answers it first.
-
-While it waits, open the run in the UI and click `request_retraining`: the
-prompt is waiting for you on its **Required Actions** tab (§5). Approving it
-there resolves the task without waiting for the timeout; leave it, and the
-default resolves it. Airflow records the answer either way: the choice, when,
-and *by whom*. A run that timed out and fell back to its `defaults` stores the
-choice with the "who" left empty, which is how you tell "a person approved
-this" from "nobody was looking".
-
 **Checkpoint.** `prepare_windows` logs `'num_current': 800`, with `version`
 the champion's: the 800 papers are the rows it has never seen.
 `check_performance` logs its f1 at promotion and now, around 0.89 and 0.82: a
@@ -416,18 +374,15 @@ p-values: label drift around `1e-22`, length drift `0`. Both are far below
   from and 57% of the new ones; `mlops`, 8% of what it learned from, does not
   appear at all.
 - **Data drift.** A text has 16 words at the median in the rows the model
-  learned from, and 27 in the new ones. The p-value is so small that the
-  32-bit number the test returns rounds it to `0`.
+  learned from, and 27 in the new ones: a p-value too small to print as
+  anything but `0`.
 - **Performance.** The f1 fell, but by less than `max_f1_drop`, so the
   concept-drift check alone would not have fired.
 
-Two tests report drift, so `decide` takes the retraining branch. Then, in
-order, with up to a minute between the second and third lines:
+Two tests report drift, so `decide` takes the retraining branch. Then:
 
 ```
-Branch into request_retraining
-Waiting for response                         ← state becomes awaiting_input
-Approved. Proceeding with downstream tasks…  ← your answer, or the default after 60s
+Branch into trigger_retraining
 Dag Run triggered successfully.  trigger_dag_id=mlops
 ```
 
@@ -438,8 +393,7 @@ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 ```
 
 It now has a fresh `manual__…` run that this Dag created, `queued`: `mlops` is
-paused, so the run waits. One Dag decided another Dag should run, and a person
-was given the chance to say no.
+paused, so the run waits. One Dag decided another Dag should run.
 
 > **Change the policy, change the decision.** The threshold is a param, so a
 > run can be given another one:
@@ -469,26 +423,16 @@ minutes later. Its snapshot has all 1564 rows, and its test split 319 of them:
 the 157 the champion was tested on, plus 162 of the papers, by the same hash.
 `compare_with_champion` logs three lines, `all`, `new` and `old`. On the 162
 new test rows the new model scores 0.92 to 0.96 and the champion 0.82 to
-0.85, and the whole interval of the difference is above 0. On the 157 old ones the
-two are close, the new model usually a point or two lower, with an interval
-that reaches 0. `promotion_gate` logs `f1=… clears the champion's … on
-the 162 new test rows, and holds on the 157 old ones - promoting`, and
+0.85; on the 157 old ones the two are close, the new model usually a point or
+two lower. `promotion_gate` logs `f1=… clears the champion's … on the 162 new
+test rows - promoting`, and `approve_promotion` waits for you, as in §10. This
+is the decision the approval is for: the numbers are in
+`compare_with_champion`'s log, and the model in MLflow. Approve it on its
+**Required Actions** tab, or let the default approve it after 60 seconds, and
 `promote_model` moves `champion` to the new version.
 
 That is the drift treated: the new model learned from 638 of the papers, and
-on the ones neither model has seen it is 8 to 14 points better. The point
-or two it gives up on the old rows is what the guardrail watches: it blocks
-only a loss larger than chance.
-
-The search is random, and about one run in twenty that loss is larger than
-chance: `promotion_gate` logs `… below the
-champion's … by more than chance (difference … to …) - not promoting`. That
-is the guardrail doing its job. §14 needs a production model that has seen
-these papers, so if it happens, run the search again:
-
-```bash
-docker compose exec airflow-scheduler airflow dags trigger mlops
-```
+on the ones neither model has seen it is 8 to 14 points better.
 
 Ask the monitor once more:
 
@@ -526,10 +470,15 @@ training on the full labelled table — fine at this size, and the first thing t
 revisit when the table stops fitting in a task.
 
 Which is also why `promotion_gate` in §10 compares against the production
-model, on the same test rows, instead of a fixed threshold alone, and keeps
-the old rows as a guardrail: a retrained model that is worse than what is
-serving, on the new data or clearly on the old, should not ship just because
-a monitor fired.
+model, on the same test rows, instead of a fixed threshold alone: a retrained
+model that is worse than what is serving should not ship just because a
+monitor fired.
+
+The `old` line of `compare_with_champion` is where forgetting shows: the new
+model's f1 on the champion's own test rows. In this section's retraining run
+it cost a point or two. A team that wants a limit on it adds a **guardrail**
+to the gate: no promotion if the f1 on the old rows falls by more than a set
+margin.
 
 ### Rolling back less often
 

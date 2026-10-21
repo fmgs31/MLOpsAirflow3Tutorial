@@ -10,6 +10,32 @@ registro de cuándo, y de cómo se midió — salvo lo que la primera sección d
 abajo lista como pendiente. Nada de esto es un paso que ejecutar.
 Sáltatelo, o vuelve cuando quieras saber hasta qué punto fiarte de un número.
 
+## 2026-10-21: la aprobación pasa a la promoción
+
+`ApprovalOperator` salió de `monitoring` (`request_retraining`) y pasó a
+`mlops` (`approve_promotion`, entre `promotion_gate` y `promote_model`); el
+`decide` de la §12 ahora va directo a `trigger_retraining`. No se recorrió en
+vivo. Los dos Dags de las soluciones se construyeron en el contenedor del
+scheduler: `mlops` tiene 14 tasks, `promotion_gate → approve_promotion,
+keep_current_model`, `approve_promotion → promote_model`; `monitoring` tiene
+8, `decide → continue_serving, inspect, rollback, trigger_retraining`. El
+comportamiento de Reject de `ApprovalOperator` (salta la task directamente
+aguas abajo salvo con `ignore_downstream_trigger_rules=True`) se leyó de
+`apache-airflow-providers-standard` 1.17.0 en la imagen.
+
+## 2026-10-21: fuera el guardarraíl de las filas viejas
+
+`promotion_gate` ya no tiene el guardarraíl por bootstrap sobre las filas de
+test viejas: deciden las filas nuevas, o el split entero si hay menos de 30.
+`compare_with_champion` sigue escribiendo `all`, `new` y `old`, sin intervalo.
+No se volvió a recorrer en vivo. `pytest` sobre
+`tests/test_project_tagger.py`: `19 passed, 1 skipped`; la cifra de la suite
+completa en la §15 (`45 passed, 1 skipped`) es la del 2026-10-17 menos el test
+de bootstrap eliminado. Con las cifras del 2026-10-17 de abajo, todo run
+promociona en la §12: el rango de f1 del modelo nuevo en las filas nuevas
+(0.915–0.957) queda por encima del del champion (0.828–0.847), y el único
+rechazo offline vino del guardarraíl.
+
 ## 2026-10-17, más tarde: la entrega de arXiv y el promotion gate nuevo
 
 La entrega de la §12 son ahora 800 papers de arXiv (`datasets/batch_1/`), la

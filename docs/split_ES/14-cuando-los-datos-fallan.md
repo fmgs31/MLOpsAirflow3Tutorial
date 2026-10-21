@@ -359,9 +359,8 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 
 **Comprobación.** `new_labels=[]`, así que `decide` ya no se para en
 `inspect`. El label drift queda ahora cerca de `0.006`, el length drift sigue
-cerca de `5e-19`, y `decide` toma `request_retraining`: el run espera la
-aprobación, como en la §12, y termina dejando en cola un run de `mlops`, que
-sigue en cola mientras `mlops` esté en pausa.
+cerca de `5e-19`, y `decide` toma `trigger_retraining`, como en la §12, y deja
+en cola un run de `mlops`, que sigue en cola mientras `mlops` esté en pausa.
 
 Los dos tests siguen informando de drift, y los dos tienen razón. Estos 191
 son proyectos de Made With ML, como los 764 de la §9, pero el modelo aprendió
@@ -407,9 +406,10 @@ docker compose exec airflow-scheduler airflow dags unpause mlops
 El run de `mlops` que dejó en cola el monitor arranca, y entrena con los 1755
 proyectos. Es bien posible que su gate se quede con el modelo actual: el f1 no
 bajó, así que hay poco que ganar en las 49 filas de test nuevas, y `below the
-champion's … on the 49 new test rows - not promoting` es un desenlace normal.
-Los proyectos nuevos están cargados, revisados y etiquetados igual
-que los viejos, y desde ahora cada modelo entrena con ellos. Las sources se quedan con
+champion's … on the 49 new test rows - not promoting` es un desenlace normal;
+si el gate lo deja pasar, `approve_promotion` te espera, como en la §10. Los
+proyectos nuevos están cargados, revisados y etiquetados igual que los
+viejos, y desde ahora cada modelo entrena con ellos. Las sources se quedan con
 sus URLs del día 2 y del día 3: ahora esos son tus datos.
 
 ---
