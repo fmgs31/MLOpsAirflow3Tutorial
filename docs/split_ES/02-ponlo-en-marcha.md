@@ -91,8 +91,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
 Te pregunta antes de borrar, y `up.sh` / `up.ps1` vuelve a levantar el stack.
-No toca `dags/`, así que los archivos que escribas sobreviven a un reset, ni
-nada fuera del stack de este repo: tus tablas de BigQuery y Airbyte se quedan
+No toca `dags/` (los archivos que escribas sobreviven a un reset) ni nada
+fuera del stack de este repo: tus tablas de BigQuery y Airbyte se quedan
 como están. Ningún paso de
 este tutorial lo necesita; está aquí para el día en que algo se atasque y
 [troubleshooting](../troubleshooting.md) no haya ayudado.

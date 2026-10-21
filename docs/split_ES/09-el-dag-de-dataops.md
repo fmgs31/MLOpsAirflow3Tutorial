@@ -307,7 +307,7 @@ línea `extra_hosts` del archivo de compose lo define en Linux.
 
 Los dos IDs de connection que copiaste en el paso 8 de «2. Airbyte» van en
 Variables (§6), para que el archivo del Dag no contenga ningún ID que solo
-existe en tu Airbyte:
+exista en tu Airbyte:
 
 ```bash
 docker compose exec airflow-scheduler airflow variables set airbyte_projects_connection_id <projects connection id>
@@ -600,8 +600,8 @@ un worker slot (la §11 lo explica a fondo). Añádelas dentro de `dataops()`:
 `airbyte_conn_id` nombra la Connection `my_airbyte_conn` que añadiste con
 `airflow connections add`. `connection_id` es la connection de Airbyte que hay
 que sincronizar; un template (§6) la lee de una Variable cuando corre la task.
-Un sync fallido hace fallar la task. El outlet de cada task es el asset (§8) de una
-tabla sin procesar (projects y tags) ; ningún Dag está programado con ellos, porque los datos
+Un sync fallido hace fallar la task. El outlet de cada task es el asset (§8) de su
+tabla sin procesar, `projects` o `tags`; ningún Dag está programado con ellos, porque los datos
 sin procesar aún no se han comprobado.
 
 Después un **gate** sobre cada tabla sin procesar: una task que falla si la
@@ -785,16 +785,16 @@ empiezan por `backfill__`. Ten claro qué viene después antes de hacerlo:
   tantos a la vez como diga la opción `--max-active-runs` de `backfill create`.
 - Cada run de backfill de `dataops` que tenga éxito emite un asset event de
   `labeled_projects` igual que un run normal (§8), así que un `mlops` sin
-  pausa entrena detrás de ellos.
+  pausa entrena después de ellos.
 - Cada uno vuelve a sincronizar las dos tablas desde el origen tal como está
   *ahora*. Nada en este pipeline lee una fecha: el origen no tiene historia a
   la que volver, así que aquí un backfill repite el trabajo en vez de recuperar
   datos pasados. Un pipeline cuyo origen se puede consultar por fecha le pasa
-  el `data_interval_start` y el `data_interval_end` del run (§7), y ahí es
+  al origen el `data_interval_start` y el `data_interval_end` del run (§7), y ahí es
   donde los backfills justifican su existencia.
 - La CLI en 3.3.1 solo *crea* backfills. Mientras uno no ha terminado, la
   página del Dag muestra un banner *Backfill in progress* con un botón de pausa
-  y otro de stop; stop lo cancela. También la API — `PUT
+  y otro de stop; stop lo cancela. La API también lo cancela — `PUT
   /api/v2/backfills/{id}/cancel`, sin token en este stack, donde todos son
   admin. Cancelarlo marca como `failed` los runs del backfill aún en cola.
   Pausar el Dag es el freno de emergencia: un Dag en pausa no arranca nada.

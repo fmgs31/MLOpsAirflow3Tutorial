@@ -122,7 +122,8 @@ model sees them as one class, `other`, next to `natural-language-processing`,
 Two later deliveries add to it. In §12, 800 arXiv papers from 2025–2026,
 extracted for this tutorial: newer data from another source is what makes
 drift cost the production model f1, and retraining win it back.
-In §14, 191 more Made With ML projects, which arrive with problems.
+In §14, 191 more Made With ML projects, delivered with problems added for
+this tutorial.
 
 **The model** reads a project's title and description and predicts its tag. It
 is a scikit-learn text classifier (TF-IDF features and a linear SGD

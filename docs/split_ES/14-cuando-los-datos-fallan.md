@@ -1,8 +1,8 @@
 ## 14. Cuando los datos fallan
 
-Hasta ahora todos los runs pasaron, porque todos leyeron los mismos archivos
+Hasta ahora todos los runs salieron bien, porque todos leyeron los mismos archivos
 limpios. Los datos reales llegan por partes, tarde, repetidos y con otro
-formato, y entonces el trabajo ya no es escribir el pipeline sino responderle
+formato, y entonces el trabajo ya no es escribir el pipeline sino reaccionar
 cuando un control falla. Esta sección carga un segundo lote de proyectos en
 tres entregas, cada una con un problema que tienen las cargas reales, y
 resuelve cada una: dónde aparece, cómo encontrar las filas que lo causan,
@@ -43,7 +43,7 @@ Pausa `mlops`:
 docker compose exec airflow-scheduler airflow dags pause mlops
 ```
 
-Un run de `dataops` que pasa emite el asset event que arranca `mlops` (§8).
+Un run de `dataops` que tiene éxito emite el asset event que arranca `mlops` (§8).
 Aquí eso entrenaría un modelo con los proyectos nuevos antes de que
 `monitoring` los compare con lo que conoce el modelo en producción, y esa
 comparación es de lo que trata "La alarma de drift". `dataops` sigue sin
@@ -98,7 +98,7 @@ SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
 ```
 
 `n` es 1564. Llegaron los proyectos y no sus etiquetas: el etiquetado viene
-después de que se envía un proyecto, y va atrasado. No hay nada roto.
+después de que se envíe un proyecto, y va atrasado. No hay nada roto.
 
 **Dónde va el arreglo: en ningún lado, todavía.** Volver a ejecutar da el
 mismo fallo, porque los datos son los mismos. Relajar el test dejaría llegar
@@ -250,7 +250,7 @@ el control que le faltó a este incidente, en
           - not_null
 ```
 
-Un problema que ningún control detectó debería dejar un control detrás. La
+Un problema que ningún control detectó debería terminar con un control nuevo. La
 próxima vez será un FAIL con una cantidad de filas, no un error en medio del
 SQL.
 

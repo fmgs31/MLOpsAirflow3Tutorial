@@ -49,7 +49,7 @@ que la task registró. Con una pausa de un segundo entre bucles, ese retraso es
 como mucho un segundo. Lo que *sí* vas a notar es lo que tardan las tasks de
 aguas arriba, que no tiene nada que ver con el scheduler.
 
-El parseo sigue otro ritmo distinto, y es del que vas a depender enseguida. El Dag
+El parseo sigue su propio ritmo, y es del que vas a depender enseguida. El Dag
 processor vuelve a parsear cada archivo, haya cambiado o no, cada
 `[dag_processor] min_file_process_interval` segundos, y vuelve a escanear la carpeta
 buscando archivos nuevos cada `refresh_interval`. Este stack pone ambos a **5**, así que un
@@ -96,8 +96,8 @@ Execution API.
 Cuántas corren a la vez lo decide el **más restrictivo** de varios límites. Estos
 cuatro son los de tasks que usa este tutorial, todos con su valor por defecto en
 este stack (hay más: `max_active_tis_per_dagrun` en una task, `max_active_tasks`
-en un Dag, y `max_active_runs`, que limita runs en vez de tasks y usan la §9 y
-la §10):
+en un Dag, y `max_active_runs`, que limita runs en vez de tasks; este último lo
+usan la §9 y la §10):
 
 | Límite | Valor aquí | Alcance |
 |---|---|---|
@@ -202,7 +202,7 @@ lo que hay aguas abajo de un fallo.
 
 Una task habla con la Task Execution API por HTTP, nunca con la metadata
 database. Eso es lo que hace posibles los workers remotos y el Edge executor, y
-por lo que una task no puede abrir una sesión contra la metadata database y
+la razón por la que una task no puede abrir una sesión contra la metadata database y
 consultar `DagRun` por su cuenta.
 
 ```bash

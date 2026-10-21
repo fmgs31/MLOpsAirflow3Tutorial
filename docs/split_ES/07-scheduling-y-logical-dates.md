@@ -113,8 +113,8 @@ todo run lo tiene, con logical date o sin ella.
 > **La trampa, antes de disparar nada:** un run disparado desde la CLI o la
 > REST API **no tiene logical date** salvo que se la des, así que
 > `logical_date` falta en el task context y `ds`, `ts` y compañía están
-> *undefined* en las plantillas. Ambas fallan en tiempo de
-> ejecución, y ninguna falla bajo `airflow dags test`, que siempre aporta una
+> *undefined* en las plantillas. Los dos accesos fallan en tiempo de
+> ejecución, y ninguno falla bajo `airflow dags test`, que siempre aporta una
 > logical date:
 >
 > ```python

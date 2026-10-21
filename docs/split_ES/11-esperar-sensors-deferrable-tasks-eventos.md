@@ -28,8 +28,8 @@ ocupando su worker slot. Con `mode="reschedule"`, la task instance termina su
 proceso, queda en `up_for_reschedule` (§3) y el scheduler la vuelve a encolar
 para el siguiente poke.
 
-La tercera opción, deferrable, necesita aclarar antes la palabra **trigger**,
-porque tiene más de un significado. Tú *disparas* (trigger) un Dag (§7): un
+Para entender la tercera opción, deferrable, hay que aclarar antes la palabra
+**trigger**, porque tiene más de un significado. Tú *disparas* (trigger) un Dag (§7): un
 verbo. El proceso triggerer de la §3 ejecuta **triggers**: sustantivos,
 pequeños fragmentos de código asíncrono que esperan a algo (un momento
 concreto, una tabla, un mensaje) y lanzan un evento cuando ocurre. "Deferrable" significa que la task le
@@ -184,8 +184,8 @@ dispararía una y otra vez para siempre.
 
 ### Ejecútalo
 
-Este Dag espera la tabla que construye `dataops`, así que la §9 tiene que haber
-corrido o los sensors harán polling hasta agotar su timeout:
+Este Dag espera la tabla que construye `dataops`, así que tienes que haber
+ejecutado `dataops` en la §9, o los sensors harán polling hasta agotar su timeout:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test sensors_and_events
@@ -255,8 +255,8 @@ han rendido, a los cinco minutos más o menos.
 
 `airflow dags test` no tiene workers ni triggerer: ejecuta todas las tasks, y
 el trigger de `wait_for_table`, en su propio proceso (`[DAG TEST] running
-trigger in line`). Enviado a través del scheduler, como `defer-demo`, ningún
-sensor retiene un worker slot mientras espera: `enough_rows` no ocupa ninguno
+trigger in line`). En un run enviado a través del scheduler, como `defer-demo`,
+ningún sensor retiene un worker slot mientras espera: `enough_rows` no ocupa ninguno
 entre pokes, y `wait_for_table` está en el triggerer. En el modo por defecto
 ocuparían uno cada uno durante toda la espera, sin hacer nada.
 

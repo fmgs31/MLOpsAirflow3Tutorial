@@ -104,7 +104,7 @@ Desmárcala y el run se crea igual, pero se queda **queued** hasta que quites la
 pausa (§7).
 
 Escribe otra palabra suelta en `greeting` — deja *Unpause* marcada si aparece —
-y envía. Es el mismo `Param` llegando a la misma task por una tercera
+y envía. Es el mismo `Param`, que llega a la misma task por una tercera
 vía: un valor por defecto en el archivo, `--conf` en la línea de comandos, un
 formulario en el navegador.
 
@@ -126,8 +126,8 @@ ratón por encima y dice *"This Dag's schedule does not support backfills"*. Un
 backfill le pregunta al schedule qué runs tendrían que haber ocurrido entre dos
 fechas y los crea: un schedule diario sobre cuatro días responde "cuatro runs,
 uno por día". `schedule=None` no tiene respuesta: el Dag solo corre cuando
-alguien lo dispara, así que ningún rango de fechas contiene un run que debería
-haber tenido. Backfill se puede usar a partir de la §9, con `dataops`, que corre
+alguien lo dispara, así que en ningún rango de fechas falta un run que debería
+haber ocurrido. Backfill se puede usar a partir de la §9, con `dataops`, que corre
 a diario: un rango de fechas, un **Reprocess Behavior** (missing runs / missing
 and errored runs / all runs), max active runs, "run backwards", y un dry run que
 te dice *"N runs will be triggered"* antes de confirmar. `mlops` (§10) lo tiene

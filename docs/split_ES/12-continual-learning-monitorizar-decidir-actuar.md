@@ -1,7 +1,7 @@
 ## 12. Continual learning: monitorizar, decidir, actuar
 
 **Continual**, no continuo: el sistema se repite *con pausas*, y las pausas son
-deliberadas. Un monitor dispara, se decide algo, y entonces corre el
+deliberadas. Un monitor salta, se decide algo, y entonces corre el
 pipeline. Donde importa, decide una persona: lo que llega a producción espera
 a `approve_promotion`, la task de aprobación de la §10.
 
@@ -83,7 +83,7 @@ etiquetado según su categoría de arXiv.
 [`datasets/README.md`](../../datasets/README.md) explica cómo se eligieron y
 etiquetaron.
 
-Nadie los alteró para que aparezca drift. Se diferencian de los proyectos de
+Nadie los alteró para que apareciera drift. Se diferencian de los proyectos de
 Made With ML en dos cosas: más computer vision y ningún `mlops`, y
 descripciones más largas, porque la primera frase de un paper dice más que una
 reseña de una línea. La segunda es un cambio en cómo escribe el origen, no en
@@ -98,7 +98,7 @@ Antes, pausa `mlops`:
 docker compose exec airflow-scheduler airflow dags pause mlops
 ```
 
-Un run de `dataops` que pasa emite el asset event que arranca `mlops` (§8).
+Un run de `dataops` que tiene éxito emite el asset event que arranca `mlops` (§8).
 Aquí eso entrenaría un modelo con los proyectos nuevos antes de que
 `monitoring` los haya comparado con lo que conoce el modelo en producción, y
 esa comparación es de lo que trata esta sección. `dataops` sigue sin pausa,
@@ -280,7 +280,7 @@ todavía no hay nada que juzgar. Después, cada condición de reentrenamiento
 vigila uno de los tres tipos de drift de la tabla. Fíjate en el orden: **una etiqueta nueva lleva a
 `inspect`, no a `trigger_retraining`.** Reentrenar con datos cuyo espacio de
 etiquetas todavía no has entendido es la receta para publicar un modelo peor
-convencido de que es mejor.
+creyendo que es mejor.
 
 Ahora las cuatro ramas que puede elegir `decide`. Tres son simples; la cuarta
 arranca otro Dag:
@@ -375,7 +375,7 @@ drift `0`. Los dos quedan muy por debajo de 0.05, y dicen cosas distintas:
 - **Target drift.** `computer-vision` es el 38 % de las filas de las que
   aprendió el modelo y el 57 % de las nuevas; `mlops`, el 8 % de lo que
   aprendió, no aparece.
-- **Data drift.** La mediana de un texto es de 16 palabras en las filas de las
+- **Data drift.** La longitud mediana de un texto es de 16 palabras en las filas de las
   que aprendió el modelo, y de 27 en las nuevas: un p-valor demasiado pequeño
   para mostrarse como algo distinto de `0`.
 - **Rendimiento.** El f1 bajó, pero menos que `max_f1_drop`, así que la
@@ -415,8 +415,8 @@ debía correr.
 > es un param. Aquí, además, es la peor política: el f1 sí bajó, y el
 > reentrenamiento de abajo lo recupera.
 
-**Deja correr el reentrenamiento.** El run que creó `trigger_retraining` está
-esperando a `mlops`, que sigue en pausa. Quítale la pausa:
+**Deja correr el reentrenamiento.** El run creado por `trigger_retraining`
+está esperando, porque `mlops` sigue en pausa. Quítale la pausa:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause mlops
@@ -466,7 +466,7 @@ este Dag:
 | **active learning** | etiqueta las filas que más enseñarían al modelo — rara vez hay presupuesto para todas |
 | **QA** | audita las etiquetas antes de entrenar con ellas: falsos positivos, desacuerdo entre etiquetadores, subgrupos de datos donde el modelo falla |
 | **augmentation** | amplía los datos nuevos para que una ventana pequeña no quede ahogada por el histórico |
-| **sampling** | sube/baja muestreo para arreglar el desbalanceo que introdujo el drift |
+| **sampling** | sobremuestrea o submuestrea para arreglar el desbalanceo que introdujo el drift |
 | **evaluation** | construye el conjunto de test para que se parezca a los datos que verá el modelo en producción |
 
 La otra restricción es el **catastrophic forgetting**: entrenar solo con la

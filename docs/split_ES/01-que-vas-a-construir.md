@@ -127,10 +127,10 @@ ellos, así que el modelo los ve como una sola clase, `other`, junto a
 `natural-language-processing`, `computer-vision` y `mlops`.
 
 Dos entregas posteriores los amplían. En la §12, 800 papers de arXiv de
-2025–2026, extraídos para este tutorial: datos más nuevos y de otro origen son
-lo que hace que el drift le cueste f1 al modelo en producción, y que
-reentrenar lo recupere. En la §14, 191 proyectos más de Made With ML, que
-llegan con problemas.
+2025–2026, extraídos para este tutorial: son datos más nuevos y de otro origen,
+así que el drift baja el f1 del modelo en producción, y reentrenar lo
+recupera. En la §14, 191 proyectos más de Made With ML, que
+llegan con problemas añadidos para este tutorial.
 
 **El modelo** lee el título y la descripción de un proyecto y predice su tag.
 Es un clasificador de texto de scikit-learn (features TF-IDF y un clasificador
@@ -150,7 +150,7 @@ el texto que le des:
 "Real-time object detection on a webcam with YOLO"     →  computer-vision
 ```
 
-**El drift** es que los datos cambien por debajo del modelo en producción. El
+**El drift** es que los datos cambien mientras el modelo en producción sigue igual. El
 Dag `monitoring` (§12) compara los proyectos que llegaron después de entrenar
 el modelo en producción con aquellos de los que aprendió: si ha cambiado la
 proporción de cada tag, si ha aparecido un tag que el modelo nunca vio, si el

@@ -81,8 +81,8 @@ MLflow, y Airflow no conoce ningún esquema de URI (como `bigquery://` o
 esquema conocido, dale una URI: la UI muestra entonces dónde están esos datos,
 y las herramientas que leen el linaje de Airflow pueden rastrearlos.
 
-Añade `production_model` al final de `assets.py`, con las dos tablas sin
-procesar que carga Airbyte, que `dataops` produce en la §9:
+Añade `production_model` al final de `assets.py`, junto con los assets de las
+dos tablas sin procesar que carga Airbyte (`dataops` los produce en la §9):
 
 ```python dags/project_tagger_orchestration/assets.py
 RAW_PROJECTS = Asset(
@@ -109,7 +109,7 @@ Con eso tienes cuatro assets, y Airflow todavía no conoce ninguno: para
 Airflow, un asset solo existe cuando un Dag parseado se refiere a él, como
 outlet o como schedule, y `assets.py` no es un Dag. Ahora mismo `airflow assets list`
 imprime `No data found`, y la página Assets está vacía; la §9 cambia eso en
-cuanto el Dag processor parsee el primer archivo que guardes allí.
+cuanto el Dag processor parsee el primer archivo que guardes en esa sección.
 
 ### Productores y consumidores
 

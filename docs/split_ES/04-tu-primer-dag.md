@@ -246,7 +246,7 @@ el contenido en minúsculas contenga `airflow` *y* además `dag` o `asset`. Quit
 el comentario de `zz_broken_on_purpose.py` y no se parsea, no se lista ni se
 reporta nunca: silencio, no un error. Un archivo de Dag real siempre pasa esta
 prueba, porque basta con `from airflow.sdk import dag` para que contenga las
-dos palabras. Los archivos que se salta son los que no tienen alguna: un
+dos palabras. Los archivos que se salta son aquellos a los que les falta alguna: un
 módulo auxiliar sin ningún Dag dentro, que es lo correcto, o un experimento
 desechable como `zz_broken_on_purpose.py`. Así que cuando un archivo no está,
 esto es lo segundo que hay que comprobar.
@@ -289,7 +289,7 @@ vas a usar después de cada Dag.
 > - Una task **deferrable** (§11), cuando tiene que esperar, normalmente se
 >   suspende y deja la espera en manos de otro servicio, el triggerer. Aquí no
 >   hay triggerer, así que la espera la hace el propio `airflow dags test`, y el
->   comando no termina hasta que acaba.
+>   comando no termina hasta que acaba la espera.
 >
 > Eso sí, **no es un dry run** (un ensayo que informa de lo que haría un
 > comando sin hacerlo): las tasks escriben archivos reales y asset events

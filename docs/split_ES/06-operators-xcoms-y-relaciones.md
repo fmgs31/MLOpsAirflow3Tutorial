@@ -290,7 +290,7 @@ código usa las cuatro últimas:
    2.
 2. **Los operadores de desplazamiento**, cuando no fluyen datos —
    `describe >> product` es "describe, y luego product". `>>` solo fija el
-   orden: no le pasa nada a la task de aguas abajo, y por eso las comprobaciones
+   orden: no le pasa ningún valor a la task de aguas abajo, y por eso las comprobaciones
    leen su valor de XCom. `product << describe` es la misma arista al revés, y
    también lo son `describe.set_downstream(product)` y
    `product.set_upstream(describe)`, los métodos que los operators llaman por

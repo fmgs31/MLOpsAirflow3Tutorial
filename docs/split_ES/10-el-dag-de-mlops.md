@@ -18,7 +18,7 @@ trial_budget ──────────────────────�
 | `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna**, con tracking en **MLflow** | busca los hiperparámetros, con el trabajo repartido entre varias tasks, y registra cada trial |
 | `train_best`, `evaluate_best` | tracking de **MLflow** | entrena el modelo final y lo registra: parámetros, métricas, el archivo del modelo |
 | `compare_with_champion` | Model Registry de **MLflow** | puntúa el modelo nuevo y el modelo en producción sobre el split de test de este run |
-| `promotion_gate` → `approve_promotion` → `promote_model` | Model Registry de **MLflow**, y una persona | el gate decide si el modelo nuevo puede pasar a producción, una persona lo aprueba en la UI de Airflow, y el registry lo pasa |
+| `promotion_gate` → `approve_promotion` → `promote_model` | Model Registry de **MLflow**, y una persona | el gate decide si el modelo nuevo puede pasar a producción, una persona lo aprueba en la UI de Airflow, y el registry lo promociona |
 
 ### El stack de ML
 
@@ -216,7 +216,7 @@ filas sin título o sin tag, une título y descripción en una sola columna de
 texto limpio, `text`, y convierte en `other` todo tag fuera de las cuatro
 clases que aprende el modelo (`config.ACCEPTED_TAGS`). La búsqueda entrena con train y puntúa cada trial con
 validación; el modelo final se entrena con las dos y se puntúa con test, que
-nada ha visto antes.
+ningún paso ha usado hasta entonces.
 
 El split se **escribe una sola vez**. Si cada task lo recalculara, todas
 dependerían de que el código, las librerías y la semilla fueran idénticos donde
@@ -238,8 +238,8 @@ ausente o escasa.
 
 **Valida antes de entrenar.** `dataops` validó `labeled_projects` al
 construirla, y este Dag la valida otra vez antes de entrenar con ella. Eso no
-es redundante: fue otro Dag run, posiblemente hace horas, este run puede
-haberse disparado a mano, y el modelo se entrena con los datos tal como están
+es redundante: aquella validación fue en otro Dag run, posiblemente hace horas;
+este run puede haberse disparado a mano; y el modelo se entrena con los datos tal como están
 *ahora*. Añade la segunda task:
 
 ```python dags/04_mlops.py
@@ -273,9 +273,9 @@ Una suite a nivel de tabla no puede hacer la comprobación del split:
 ```
 
 Cada problema de esos comentarios — una clase que falta en test, tres filas de
-una clase, el mismo proyecto en dos splits — pasa sin aviso una suite a nivel
-de columna, y aun así deja sin sentido el f1 de test, que es lo que
-`promotion_gate` compara con el modelo en producción. El mínimo de filas por
+una clase, el mismo proyecto en dos splits — supera sin ningún aviso una suite
+que valida columna a columna, y aun así deja sin sentido el f1 de test, que es
+lo que `promotion_gate` compara con el modelo en producción. El mínimo de filas por
 clase cuenta train y validación juntos, porque el modelo final aprende de los
 dos. Estas comprobaciones abarcan tres dataframes y una suite de GX valida un
 lote cada vez, así que son Python normal, con resultados en el mismo formato
@@ -362,7 +362,7 @@ copias de los datos en memoria. Cuando el recurso limitado es compartido
 > datos.
 
 Ahora el modelo final, y el **promotion gate**, que decide si pasa a
-producción. A diferencia de los gates de la §9, el gate no falla la task cuando
+producción. A diferencia de los gates de la §9, el gate no hace fallar la task cuando
 la respuesta es no: es un *branch*, una task que elige cuál de dos **ramas**
 del Dag sigue. Añade `train_best`, `evaluate_best`, `compare_with_champion`,
 `promotion_gate`, `approve_promotion`, `promote_model` y los dos
@@ -618,8 +618,8 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 Con la primera línea no pasa nada: el schedule de `mlops` es un asset, y no ha
 llegado ningún evento. La segunda línea lo arranca todo sin ningún trigger,
 por la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025, así
-que en el momento en que se le quita la pausa el scheduler crea el run de las
-03:00 UTC más recientes que se perdió, y lo arranca. Espera unos minutos.
+que en el momento en que se le quita la pausa el scheduler crea el run que se
+perdió, el de las 03:00 UTC más recientes, y lo arranca. Espera unos minutos.
 Cerca del final, el run de `mlops` se detiene en `approve_promotion`: abre el
 run en la UI, haz clic en `approve_promotion` y responde al aviso en su
 pestaña **Required Actions**, o déjalo y el default lo aprueba a los 60
@@ -699,7 +699,7 @@ modelo. En **Models**, `project_tagger` tiene la versión 1, con el alias
 > `test.parquet` de los dos runs tienen los mismos ids), y ninguna fila nueva:
 > `compare_with_champion` escribe `all test rows` y `old test rows`, las mismas
 > filas, y `promotion_gate` decide con el split entero, `… on the same … test
-> rows`. Otra búsqueda, así que puede pasar o no. Si el gate la deja pasar,
+> rows`. Otra búsqueda, así que puede superar el gate o no. Si el gate la deja pasar,
 > `approve_promotion` vuelve a esperarte.
 
 > **Pruébalo: la otra rama.** Pon el listón imposiblemente alto y mira cómo

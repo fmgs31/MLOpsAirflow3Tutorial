@@ -22,7 +22,7 @@ producción está en MLflow, con su run (`split_ids.json`, §10).
 que no las pasa ya está publicada para todo lo que la lee sin esperar al asset
 (§14, día 1). El patrón que cierra ese hueco es **write-audit-publish**
 (escribir, auditar, publicar). dbt construye en un dataset de staging, las
-suites validan la tabla allí, y solo si pasan una task la copia al dataset que
+suites validan la tabla allí, y solo si pasan, una task la copia al dataset que
 lee todo el mundo y emite el asset. Un copy job de BigQuery sustituye la tabla
 en un solo paso, así que ningún lector ve media tabla. Las tablas sin procesar
 pueden saltarse ese paso: son la zona de aterrizaje, y solo las lee dbt,

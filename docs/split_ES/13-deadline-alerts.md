@@ -92,7 +92,7 @@ listan bajo Browse → **Deadlines**.
 > **Bug de Airflow 3.3.1 (la versión que instala este tutorial):**
 > `airflow dags test` revienta con cualquier Dag que defina `deadline=`
 > (`psycopg2.ProgrammingError: can't adapt type 'dict'`
-> saliendo de `DagRun.update_state`). Las tasks corren bien; lo único que falla
+> lanzado desde `DagRun.update_state`). Las tasks corren bien; lo único que falla
 > es la actualización final de estado de la CLI. Dispara esos Dags a través del
 > scheduler en su lugar. Por eso `mlops` no lleva deadline: rompería el paso
 > `airflow dags test mlops` de la §10.
