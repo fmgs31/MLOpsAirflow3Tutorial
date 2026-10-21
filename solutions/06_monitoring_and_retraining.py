@@ -69,6 +69,9 @@ def monitoring_dag():
     def prepare_windows(*, run_id: str) -> dict[str, Any]:
         """Read the warehouse once and write the two windows drift is measured on."""
         key = run_id.replace(":", "-").replace("+", "-")
+        # Writes reference.parquet and current.parquet; returns their paths, num_current
+        # and version (the champion's). With no champion, or fewer than
+        # config.MIN_MONITOR_ROWS current rows, it writes nothing and the paths are None.
         windows = monitoring.prepare_windows(f"monitoring-{key}")
         print(f"windows: {windows}")
         return windows
@@ -81,10 +84,14 @@ def monitoring_dag():
     def detect_drift(windows: dict, p_val: str) -> dict | None:
         from project_tagger import drift
 
+        # label_drift and length_drift (each with is_drift, p_val, distance), new_labels
+        # and both tag distributions; None when there are no files.
         return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
+        # The champion's f1_at_promotion, and its f1_now on the current window;
+        # None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
             print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")

@@ -130,7 +130,7 @@ su valor, y las conexiones entre tasks:
         from google.api_core.exceptions import NotFound
 
         try:
-            rows = data.count_rows(params["table"])
+            rows = data.count_rows(params["table"])  # SELECT COUNT(*) in BigQuery
         except NotFound:
             return PokeReturnValue(is_done=False)
         print(f"{params['table']} has {rows} rows")
@@ -147,9 +147,8 @@ sensors_and_events()
 ```
 
 `PokeReturnValue(is_done=..., xcom_value=...)` detiene los pokes y a la vez
-entrega un valor aguas abajo: `proceed` recibe el recuento de filas. `data.count_rows`
-ejecuta un `SELECT COUNT(*)` en BigQuery; mientras la tabla no existe, BigQuery
-responde `NotFound`, y el poke indica que aún no ha terminado, en lugar de
+entrega un valor aguas abajo: `proceed` recibe el recuento de filas. Mientras la tabla no
+existe, BigQuery responde a `data.count_rows` con `NotFound`, y el poke indica que aún no ha terminado, en lugar de
 fallar. `enough_rows` está en modo `reschedule`, la segunda opción de la lista
 con que empieza la §11.
 

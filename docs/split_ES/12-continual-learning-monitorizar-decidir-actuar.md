@@ -129,19 +129,6 @@ ningún run nuevo: un Dag en pausa no arranca ningún run por un asset event.
 
 ### Constrúyelo
 
-La carga de trabajo: `monitoring.prepare_windows(key)` lee
-`labeled_projects` y el `split_ids.json` del champion, escribe las dos
-ventanas en archivos, y devuelve sus rutas, `num_current` (el número de filas
-actuales) y `version` (la del champion); sin champion, o con menos de 50 filas
-actuales, no escribe ningún archivo y las rutas son `None`.
-`drift.detect_drift(reference_fp, current_fp, p_val)` ejecuta los dos tests y
-devuelve `label_drift` y `length_drift` (cada uno con `is_drift`, `p_val` y
-`distance`), `new_labels` y las dos distribuciones de tags, o `None` cuando no
-hay archivos. `monitoring.production_performance(current_fp)` puntúa al
-champion sobre la ventana actual y devuelve `f1_at_promotion` y `f1_now`, o
-`None` cuando no hay ventana. `registry.rollback(reason)` devuelve `champion`
-a `previous_champion` (§10).
-
 Crea `dags/06_monitoring_and_retraining.py`. Los umbrales son **params** del
 Dag, así que la política es visible en la UI, se puede sobrescribir por run, y
 queda registrada con el run que la usó:
@@ -219,6 +206,9 @@ tests de drift como la comprobación de rendimiento:
     @task
     def prepare_windows(*, run_id: str) -> dict[str, Any]:
         key = run_id.replace(":", "-").replace("+", "-")
+        # Writes reference.parquet and current.parquet; returns their paths, num_current
+        # and version (the champion's). With no champion, or fewer than
+        # config.MIN_MONITOR_ROWS current rows, it writes nothing and the paths are None.
         windows = monitoring.prepare_windows(f"monitoring-{key}")
         print(f"windows: {windows}")
         return windows
@@ -227,10 +217,14 @@ tests de drift como la comprobación de rendimiento:
     def detect_drift(windows: dict, p_val: str) -> dict | None:
         from project_tagger import drift
 
+        # label_drift and length_drift (each with is_drift, p_val, distance), new_labels
+        # and both tag distributions; None when there are no files.
         return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
+        # The champion's f1_at_promotion, and its f1_now on the current window;
+        # None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
             print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")

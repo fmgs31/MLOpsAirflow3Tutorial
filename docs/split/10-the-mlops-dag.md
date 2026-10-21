@@ -105,17 +105,6 @@ file is uploaded only with the final run.
 
 ### Build it
 
-New workload functions: `data.save_snapshot(df, key)` writes the table and its
-three splits (`data.SPLITS`: `train`, `val`, `test`) to
-`data/snapshots/<key>/` and returns their paths, and `data.load_snapshot(fp)`
-reads one back. Before splitting, `data.preprocess(df)` cleans the text and
-collapses every tag outside the four classes the model learns
-(`config.ACCEPTED_TAGS`) into `other`. `validate.check_split` is a second
-suite, on the split, and `evaluate.compare` scores two models on the same
-rows. The rest, in `train_module` (`train.py`) and `registry`, do what their
-names say. `config.MIN_F1_TO_PROMOTE` is the minimum f1 for moving a model to
-production (0.65, or the value of `PROJECT_TAGGER_MIN_F1` if set).
-
 Create `dags/04_mlops.py`:
 
 ```python dags/04_mlops.py
@@ -184,11 +173,7 @@ searched. The hyperparameters Optuna tunes, and their ranges, are fixed in
 `manual__2026-02-01T03:00:00+00:00` into something safe in a file name and a
 study name.
 
-**Validate before you train.** `dataops` validated `labeled_projects` when it
-built it, and this Dag validates it again before training on it. That is not
-redundant: it was a different Dag run, possibly hours ago, this run may have
-been triggered by hand, and the model is fitted on the data as it is *now*.
-Add the first two tasks:
+**Snapshot the data.** Add the first task:
 
 ```python dags/04_mlops.py
     @task
@@ -199,24 +184,10 @@ Add the first two tasks:
             for event in events:
                 print(f"triggered by {asset} extra={event.extra}")
         config.ensure_dirs()
+        # Writes data/snapshots/<key>/; returns the paths "snapshot", "train", "val", "test".
         paths = data.save_snapshot(data.load_labeled(), run_key(run_id))
         print(f"snapshot: {paths}")
         return paths
-
-    @task
-    def validate_training_data(paths: dict[str, str]) -> dict[str, Any]:
-        df = data.load_snapshot(paths["snapshot"])
-        table = validate.run_suite(df, "labeled_projects")
-        split = validate.check_split(*(data.load_snapshot(paths[name]) for name in data.SPLITS))
-        print(f"{table.summary()} {split.summary()}")
-        if not (table.passed and split.passed):
-            raise AirflowFailException(
-                f"Training snapshot failed validation: {table.failures + split.failures}"
-            )
-        return {
-            "rows": len(df),
-            "warnings": [r["expectation"] for r in table.failures + split.failures],
-        }
 ```
 
 `triggering_asset_events` works as in §8 (hence the `Mapping`, `Sequence` and
@@ -235,9 +206,12 @@ files' paths, a small dict: XComs carry a pointer to the data, not the data
 itself (§6).
 
 `data.save_snapshot` writes four files: the table as read
-(`labeled_projects.parquet`), which the §9 suite checks, and the preprocessed
-rows split three ways: `train.parquet`, `val.parquet` and `test.parquet`. The
-search fits on train and scores each trial on validation; the final model is
+(`labeled_projects.parquet`), which the §9 suite checks, and the model's input
+split three ways: `train.parquet`, `val.parquet` and `test.parquet`. The
+model's input is what `data.preprocess` makes of the table: it drops rows with
+no title or no tag, joins title and description into one cleaned `text`
+column, and turns every tag outside the four classes the model learns
+(`config.ACCEPTED_TAGS`) into `other`. The search fits on train and scores each trial on validation; the final model is
 fitted on both and scored on test, which nothing has seen before.
 
 The split is **written once**. If each task recomputed it, every task would
@@ -257,8 +231,32 @@ The cost: the split is no longer stratified (the same share of each tag in
 every split). With hundreds of rows the shares come out close, and the split
 check catches a class that ends up missing or scarce.
 
-That check is the second half of `validate_training_data`, and a table-level
-suite cannot do it:
+**Validate before you train.** `dataops` validated `labeled_projects` when it
+built it, and this Dag validates it again before training on it. That is not
+redundant: it was a different Dag run, possibly hours ago, this run may have
+been triggered by hand, and the model is fitted on the data as it is *now*.
+Add the second task:
+
+```python dags/04_mlops.py
+    @task
+    def validate_training_data(paths: dict[str, str]) -> dict[str, Any]:
+        # The table as read from the warehouse, against the labeled_projects suite.
+        df = data.load_snapshot(paths["snapshot"])
+        table = validate.run_suite(df, "labeled_projects")
+        # The three preprocessed splits (train, val, test), checked against each other.
+        split = validate.check_split(*(data.load_snapshot(paths[name]) for name in data.SPLITS))
+        print(f"{table.summary()} {split.summary()}")
+        if not (table.passed and split.passed):
+            raise AirflowFailException(
+                f"Training snapshot failed validation: {table.failures + split.failures}"
+            )
+        return {
+            "rows": len(df),
+            "warnings": [r["expectation"] for r in table.failures + split.failures],
+        }
+```
+
+A table-level suite cannot do the split check:
 
 ```python
 # src/project_tagger/validate.py — check_split()
@@ -301,6 +299,7 @@ list, and each adds trials to the same study. Four tasks:
 
     @task
     def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
+        # Also records it on the study's run: metric best_f1, tag best_trial_run_id.
         best = train_module.best_trial(study_name)
         print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
         return best
@@ -332,9 +331,8 @@ trial runs in one of the `run_trials` instances. So `train.py` names the parent
 explicitly, `mlflow.start_run(parent_run_id=...)`, with the id read from the
 study.
 
-`best_params` asks the study for its best trial, and records it on the study's
-run: its score as the metric `best_f1`, its run id as the tag
-`best_trial_run_id`. It takes the mapped results anyway: that argument is what
+`best_params` asks the study for its best trial. It takes the mapped results
+anyway: that argument is what
 makes it wait for every `run_trials` instance, and it arrives as a list, one
 item per instance.
 
@@ -496,7 +494,9 @@ its log names the version it compared with, part by part. It takes
 `evaluate_best`'s output, which carries the new version, so it runs after it.
 
 `promotion_gate` applies the rule in `train_module.should_promote`: the new
-model's f1 must clear the threshold and, against a champion, must not be
+model's f1 must clear the threshold, `config.MIN_F1_TO_PROMOTE` (0.65, or the
+value of the environment variable `PROJECT_TAGGER_MIN_F1` if set), and, against
+a champion, must not be
 below it on the new rows, or on the whole split when there are too few. A
 `@task.branch` returns the `task_id` to run; the other branch is **skipped**,
 not failed. A candidate that misses the threshold, or loses to the champion,

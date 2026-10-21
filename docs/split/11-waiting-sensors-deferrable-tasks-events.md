@@ -126,7 +126,7 @@ its value, and the wiring:
         from google.api_core.exceptions import NotFound
 
         try:
-            rows = data.count_rows(params["table"])
+            rows = data.count_rows(params["table"])  # SELECT COUNT(*) in BigQuery
         except NotFound:
             return PokeReturnValue(is_done=False)
         print(f"{params['table']} has {rows} rows")
@@ -143,9 +143,8 @@ sensors_and_events()
 ```
 
 `PokeReturnValue(is_done=..., xcom_value=...)` both stops the poking and hands
-a value downstream: `proceed` receives the row count. `data.count_rows` runs a
-`SELECT COUNT(*)` in BigQuery; while the table does not exist, BigQuery answers
-`NotFound`, and the poke reports not done instead of failing. `enough_rows` is
+a value downstream: `proceed` receives the row count. While the table does not exist,
+BigQuery answers `data.count_rows` with `NotFound`, and the poke reports not done instead of failing. `enough_rows` is
 in `reschedule` mode, the second option in the list that opens §11.
 
 Read the wiring: `enough_rows` has no upstream task, so it starts at once,

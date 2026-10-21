@@ -489,9 +489,9 @@ e.ExpectCompoundColumnsToBeUnique(column_list=["title", "description"]),  # one 
 e.ExpectTableRowCountToBeBetween(min_value=500),
 ```
 
-`validate.run_suite(df, "projects")` validates a dataframe against that suite
-and returns a result with `.passed`, `.failures`, `.results`, `.suite` and a
-`.summary()` line. (GX also has Airflow operators, but as of October 2026 their
+`validate.run_suite(df, "projects")` validates a dataframe against that suite.
+In its result, `.passed` says whether the suite passed and `.failures` lists
+the expectations that failed. (GX also has Airflow operators, but as of October 2026 their
 package cannot be installed next to Airflow 3.3.1, so the tasks call GX
 directly.)
 
@@ -502,11 +502,6 @@ known ones. A new tag is a reason to look at the data, not to stop the
 pipeline, so it shows up in `result.failures` but leaves `result.passed` true.
 
 ### Build it
-
-The functions this Dag calls, in `src/project_tagger/`: `data.load_projects()`,
-`data.load_tags()` and `data.load_labeled()` read a warehouse table into a
-dataframe (CSV columns only); `validate.run_suite` runs a suite; `config`
-holds names and paths, from table names to the dbt executable.
 
 Create `dags/03_dataops.py`:
 
@@ -596,9 +591,10 @@ downstream, when the table fails its suite:
     @task
     def validate_projects() -> dict[str, Any]:
         result = validate.run_suite(data.load_projects(), "projects")
-        print(result.summary())
+        print(result.summary())  # suite=projects passed=6/6
         if not result.passed:
             raise AirflowFailException(f"projects failed validation: {result.failures}")
+        # The suite's name, and one dict per expectation with its outcome.
         return {"suite": result.suite, "results": result.results}
 
     @task
@@ -619,6 +615,7 @@ Then `transform`, which runs the `dbt build` you ran by hand, and the final
 gate, whose outlet is the asset `mlops` will be scheduled on:
 
 ```python dags/03_dataops.py
+    # config.DBT_BIN is /opt/venvs/dbt/bin/dbt; config.DBT_PROJECT_DIR, dbt/dbt_transforms.
     transform = BashOperator(
         task_id="transform",
         bash_command=(

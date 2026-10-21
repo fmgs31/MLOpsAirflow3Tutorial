@@ -124,19 +124,6 @@ Dag starts no run for an asset event.
 
 ### Build it
 
-The workload: `monitoring.prepare_windows(key)` reads `labeled_projects` and
-the champion's `split_ids.json`, writes the two windows to files, and returns
-their paths, `num_current` (the number of current rows) and `version` (the
-champion's); with no champion, or fewer than 50 current rows, it writes no
-files and the paths are `None`. `drift.detect_drift(reference_fp,
-current_fp, p_val)` runs both tests and returns `label_drift` and
-`length_drift` (each with `is_drift`, `p_val` and `distance`), `new_labels`
-and the two tag distributions, or `None` when there are no files.
-`monitoring.production_performance(current_fp)` scores the champion on the
-current window and returns `f1_at_promotion` and `f1_now`, or `None` when
-there is no window. `registry.rollback(reason)` moves `champion` back to
-`previous_champion` (§10).
-
 Create `dags/06_monitoring_and_retraining.py`. The thresholds are Dag
 **params**, so the policy is visible in the UI, overridable per run, and
 recorded with the run that used it:
@@ -214,6 +201,9 @@ performance check both read them:
     @task
     def prepare_windows(*, run_id: str) -> dict[str, Any]:
         key = run_id.replace(":", "-").replace("+", "-")
+        # Writes reference.parquet and current.parquet; returns their paths, num_current
+        # and version (the champion's). With no champion, or fewer than
+        # config.MIN_MONITOR_ROWS current rows, it writes nothing and the paths are None.
         windows = monitoring.prepare_windows(f"monitoring-{key}")
         print(f"windows: {windows}")
         return windows
@@ -222,10 +212,14 @@ performance check both read them:
     def detect_drift(windows: dict, p_val: str) -> dict | None:
         from project_tagger import drift
 
+        # label_drift and length_drift (each with is_drift, p_val, distance), new_labels
+        # and both tag distributions; None when there are no files.
         return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
+        # The champion's f1_at_promotion, and its f1_now on the current window;
+        # None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
             print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")

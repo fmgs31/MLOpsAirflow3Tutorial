@@ -73,7 +73,7 @@ def sensors_and_events():
         from google.api_core.exceptions import NotFound
 
         try:
-            rows = data.count_rows(params["table"])
+            rows = data.count_rows(params["table"])  # SELECT COUNT(*) in BigQuery
         except NotFound:
             return PokeReturnValue(is_done=False)
         print(f"{params['table']} has {rows} rows")

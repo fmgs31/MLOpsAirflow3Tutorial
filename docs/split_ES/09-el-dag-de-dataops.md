@@ -508,9 +508,9 @@ e.ExpectCompoundColumnsToBeUnique(column_list=["title", "description"]),  # one 
 e.ExpectTableRowCountToBeBetween(min_value=500),
 ```
 
-`validate.run_suite(df, "projects")` valida un dataframe contra esa suite y
-devuelve un resultado con `.passed`, `.failures`, `.results`, `.suite` y una
-línea `.summary()`. (GX tiene también operators de Airflow, pero en octubre
+`validate.run_suite(df, "projects")` valida un dataframe contra esa suite. En
+su resultado, `.passed` dice si la suite ha pasado y `.failures` lista las
+expectations que han fallado. (GX tiene también operators de Airflow, pero en octubre
 de 2026 su paquete no se puede instalar junto a Airflow 3.3.1, así que las
 tasks llaman a GX directamente.)
 
@@ -522,12 +522,6 @@ detener el pipeline, así que aparece en `result.failures` pero
 `result.passed` sigue siendo verdadero.
 
 ### Constrúyelo
-
-Las funciones que llama este Dag, en `src/project_tagger/`:
-`data.load_projects()`, `data.load_tags()` y `data.load_labeled()` leen una
-tabla del warehouse en un dataframe (solo las columnas del CSV);
-`validate.run_suite` ejecuta una suite; `config` guarda nombres y rutas, desde
-los nombres de las tablas hasta el ejecutable de dbt.
 
 Crea `dags/03_dataops.py`:
 
@@ -617,9 +611,10 @@ tabla no pasa su suite, y con eso detiene todo lo que va aguas abajo:
     @task
     def validate_projects() -> dict[str, Any]:
         result = validate.run_suite(data.load_projects(), "projects")
-        print(result.summary())
+        print(result.summary())  # suite=projects passed=6/6
         if not result.passed:
             raise AirflowFailException(f"projects failed validation: {result.failures}")
+        # The suite's name, and one dict per expectation with its outcome.
         return {"suite": result.suite, "results": result.results}
 
     @task
@@ -640,6 +635,7 @@ Después `transform`, que ejecuta el `dbt build` que lanzaste a mano, y el gate
 final, cuyo outlet es el asset con el que se programará `mlops`:
 
 ```python dags/03_dataops.py
+    # config.DBT_BIN is /opt/venvs/dbt/bin/dbt; config.DBT_PROJECT_DIR, dbt/dbt_transforms.
     transform = BashOperator(
         task_id="transform",
         bash_command=(

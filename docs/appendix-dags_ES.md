@@ -436,11 +436,12 @@ def dataops():
     def validate_projects() -> dict[str, Any]:
         """Quality gate on the raw `projects` table."""
         result = validate.run_suite(data.load_projects(), "projects")
-        print(result.summary())
+        print(result.summary())  # suite=projects passed=6/6
         if not result.passed:
             # AirflowFailException stops retries: a data-quality break will not
             # fix itself by running the same task again.
             raise AirflowFailException(f"projects failed validation: {result.failures}")
+        # The suite's name, and one dict per expectation with its outcome.
         return {"suite": result.suite, "results": result.results}
 
     @task
@@ -455,6 +456,7 @@ def dataops():
     # Transform: dbt runs in its own virtualenv, so a BashOperator calls its
     # executable. `dbt build` builds every model and then runs its tests; a
     # failing test exits non-zero, and that fails the task.
+    # config.DBT_BIN is /opt/venvs/dbt/bin/dbt; config.DBT_PROJECT_DIR, dbt/dbt_transforms.
     transform = BashOperator(
         task_id="transform",
         bash_command=(
@@ -610,6 +612,7 @@ def mlops():
                 print(f"triggered by {asset} extra={event.extra}")
 
         config.ensure_dirs()
+        # Writes data/snapshots/<key>/; returns the paths "snapshot", "train", "val", "test".
         paths = data.save_snapshot(data.load_labeled(), run_key(run_id))
         print(f"snapshot: {paths}")
         return paths
@@ -624,8 +627,10 @@ def mlops():
         plus a split that no single-table suite can inspect, so both are
         checked here.
         """
+        # The table as read from the warehouse, against the labeled_projects suite.
         df = data.load_snapshot(paths["snapshot"])
         table = validate.run_suite(df, "labeled_projects")
+        # The three preprocessed splits (train, val, test), checked against each other.
         split = validate.check_split(*(data.load_snapshot(paths[name]) for name in data.SPLITS))
         print(f"{table.summary()} {split.summary()}")
 
@@ -666,6 +671,7 @@ def mlops():
         The study already knows its best trial; `results` is taken so this task
         waits for every worker.
         """
+        # Also records it on the study's run: metric best_f1, tag best_trial_run_id.
         best = train_module.best_trial(study_name)
         print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
         return best
@@ -872,7 +878,7 @@ def sensors_and_events():
         from google.api_core.exceptions import NotFound
 
         try:
-            rows = data.count_rows(params["table"])
+            rows = data.count_rows(params["table"])  # SELECT COUNT(*) in BigQuery
         except NotFound:
             return PokeReturnValue(is_done=False)
         print(f"{params['table']} has {rows} rows")
@@ -991,6 +997,9 @@ def monitoring_dag():
     def prepare_windows(*, run_id: str) -> dict[str, Any]:
         """Read the warehouse once and write the two windows drift is measured on."""
         key = run_id.replace(":", "-").replace("+", "-")
+        # Writes reference.parquet and current.parquet; returns their paths, num_current
+        # and version (the champion's). With no champion, or fewer than
+        # config.MIN_MONITOR_ROWS current rows, it writes nothing and the paths are None.
         windows = monitoring.prepare_windows(f"monitoring-{key}")
         print(f"windows: {windows}")
         return windows
@@ -1003,10 +1012,14 @@ def monitoring_dag():
     def detect_drift(windows: dict, p_val: str) -> dict | None:
         from project_tagger import drift
 
+        # label_drift and length_drift (each with is_drift, p_val, distance), new_labels
+        # and both tag distributions; None when there are no files.
         return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
+        # The champion's f1_at_promotion, and its f1_now on the current window;
+        # None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
             print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")

@@ -88,6 +88,7 @@ def mlops():
                 print(f"triggered by {asset} extra={event.extra}")
 
         config.ensure_dirs()
+        # Writes data/snapshots/<key>/; returns the paths "snapshot", "train", "val", "test".
         paths = data.save_snapshot(data.load_labeled(), run_key(run_id))
         print(f"snapshot: {paths}")
         return paths
@@ -102,8 +103,10 @@ def mlops():
         plus a split that no single-table suite can inspect, so both are
         checked here.
         """
+        # The table as read from the warehouse, against the labeled_projects suite.
         df = data.load_snapshot(paths["snapshot"])
         table = validate.run_suite(df, "labeled_projects")
+        # The three preprocessed splits (train, val, test), checked against each other.
         split = validate.check_split(*(data.load_snapshot(paths[name]) for name in data.SPLITS))
         print(f"{table.summary()} {split.summary()}")
 
@@ -144,6 +147,7 @@ def mlops():
         The study already knows its best trial; `results` is taken so this task
         waits for every worker.
         """
+        # Also records it on the study's run: metric best_f1, tag best_trial_run_id.
         best = train_module.best_trial(study_name)
         print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
         return best

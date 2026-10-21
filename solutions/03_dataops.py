@@ -84,11 +84,12 @@ def dataops():
     def validate_projects() -> dict[str, Any]:
         """Quality gate on the raw `projects` table."""
         result = validate.run_suite(data.load_projects(), "projects")
-        print(result.summary())
+        print(result.summary())  # suite=projects passed=6/6
         if not result.passed:
             # AirflowFailException stops retries: a data-quality break will not
             # fix itself by running the same task again.
             raise AirflowFailException(f"projects failed validation: {result.failures}")
+        # The suite's name, and one dict per expectation with its outcome.
         return {"suite": result.suite, "results": result.results}
 
     @task
@@ -103,6 +104,7 @@ def dataops():
     # Transform: dbt runs in its own virtualenv, so a BashOperator calls its
     # executable. `dbt build` builds every model and then runs its tests; a
     # failing test exits non-zero, and that fails the task.
+    # config.DBT_BIN is /opt/venvs/dbt/bin/dbt; config.DBT_PROJECT_DIR, dbt/dbt_transforms.
     transform = BashOperator(
         task_id="transform",
         bash_command=(
