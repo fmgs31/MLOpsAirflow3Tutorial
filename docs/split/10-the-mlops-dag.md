@@ -278,7 +278,7 @@ the suite.
 
 **Distributed tuning.** One Optuna study for the run, then **dynamic task
 mapping**: while the Dag runs, Airflow creates one task instance per item of a
-list, and each adds trials to the same study. Four tasks:
+list, and each adds trials to the same study. First the study, and the list:
 
 ```python dags/04_mlops.py
     @task
@@ -289,20 +289,6 @@ list, and each adds trials to the same study. Four tasks:
     def trial_budget(*, params: Mapping[str, Any]) -> list[int]:
         base, extra = divmod(params["n_trials"], params["n_workers"])
         return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
-
-    @task(max_active_tis_per_dag=2)
-    def run_trials(n_trials: int, study_name: str, paths: dict[str, str]) -> list[dict[str, Any]]:
-        train_df, val_df = data.load_snapshot(paths["train"]), data.load_snapshot(paths["val"])
-        results = train_module.run_trials(study_name, n_trials, train_df, val_df)
-        print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
-        return results
-
-    @task
-    def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
-        # Also records it on the study's run: metric best_f1, tag best_trial_run_id.
-        best = train_module.best_trial(study_name)
-        print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
-        return best
 ```
 
 `create_study` creates the study with `load_if_exists=True` (in `train.py`),
@@ -312,13 +298,54 @@ id on the study itself, as a *user attribute* (a value Optuna stores with the
 study). A retry finds the id there and opens no second run.
 
 `trial_budget` reads the Dag params through the `params` context key and splits
-the trials over `n_workers` tasks: 20 over 4 gives `[5, 5, 5, 5]`. In the wiring
-below, `run_trials.partial(...).expand(n_trials=trial_budget())` creates one
-`run_trials` instance per item of that list, when the Dag runs. Each instance
-is retried, logged and inspected on its own. `.partial()` takes the arguments
-every instance shares; `.expand()` the one that differs.
+the trials over `n_workers` tasks: 20 over 4 gives `[5, 5, 5, 5]`. That list
+is what the next task is mapped over.
 
-`run_trials` fits each trial on the training split, scores it on the
+> **`params` is reserved.** A `@task` receives context keys by parameter name
+> (§4), and `params` is one of them: `trial_budget` gets the Dag's params
+> because its argument is called `params`. Name a data argument `params` by
+> mistake and it receives the Dag's params instead of your data.
+
+Now the task that is mapped:
+
+```python dags/04_mlops.py
+    @task(max_active_tis_per_dag=2)
+    def run_trials(n_trials: int, study_name: str, paths: dict[str, str]) -> list[dict[str, Any]]:
+        train_df, val_df = data.load_snapshot(paths["train"]), data.load_snapshot(paths["val"])
+        results = train_module.run_trials(study_name, n_trials, train_df, val_df)
+        print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
+        return results
+```
+
+Nothing in it mentions mapping. `run_trials` is written for one instance: its
+`n_trials` is one number, not the list. The mapping is in how the wiring at
+the end of the file calls it:
+
+```python
+run_trials.partial(study_name=study, paths=paths).expand(n_trials=trial_budget())
+```
+
+- `.partial()` takes the arguments every instance gets the same: the study's
+  name and the snapshot's paths.
+- `.expand()` takes the argument that differs, as a list, and makes one
+  instance per item.
+
+With `trial_budget` returning `[5, 5, 5, 5]`, that line becomes four task
+instances, told apart by their **map index**:
+
+| Map index | `n_trials` | `study_name`, `paths` |
+|---|---|---|
+| 0 | `5` (item 0) | the same for all four |
+| 1 | `5` (item 1) | the same for all four |
+| 2 | `5` (item 2) | the same for all four |
+| 3 | `5` (item 3) | the same for all four |
+
+The list only exists once `trial_budget` has run, so the number of instances
+is decided when the Dag runs, not when it is parsed: set `n_workers` to 2 in a
+run's params and that run has two. Each instance is retried, logged and
+inspected on its own; a retried instance reruns only its own trials.
+
+Each instance fits its trials on the training split, scores them on the
 validation split, and logs every trial to MLflow as a **child run**: a run with
 a parent, which the MLflow UI folds under it. The test split is never seen
 during the search, so the final model's test score is still an honest
@@ -330,11 +357,6 @@ opened the parent, and here the parent was opened by `create_study` and each
 trial runs in one of the `run_trials` instances. So `train.py` names the parent
 explicitly, `mlflow.start_run(parent_run_id=...)`, with the id read from the
 study.
-
-`best_params` asks the study for its best trial. It takes the mapped results
-anyway: that argument is what
-makes it wait for every `run_trials` instance, and it arrives as a list, one
-item per instance.
 
 **How many `run_trials` instances run at once is a choice, written in
 `run_trials`' decorator.** Nothing about `.expand()` says "in parallel"; it
@@ -348,10 +370,20 @@ memory. When the limited resource is shared — say, a database that accepts onl
 a few connections — a `pool` (§3) sets the same kind of cap across every task
 and Dag that uses it.
 
-> **`params` is reserved.** A `@task` receives context keys by parameter name
-> (§4), and `params` is one of them: `trial_budget` gets the Dag's params
-> because its argument is called `params`. Name a data argument `params` by
-> mistake and it receives the Dag's params instead of your data.
+Last, the task that reads the search's result:
+
+```python dags/04_mlops.py
+    @task
+    def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
+        # Also records it on the study's run: metric best_f1, tag best_trial_run_id.
+        best = train_module.best_trial(study_name)
+        print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
+        return best
+```
+
+`best_params` asks the study for its best trial. It takes the mapped results
+anyway: that argument is what makes it wait for every `run_trials` instance,
+and it arrives as a list, one item per instance, in map-index order.
 
 Now the final model, and the **promotion gate**, which decides whether it goes
 to production. Unlike the gates in §9, the gate does not fail the task when the

@@ -283,7 +283,8 @@ que la suite.
 
 **Búsqueda distribuida.** Un study de Optuna por run, y después **dynamic
 task mapping**: mientras corre el Dag, Airflow crea una task instance por cada
-elemento de una lista, y cada una añade trials al mismo study. Cuatro tasks:
+elemento de una lista, y cada una añade trials al mismo study. Primero el
+study y la lista:
 
 ```python dags/04_mlops.py
     @task
@@ -294,20 +295,6 @@ elemento de una lista, y cada una añade trials al mismo study. Cuatro tasks:
     def trial_budget(*, params: Mapping[str, Any]) -> list[int]:
         base, extra = divmod(params["n_trials"], params["n_workers"])
         return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
-
-    @task(max_active_tis_per_dag=2)
-    def run_trials(n_trials: int, study_name: str, paths: dict[str, str]) -> list[dict[str, Any]]:
-        train_df, val_df = data.load_snapshot(paths["train"]), data.load_snapshot(paths["val"])
-        results = train_module.run_trials(study_name, n_trials, train_df, val_df)
-        print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
-        return results
-
-    @task
-    def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
-        # Also records it on the study's run: metric best_f1, tag best_trial_run_id.
-        best = train_module.best_trial(study_name)
-        print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
-        return best
 ```
 
 `create_study` crea el study con `load_if_exists=True` (en `train.py`), así que
@@ -319,13 +306,55 @@ run.
 
 `trial_budget` lee los params del Dag a través de la clave de contexto `params`
 y reparte los trials entre `n_workers` tasks: 20 entre 4 da `[5, 5, 5, 5]`.
-Al conectar las tasks, más abajo,
-`run_trials.partial(...).expand(n_trials=trial_budget())` crea una instancia de `run_trials` por cada elemento de esa lista, cuando corre
-el Dag. Cada instancia se reintenta, tiene su propio log y se inspecciona por
-separado. `.partial()` recibe los argumentos que comparten todas las
-instancias; `.expand()`, el que cambia en cada una.
+Esa lista es sobre la que se mapea la siguiente task.
 
-`run_trials` entrena cada trial con el split de entrenamiento, lo puntúa sobre
+> **`params` está reservado.** Un `@task` recibe claves del contexto por nombre
+> de parámetro (§4), y `params` es una de ellas: `trial_budget` recibe los
+> params del Dag porque su argumento se llama `params`. Si por error llamas
+> `params` a un argumento de datos, recibirá los params del Dag en vez de tus
+> datos.
+
+Ahora la task que se mapea:
+
+```python dags/04_mlops.py
+    @task(max_active_tis_per_dag=2)
+    def run_trials(n_trials: int, study_name: str, paths: dict[str, str]) -> list[dict[str, Any]]:
+        train_df, val_df = data.load_snapshot(paths["train"]), data.load_snapshot(paths["val"])
+        results = train_module.run_trials(study_name, n_trials, train_df, val_df)
+        print(f"{len(results)} trials, best here f1={max(r['f1'] for r in results):.4f}")
+        return results
+```
+
+Nada en ella menciona el mapeo. `run_trials` está escrita para una sola
+instancia: su `n_trials` es un número, no la lista. El mapeo está en cómo la
+llama el cableado del final del archivo:
+
+```python
+run_trials.partial(study_name=study, paths=paths).expand(n_trials=trial_budget())
+```
+
+- `.partial()` recibe los argumentos que todas las instancias reciben iguales:
+  el nombre del study y las rutas del snapshot.
+- `.expand()` recibe el argumento que cambia, como una lista, y crea una
+  instancia por cada elemento.
+
+Con `trial_budget` devolviendo `[5, 5, 5, 5]`, esa línea se convierte en cuatro
+task instances, que se distinguen por su **map index**:
+
+| Map index | `n_trials` | `study_name`, `paths` |
+|---|---|---|
+| 0 | `5` (elemento 0) | los mismos para las cuatro |
+| 1 | `5` (elemento 1) | los mismos para las cuatro |
+| 2 | `5` (elemento 2) | los mismos para las cuatro |
+| 3 | `5` (elemento 3) | los mismos para las cuatro |
+
+La lista solo existe cuando `trial_budget` ha corrido, así que el número de
+instancias se decide cuando corre el Dag, no cuando se parsea: pon `n_workers`
+a 2 en los params de un run y ese run tendrá dos. Cada instancia se reintenta,
+tiene su propio log y se inspecciona por separado; una instancia reintentada
+solo repite sus propios trials.
+
+Cada instancia entrena sus trials con el split de entrenamiento, los puntúa sobre
 el split de validación, y registra cada trial en MLflow como un **run hijo**:
 un run con padre, que la UI de MLflow pliega debajo de él. El split de test no se ve
 en ningún momento de la búsqueda, así que la puntuación de test del modelo
@@ -337,11 +366,6 @@ que abrió el padre, y aquí el padre lo abrió `create_study` y cada trial corr
 en una de las instancias de `run_trials`. Así que `train.py` nombra el padre
 explícitamente, `mlflow.start_run(parent_run_id=...)`, con el id leído del
 study.
-
-`best_params` le pide al study su mejor trial. Aun así recibe los resultados
-de las instancias mapeadas: ese argumento es lo que la obliga a esperar a todas
-las instancias de `run_trials`, y llega como una lista, un elemento por
-instancia.
 
 **Cuántas instancias de `run_trials` corren a la vez es una decisión, escrita
 en el decorador de `run_trials`.** Nada en `.expand()` dice "en paralelo";
@@ -355,11 +379,21 @@ copias de los datos en memoria. Cuando el recurso limitado es compartido
 — por ejemplo, una base de datos que solo acepta unas pocas conexiones —, un
 `pool` (§3) pone el mismo tipo de tope a todas las tasks y Dags que lo usan.
 
-> **`params` está reservado.** Un `@task` recibe claves del contexto por nombre
-> de parámetro (§4), y `params` es una de ellas: `trial_budget` recibe los
-> params del Dag porque su argumento se llama `params`. Si por error llamas
-> `params` a un argumento de datos, recibirá los params del Dag en vez de tus
-> datos.
+Por último, la task que lee el resultado de la búsqueda:
+
+```python dags/04_mlops.py
+    @task
+    def best_params(study_name: str, results: list[list[dict[str, Any]]]) -> dict[str, Any]:
+        # Also records it on the study's run: metric best_f1, tag best_trial_run_id.
+        best = train_module.best_trial(study_name)
+        print(f"best trial #{best['number']} f1={best['f1']:.4f} of {best['num_trials']}: {best['params']}")
+        return best
+```
+
+`best_params` le pide al study su mejor trial. Aun así recibe los resultados
+de las instancias mapeadas: ese argumento es lo que la obliga a esperar a todas
+las instancias de `run_trials`, y llega como una lista, un elemento por
+instancia, en orden de map index.
 
 Ahora el modelo final, y el **promotion gate**, que decide si pasa a
 producción. A diferencia de los gates de la §9, el gate no hace fallar la task cuando
