@@ -398,12 +398,7 @@ de las instancias mapeadas: ese argumento es lo que la obliga a esperar a todas
 las instancias de `run_trials`, y llega como una lista, un elemento por
 instancia, en orden de map index.
 
-Ahora el modelo final, y el **promotion gate**, que decide si pasa a
-producción. A diferencia de los gates de la §9, el gate no hace fallar la task cuando
-la respuesta es no: es un *branch*, una task que elige cuál de dos **ramas**
-del Dag sigue. Añade `train_best`, `compare_with_champion`,
-`summarize_candidate`, `promotion_gate`, `approve_promotion`, `promote_model` y los dos
-`EmptyOperator` que necesitan las ramas:
+Ahora el modelo final. Añade `train_best`:
 
 ```python dags/04_mlops.py
     @task
@@ -426,72 +421,6 @@ del Dag sigue. Añade `train_best`, `compare_with_champion`,
             "f1": trained["metrics"]["f1"],
             "slices": trained["metrics"]["slices"],
         }
-
-    @task
-    def compare_with_champion(trained: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
-        champion = registry.get_production()
-        if champion is None:
-            print("no champion yet")
-            return None
-        seen = [i for ids in registry.load_split_ids(champion["run_id"]).values() for i in ids]
-        comparison = evaluate.compare(
-            registry.load_model(version=trained["version"]),
-            registry.load_model(),
-            data.load_snapshot(paths["test"]),
-            seen,
-        )
-        for name, part in comparison.items():
-            if part["rows"]:
-                print(
-                    f"{name} test rows: {part['rows']}, f1={part['f1']:.4f}, "
-                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}"
-                )
-        return comparison
-
-    @task
-    def summarize_candidate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
-        summary = evaluate.summarize(trained["version"], trained["f1"], trained["slices"], comparison)
-        print(summary)
-        return summary
-
-    @task.branch
-    def promotion_gate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
-        promote, reason = evaluate.should_promote(
-            trained["f1"],
-            comparison,
-            config.MIN_F1_TO_PROMOTE,
-            config.MIN_NEW_TEST_ROWS,
-        )
-        print(reason)
-        return "approve_promotion" if promote else "keep_current_model"
-
-    approve_promotion = ApprovalOperator(
-        task_id="approve_promotion",
-        subject="Promote the new tag classifier?",
-        body=(
-            "The new version passed promotion_gate.\n\n"
-            "{{ ti.xcom_pull(task_ids='summarize_candidate') }}\n\n"
-            "Approve to move `champion` to it."
-        ),
-        defaults="Approve",
-        response_timeout=timedelta(seconds=60),
-    )
-
-    @task(outlets=[PRODUCTION_MODEL])
-    def promote_model(
-        trained: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
-    ) -> dict[str, Any]:
-        champion = registry.promote(trained["version"])
-        outlet_events[PRODUCTION_MODEL].extra = {
-            "version": champion["version"],
-            "f1": champion["metrics"]["f1"],
-            "previous_version": champion["previous_version"],
-        }
-        print(f"champion -> version {champion['version']} (was {champion['previous_version']})")
-        return champion
-
-    keep_current_model = EmptyOperator(task_id="keep_current_model")
-    done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 ```
 
 `train_best` entrena el modelo final con los hiperparámetros del mejor trial
@@ -519,6 +448,31 @@ tipo de entrada. Son pequeños: de las 157 filas de test de esta sección, 4 son
 textos cortos y 23 mencionan transformers, así que una sola predicción mueve
 mucho el f1 de un slice. Demasiado ruido para que decida una regla fija; una
 persona sí puede sopesarlos, y para eso está `approve_promotion`.
+
+Después, la comparación con el modelo en producción. Añade `compare_with_champion`:
+
+```python dags/04_mlops.py
+    @task
+    def compare_with_champion(trained: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
+        champion = registry.get_production()
+        if champion is None:
+            print("no champion yet")
+            return None
+        seen = [i for ids in registry.load_split_ids(champion["run_id"]).values() for i in ids]
+        comparison = evaluate.compare(
+            registry.load_model(version=trained["version"]),
+            registry.load_model(),
+            data.load_snapshot(paths["test"]),
+            seen,
+        )
+        for name, part in comparison.items():
+            if part["rows"]:
+                print(
+                    f"{name} test rows: {part['rows']}, f1={part['f1']:.4f}, "
+                    f"champion version {champion['version']} f1={part['champion_f1']:.4f}"
+                )
+        return comparison
+```
 
 `compare_with_champion` carga el modelo en producción y la versión que
 `train_best` acaba de registrar, y puntúa los dos sobre el split de test de
@@ -550,6 +504,30 @@ vuelve a ella.
 log diga con qué versión comparó, parte por parte. Recibe la salida de
 `train_best`, que lleva la versión nueva, así que corre después de ella.
 
+A continuación, el **promotion gate**, que decide si el modelo nuevo pasa a
+producción. A diferencia de los gates de la §9, el gate no hace fallar la task cuando
+la respuesta es no: es un *branch*, una task que elige cuál de dos **ramas**
+del Dag sigue. Añade `summarize_candidate` y `promotion_gate`:
+
+```python dags/04_mlops.py
+    @task
+    def summarize_candidate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+        summary = evaluate.summarize(trained["version"], trained["f1"], trained["slices"], comparison)
+        print(summary)
+        return summary
+
+    @task.branch
+    def promotion_gate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+        promote, reason = evaluate.should_promote(
+            trained["f1"],
+            comparison,
+            config.MIN_F1_TO_PROMOTE,
+            config.MIN_NEW_TEST_ROWS,
+        )
+        print(reason)
+        return "approve_promotion" if promote else "keep_current_model"
+```
+
 `summarize_candidate` redacta, con `evaluate.summarize`, lo que una persona
 necesita para juzgar el modelo nuevo: su f1, el f1 de los dos modelos en cada
 parte del split de test, y el f1 de cada slice junto a su número de filas. El
@@ -565,6 +543,40 @@ demasiado pocas. Un `@task.branch` devuelve el `task_id` que hay que ejecutar; l
 rama queda **skipped**, no failed. Un candidato que no llega al umbral, o que
 pierde contra el champion, es un desenlace normal: el run tiene éxito y
 producción se queda como estaba.
+
+Después, las dos ramas del gate y la task que las une. Añade
+`approve_promotion`, `promote_model` y dos `EmptyOperator`,
+`keep_current_model` y `done`:
+
+```python dags/04_mlops.py
+    approve_promotion = ApprovalOperator(
+        task_id="approve_promotion",
+        subject="Promote the new tag classifier?",
+        body=(
+            "The new version passed promotion_gate.\n\n"
+            "{{ ti.xcom_pull(task_ids='summarize_candidate') }}\n\n"
+            "Approve to move `champion` to it."
+        ),
+        defaults="Approve",
+        response_timeout=timedelta(seconds=60),
+    )
+
+    @task(outlets=[PRODUCTION_MODEL])
+    def promote_model(
+        trained: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
+    ) -> dict[str, Any]:
+        champion = registry.promote(trained["version"])
+        outlet_events[PRODUCTION_MODEL].extra = {
+            "version": champion["version"],
+            "f1": champion["metrics"]["f1"],
+            "previous_version": champion["previous_version"],
+        }
+        print(f"champion -> version {champion['version']} (was {champion['previous_version']})")
+        return champion
+
+    keep_current_model = EmptyOperator(task_id="keep_current_model")
+    done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
+```
 
 Un modelo que el gate deja pasar todavía espera a una persona.
 `approve_promotion` es una task **human-in-the-loop**, una task que espera a
