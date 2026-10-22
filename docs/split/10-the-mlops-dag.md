@@ -407,7 +407,7 @@ answer is no: it is a *branch task*, a task that picks which of the Dag's two
 
     @task.branch
     def promotion_gate(evaluation: dict[str, Any], comparison: dict[str, Any] | None) -> str:
-        promote, reason = train_module.should_promote(
+        promote, reason = evaluate.should_promote(
             evaluation["metrics"]["f1"],
             comparison,
             config.MIN_F1_TO_PROMOTE,
@@ -493,7 +493,7 @@ part is in the log for you to read; §12 comes back to it.
 its log names the version it compared with, part by part. It takes
 `evaluate_best`'s output, which carries the new version, so it runs after it.
 
-`promotion_gate` applies the rule in `train_module.should_promote`: the new
+`promotion_gate` applies the rule in `evaluate.should_promote`: the new
 model's f1 must clear the threshold, `config.MIN_F1_TO_PROMOTE` (0.65, or the
 value of the environment variable `PROJECT_TAGGER_MIN_F1` if set), and, against
 a champion, must not be

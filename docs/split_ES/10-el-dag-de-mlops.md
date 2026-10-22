@@ -415,7 +415,7 @@ del Dag sigue. Añade `train_best`, `evaluate_best`, `compare_with_champion`,
 
     @task.branch
     def promotion_gate(evaluation: dict[str, Any], comparison: dict[str, Any] | None) -> str:
-        promote, reason = train_module.should_promote(
+        promote, reason = evaluate.should_promote(
             evaluation["metrics"]["f1"],
             comparison,
             config.MIN_F1_TO_PROMOTE,
@@ -505,7 +505,7 @@ vuelve a ella.
 log diga con qué versión comparó, parte por parte. Recibe la salida de
 `evaluate_best`, que lleva la versión nueva, así que corre después de ella.
 
-`promotion_gate` aplica la regla de `train_module.should_promote`: el f1 del
+`promotion_gate` aplica la regla de `evaluate.should_promote`: el f1 del
 modelo nuevo tiene que superar el umbral, `config.MIN_F1_TO_PROMOTE` (0.65, o
 el valor de la variable de entorno `PROJECT_TAGGER_MIN_F1` si está definida),
 y, frente a un champion, no puede

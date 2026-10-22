@@ -78,7 +78,7 @@ OPTUNA_STORAGE = os.getenv("OPTUNA_STORAGE", "sqlite:///optuna.db")
 # The gate the mlops Dag enforces before a model can be promoted.
 MIN_F1_TO_PROMOTE = float(os.getenv("PROJECT_TAGGER_MIN_F1", "0.65"))
 
-# Against a champion, the test rows it has never seen decide (train.should_promote),
+# Against a champion, the test rows it has never seen decide (evaluate.should_promote),
 # once there are at least this many; with fewer, the whole test split decides.
 MIN_NEW_TEST_ROWS = int(os.getenv("PROJECT_TAGGER_MIN_NEW_TEST_ROWS", "30"))
 

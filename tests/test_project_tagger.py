@@ -221,10 +221,10 @@ def _comparison(new: tuple, old: tuple, all_: tuple) -> dict:
 
 
 def test_should_promote() -> None:
-    from project_tagger import train as train_module
+    from project_tagger import evaluate
 
     def rule(f1, comparison):
-        return train_module.should_promote(f1, comparison, 0.65, min_new_rows=30)
+        return evaluate.should_promote(f1, comparison, 0.65, min_new_rows=30)
 
     assert rule(0.80, None)[0]  # no champion yet
     assert not rule(0.60, None)[0]  # below the threshold

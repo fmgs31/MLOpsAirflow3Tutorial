@@ -730,7 +730,7 @@ def mlops():
     @task.branch
     def promotion_gate(evaluation: dict[str, Any], comparison: dict[str, Any] | None) -> str:
         """Return the task_id to run. The other branch is skipped, not failed."""
-        promote, reason = train_module.should_promote(
+        promote, reason = evaluate.should_promote(
             evaluation["metrics"]["f1"],
             comparison,
             config.MIN_F1_TO_PROMOTE,

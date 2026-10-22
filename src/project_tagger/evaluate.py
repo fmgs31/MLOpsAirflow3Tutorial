@@ -1,4 +1,4 @@
-"""Evaluation: overall metrics, per-class metrics, and slice metrics.
+"""Evaluation: overall metrics, per-class metrics, slice metrics, and the promotion rule.
 
 Slices matter for the monitoring Dag - an overall f1 that holds steady while one
 slice collapses is exactly the failure a retraining trigger should catch.
@@ -60,6 +60,47 @@ def compare(candidate, champion, test_df: pd.DataFrame, champion_ids) -> dict[st
             "champion_f1": _prf(part["tag"], champion.predict(part["text"]), "weighted")["f1"],
         }
     return out
+
+
+def should_promote(
+    f1: float, comparison: dict[str, Any] | None, threshold: float, min_new_rows: int
+) -> tuple[bool, str]:
+    """The promotion rule. Returns the decision and why.
+
+    `f1`, the new model's on the whole test split, must clear the threshold.
+    Against a champion, `comparison` (compare) holds both models' f1 on the
+    same test rows. The `new` rows, which the champion has never seen, are the
+    closest thing to what production gets next, so they decide: the new model
+    must not score below the champion on them. With fewer than `min_new_rows`
+    new rows there is too little to decide on, and the whole split decides.
+    """
+    if f1 < threshold:
+        return False, f"f1={f1:.4f} below threshold {threshold} - not promoting"
+    if comparison is None:
+        return True, f"f1={f1:.4f} clears threshold {threshold} and no champion - promoting"
+
+    new = comparison["new"]
+    if new["rows"] < min_new_rows:
+        rows = comparison["all"]
+        if rows["f1"] < rows["champion_f1"]:
+            return False, (
+                f"f1={rows['f1']:.4f} below the champion's {rows['champion_f1']:.4f} "
+                f"on the same {rows['rows']} test rows - not promoting"
+            )
+        return True, (
+            f"f1={rows['f1']:.4f} clears threshold {threshold} and the champion's "
+            f"{rows['champion_f1']:.4f} on the same {rows['rows']} test rows - promoting"
+        )
+
+    if new["f1"] < new["champion_f1"]:
+        return False, (
+            f"f1={new['f1']:.4f} below the champion's {new['champion_f1']:.4f} "
+            f"on the {new['rows']} new test rows - not promoting"
+        )
+    return True, (
+        f"f1={new['f1']:.4f} clears the champion's {new['champion_f1']:.4f} "
+        f"on the {new['rows']} new test rows - promoting"
+    )
 
 
 def slice_metrics(df: pd.DataFrame, y_pred) -> dict[str, Any]:
