@@ -793,12 +793,12 @@ def mlops():
 
     trained = train_best(best_params(study, results), paths)
     comparison = compare_with_champion(trained, paths)
+    summary = summarize_candidate(trained, comparison)
     decision = promotion_gate(trained, comparison)
-    # No data flows from the summary to the gate, only the order: the summary
-    # exists before the gate can open the branch whose prompt shows it.
-    summarize_candidate(trained, comparison) >> decision
 
-    decision >> approve_promotion >> promote_model(trained) >> done
+    # No data flows from the summary to the approval, only the order: its prompt
+    # reads the summary through a template, which Airflow does not see.
+    [summary, decision] >> approve_promotion >> promote_model(trained) >> done
     decision >> keep_current_model >> done
 
 

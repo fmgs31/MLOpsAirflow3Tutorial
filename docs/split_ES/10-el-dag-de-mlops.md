@@ -7,8 +7,9 @@
 prepare_data ─► validate_training_data ─┐
 create_study ───────────────────────────┤
 trial_budget ───────────────────────────┴─► run_trials×N ─► best_params ─► train_best
-─► compare_with_champion ─► summarize_candidate ─► promotion_gate ─► approve_promotion ─► promote_model ──► done
-                                                                └─► keep_current_model ──────────────────┘
+─► compare_with_champion ─┬─► summarize_candidate ─┐
+                          └─► promotion_gate ─┬────┴─► approve_promotion ─► promote_model ──► done
+                                              └─► keep_current_model ──────────────────────┘
 ```
 
 | Task | Herramienta | Qué hace |
@@ -624,10 +625,10 @@ Termina el archivo conectando las tasks:
 
     trained = train_best(best_params(study, results), paths)
     comparison = compare_with_champion(trained, paths)
+    summary = summarize_candidate(trained, comparison)
     decision = promotion_gate(trained, comparison)
-    summarize_candidate(trained, comparison) >> decision
 
-    decision >> approve_promotion >> promote_model(trained) >> done
+    [summary, decision] >> approve_promotion >> promote_model(trained) >> done
     decision >> keep_current_model >> done
 
 
@@ -639,12 +640,15 @@ instancias mapeadas de `run_trials`, sin llevar datos: solo fija el orden.
 Ningún trial arranca sobre datos que no han pasado sus comprobaciones.
 `promotion_gate` recibe los resultados de `train_best` y de
 `compare_with_champion`, que a su vez espera a `train_best`, así que las tres
-corren en ese orden. `summarize_candidate >> decision` es una arista del mismo
-tipo que `gate >> results`: `approve_promotion` lee el resumen a través de un
-template, no de un argumento, así que Airflow no ve la dependencia por sí
-solo, y esta línea pone el resumen antes del gate que abre la rama de
-`approve_promotion`. Las dos líneas `decision >>` le dan al gate sus dos
-ramas, la primera a través de `approve_promotion`, y las unen en `done`.
+corren en ese orden; `summarize_candidate` recibe los mismos dos, así que corre
+a la vez que el gate. `[summary, decision] >> approve_promotion` es un fan-in
+(§9): `approve_promotion` espera a los dos. La arista desde `summary` es del
+mismo tipo que `gate >> results`: `approve_promotion` lee el resumen a través
+de un template, no de un argumento, así que Airflow no ve la dependencia por
+sí solo, y sin esta arista el prompt podría construirse antes de que el
+resumen exista. La arista desde `decision`, que sigue hasta `promote_model` y
+`done`, es la primera rama del gate; la última línea es la segunda, y `done`
+las une.
 
 ### Comprueba las conexiones
 

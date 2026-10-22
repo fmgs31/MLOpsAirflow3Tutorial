@@ -7,8 +7,9 @@ triggers it.
 prepare_data ─► validate_training_data ─┐
 create_study ───────────────────────────┤
 trial_budget ───────────────────────────┴─► run_trials×N ─► best_params ─► train_best
-─► compare_with_champion ─► summarize_candidate ─► promotion_gate ─► approve_promotion ─► promote_model ──► done
-                                                                └─► keep_current_model ──────────────────┘
+─► compare_with_champion ─┬─► summarize_candidate ─┐
+                          └─► promotion_gate ─┬────┴─► approve_promotion ─► promote_model ──► done
+                                              └─► keep_current_model ──────────────────────┘
 ```
 
 | Task | Tool | What it does |
@@ -605,10 +606,10 @@ Finish the file with the wiring:
 
     trained = train_best(best_params(study, results), paths)
     comparison = compare_with_champion(trained, paths)
+    summary = summarize_candidate(trained, comparison)
     decision = promotion_gate(trained, comparison)
-    summarize_candidate(trained, comparison) >> decision
 
-    decision >> approve_promotion >> promote_model(trained) >> done
+    [summary, decision] >> approve_promotion >> promote_model(trained) >> done
     decision >> keep_current_model >> done
 
 
@@ -619,12 +620,14 @@ mlops()
 instance of `run_trials`, carrying no data, only the order: no trial starts on
 data that failed its checks. `promotion_gate` takes the results of
 `train_best` and `compare_with_champion`, which itself waits for `train_best`,
-so the three run in that order. `summarize_candidate >> decision` is the same
-kind of edge as `gate >> results`: `approve_promotion` reads the summary
+so the three run in that order; `summarize_candidate` takes the same two, so it
+runs alongside the gate. `[summary, decision] >> approve_promotion` is a
+fan-in (§9): `approve_promotion` waits for both. The edge from `summary` is
+the same kind as `gate >> results`: `approve_promotion` reads the summary
 through a template, not through an argument, so Airflow sees no dependency on
-its own, and this line puts the summary before the gate that opens
-`approve_promotion`'s branch. The two `decision >>` lines give the gate its
-two branches, the first through `approve_promotion`, and join them at `done`.
+its own, and without this edge the prompt could be built before the summary
+exists. The edge from `decision`, on to `promote_model` and `done`, is the
+gate's first branch; the last line is its second, and `done` joins them.
 
 ### See the wiring
 
