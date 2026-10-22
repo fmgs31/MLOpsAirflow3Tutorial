@@ -431,8 +431,8 @@ entre 0.92 y 0.96 y el champion entre 0.82 y 0.85; sobre las 157 viejas los
 dos quedan cerca, el modelo nuevo normalmente uno o dos puntos por debajo.
 `promotion_gate` escribe `f1=… clears the champion's … on the 162 new test
 rows - promoting`, y `approve_promotion` te espera, como en la §10. Esta es la
-decisión para la que existe la aprobación: los números están en el log de
-`compare_with_champion`, y el modelo en MLflow. Apruébalo en su pestaña
+decisión para la que existe la aprobación: los números están en el aviso, y el
+modelo en MLflow. Apruébalo en su pestaña
 **Required Actions**, o deja que el default lo apruebe a los 60 segundos, y
 `promote_model` mueve `champion` a la versión nueva.
 

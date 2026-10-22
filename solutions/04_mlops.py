@@ -170,18 +170,15 @@ def mlops():
         version = registry.register(trained["model_uri"])
         print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
         # Small, JSON-serialisable payload. The model itself stays in MLflow.
-        return {"run_id": trained["run_id"], "version": version, "f1": trained["metrics"]["f1"]}
+        return {
+            "run_id": trained["run_id"],
+            "version": version,
+            "f1": trained["metrics"]["f1"],
+            "slices": trained["metrics"]["slices"],
+        }
 
     @task
-    def evaluate_best(trained: dict[str, Any]) -> dict[str, Any]:
-        """Re-read the full metrics, including per-class and slice performance."""
-        metrics = registry.load_metrics(trained["run_id"])
-        for name, slice_metrics in metrics.get("slices", {}).items():
-            print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
-        return {**trained, "metrics": metrics}
-
-    @task
-    def compare_with_champion(evaluation: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
+    def compare_with_champion(trained: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
         """Both models on this run's test split, new rows and old. None if nothing is promoted."""
         champion = registry.get_production()
         if champion is None:
@@ -190,7 +187,7 @@ def mlops():
         # Every id the champion's training run had, in any split.
         seen = [i for ids in registry.load_split_ids(champion["run_id"]).values() for i in ids]
         comparison = evaluate.compare(
-            registry.load_model(version=evaluation["version"]),
+            registry.load_model(version=trained["version"]),
             registry.load_model(),
             data.load_snapshot(paths["test"]),
             seen,
@@ -203,11 +200,18 @@ def mlops():
                 )
         return comparison
 
+    @task
+    def summarize_candidate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+        """The numbers approve_promotion's prompt shows, as Markdown."""
+        summary = evaluate.summarize(trained["version"], trained["f1"], trained["slices"], comparison)
+        print(summary)
+        return summary
+
     @task.branch
-    def promotion_gate(evaluation: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+    def promotion_gate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
         """Return the task_id to run. The other branch is skipped, not failed."""
         promote, reason = evaluate.should_promote(
-            evaluation["metrics"]["f1"],
+            trained["f1"],
             comparison,
             config.MIN_F1_TO_PROMOTE,
             config.MIN_NEW_TEST_ROWS,
@@ -220,9 +224,12 @@ def mlops():
     approve_promotion = ApprovalOperator(
         task_id="approve_promotion",
         subject="Promote the new tag classifier?",
+        # `body` is a template field: the summary is pulled from XCom when the
+        # task runs.
         body=(
             "The new version passed promotion_gate.\n\n"
-            "Read compare_with_champion's log, then approve to move `champion` to it."
+            "{{ ti.xcom_pull(task_ids='summarize_candidate') }}\n\n"
+            "Approve to move `champion` to it."
         ),
         # No answer within the window resolves to `defaults`, so an unattended
         # run still completes. Give it hours in production; kept short here so
@@ -233,10 +240,10 @@ def mlops():
 
     @task(outlets=[PRODUCTION_MODEL])
     def promote_model(
-        evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
+        trained: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
     ) -> dict[str, Any]:
         """Move the registry's `champion` alias to the new version."""
-        champion = registry.promote(evaluation["version"])
+        champion = registry.promote(trained["version"])
         outlet_events[PRODUCTION_MODEL].extra = {
             "version": champion["version"],
             "f1": champion["metrics"]["f1"],
@@ -261,10 +268,14 @@ def mlops():
     # mapped instance waits on it.
     gate >> results
 
-    evaluation = evaluate_best(train_best(best_params(study, results), paths))
-    decision = promotion_gate(evaluation, compare_with_champion(evaluation, paths))
+    trained = train_best(best_params(study, results), paths)
+    comparison = compare_with_champion(trained, paths)
+    decision = promotion_gate(trained, comparison)
+    # No data flows from the summary to the gate, only the order: the summary
+    # exists before the gate can open the branch whose prompt shows it.
+    summarize_candidate(trained, comparison) >> decision
 
-    decision >> approve_promotion >> promote_model(evaluation) >> done
+    decision >> approve_promotion >> promote_model(trained) >> done
     decision >> keep_current_model >> done
 
 

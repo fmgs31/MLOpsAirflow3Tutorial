@@ -110,14 +110,6 @@ def load_model(alias: str = config.CHAMPION_ALIAS, version: str | None = None):
         return mlflow.sklearn.load_model(f"models:/{config.REGISTERED_MODEL}{ref}")
 
 
-def load_metrics(run_id: str) -> dict[str, Any]:
-    """The full nested metrics a training run logged as metrics.json."""
-    import mlflow
-
-    mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
-    return mlflow.artifacts.load_dict(f"runs:/{run_id}/metrics.json")
-
-
 def load_split_ids(run_id: str) -> dict[str, list]:
     """The project ids in each split of a training run, as it logged them in split_ids.json."""
     import mlflow

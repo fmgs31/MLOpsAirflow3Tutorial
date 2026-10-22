@@ -420,8 +420,8 @@ new test rows the new model scores 0.92 to 0.96 and the champion 0.82 to
 0.85; on the 157 old ones the two are close, the new model usually a point or
 two lower. `promotion_gate` logs `f1=… clears the champion's … on the 162 new
 test rows - promoting`, and `approve_promotion` waits for you, as in §10. This
-is the decision the approval is for: the numbers are in
-`compare_with_champion`'s log, and the model in MLflow. Approve it on its
+is the decision the approval is for: the numbers are in the prompt, and the
+model in MLflow. Approve it on its
 **Required Actions** tab, or let the default approve it after 60 seconds, and
 `promote_model` moves `champion` to the new version.
 

@@ -103,6 +103,27 @@ def should_promote(
     )
 
 
+def summarize(version: int, f1: float, slices: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+    """A candidate's numbers as Markdown, for the person who approves its promotion.
+
+    Every slice is listed with its row count: on a few rows one prediction
+    moves the f1 a lot, and the reader has to see that to weigh it.
+    """
+    lines = [f"Version {version}: f1 {f1:.4f} on the test split."]
+    if comparison is None:
+        lines += ["", "No champion yet."]
+    else:
+        lines += ["", "Against the champion, on the same test rows:", ""]
+        lines += [
+            f"- {name}: {part['rows']} rows, f1 {part['f1']:.4f}, champion {part['champion_f1']:.4f}"
+            for name, part in comparison.items()
+            if part["rows"]
+        ]
+    lines += ["", "Evaluation slices:", ""]
+    lines += [f"- {name}: {m['support']} rows, f1 {m['f1']:.4f}" for name, m in slices.items()]
+    return "\n".join(lines)
+
+
 def slice_metrics(df: pd.DataFrame, y_pred) -> dict[str, Any]:
     """Behavioural slices: short texts and NLP-jargon texts."""
     slices = {

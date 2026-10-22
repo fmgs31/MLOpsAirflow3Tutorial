@@ -224,7 +224,8 @@ def train_model(
         mlflow.set_tags({"kind": "final", **(tags or {})})
         mlflow.log_params(metrics["params"])
         mlflow.log_metrics(flat_metrics(metrics))
-        # The full nested metrics, for the evaluation and monitoring steps.
+        # The full nested metrics, with each class's and slice's row count,
+        # which the flat MLflow metrics above cannot hold.
         mlflow.log_dict(metrics, "metrics.json")
         mlflow.log_dict({name: df["id"].tolist() for name, df in splits.items()}, "split_ids.json")
         with quiet_skops():

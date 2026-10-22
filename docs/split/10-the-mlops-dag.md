@@ -7,8 +7,8 @@ triggers it.
 prepare_data ─► validate_training_data ─┐
 create_study ───────────────────────────┤
 trial_budget ───────────────────────────┴─► run_trials×N ─► best_params ─► train_best
-─► evaluate_best ─► compare_with_champion ─► promotion_gate ─► approve_promotion ─► promote_model ──► done
-                                                          └─► keep_current_model ──────────────────┘
+─► compare_with_champion ─► summarize_candidate ─► promotion_gate ─► approve_promotion ─► promote_model ──► done
+                                                                └─► keep_current_model ──────────────────┘
 ```
 
 | Task | Tool | What it does |
@@ -16,8 +16,9 @@ trial_budget ──────────────────────�
 | `prepare_data` | BigQuery | copies `labeled_projects` to files this run will use throughout, split once into train, validation and test |
 | `validate_training_data` | Great Expectations | the §9 suite again, plus checks on the split |
 | `create_study`, `trial_budget`, `run_trials`×N, `best_params` | **Optuna**, tracked in **MLflow** | searches the hyperparameters, spread over several tasks, and records every trial |
-| `train_best`, `evaluate_best` | **MLflow** tracking | fits the final model and records it: parameters, metrics, the model file |
+| `train_best` | **MLflow** tracking | fits the final model and records it: parameters, metrics, the model file |
 | `compare_with_champion` | **MLflow** Model Registry | scores the new model and the production model on this run's test split |
+| `summarize_candidate` | Airflow | writes up the new model's numbers for the person who approves it |
 | `promotion_gate` → `approve_promotion` → `promote_model` | **MLflow** Model Registry, and a person | the gate decides whether the new model may go to production, a person approves it in the Airflow UI, and the registry moves it there |
 
 ### The ML stack
@@ -88,10 +89,12 @@ Each column is one system, as in the §9 diagram:
                              │                   │  the model file;    │
                              │                   │  registered as a    │
                              │                   │  new version        │
- 7 evaluate_best ◄───────────────────────────────── its metrics.json   │
- 8 compare_with_champion ◄───────────────────────── the champion model │
+ 7 compare_with_champion ◄───────────────────────── the champion model │
    scores both on the test   │                   │  and the new one    │
    split, new rows and old   │                   │                     │
+ 8 summarize_candidate       │                   │                     │
+   the numbers for the       │                   │                     │
+   approval prompt           │                   │                     │
  9 promotion_gate            │                   │                     │
    threshold, then champion  │                   │                     │
 10 promote_model ─────────────────────────────────► moves champion     │
@@ -388,8 +391,8 @@ and it arrives as a list, one item per instance, in map-index order.
 Now the final model, and the **promotion gate**, which decides whether it goes
 to production. Unlike the gates in §9, the gate does not fail the task when the
 answer is no: it is a *branch task*, a task that picks which of the Dag's two
-**branches** continues. Add `train_best`, `evaluate_best`, `compare_with_champion`,
-`promotion_gate`, `approve_promotion`, `promote_model` and the two
+**branches** continues. Add `train_best`, `compare_with_champion`,
+`summarize_candidate`, `promotion_gate`, `approve_promotion`, `promote_model` and the two
 `EmptyOperator`s the branches need:
 
 ```python dags/04_mlops.py
@@ -407,24 +410,22 @@ answer is no: it is a *branch task*, a task that picks which of the Dag's two
         )
         version = registry.register(trained["model_uri"])
         print(f"run={trained['run_id']} version={version} f1={trained['metrics']['f1']:.4f}")
-        return {"run_id": trained["run_id"], "version": version, "f1": trained["metrics"]["f1"]}
+        return {
+            "run_id": trained["run_id"],
+            "version": version,
+            "f1": trained["metrics"]["f1"],
+            "slices": trained["metrics"]["slices"],
+        }
 
     @task
-    def evaluate_best(trained: dict[str, Any]) -> dict[str, Any]:
-        metrics = registry.load_metrics(trained["run_id"])
-        for name, slice_metrics in metrics.get("slices", {}).items():
-            print(f"slice {name}: f1={slice_metrics['f1']:.4f} n={slice_metrics['support']}")
-        return {**trained, "metrics": metrics}
-
-    @task
-    def compare_with_champion(evaluation: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
+    def compare_with_champion(trained: dict[str, Any], paths: dict[str, str]) -> dict[str, Any] | None:
         champion = registry.get_production()
         if champion is None:
             print("no champion yet")
             return None
         seen = [i for ids in registry.load_split_ids(champion["run_id"]).values() for i in ids]
         comparison = evaluate.compare(
-            registry.load_model(version=evaluation["version"]),
+            registry.load_model(version=trained["version"]),
             registry.load_model(),
             data.load_snapshot(paths["test"]),
             seen,
@@ -437,10 +438,16 @@ answer is no: it is a *branch task*, a task that picks which of the Dag's two
                 )
         return comparison
 
+    @task
+    def summarize_candidate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+        summary = evaluate.summarize(trained["version"], trained["f1"], trained["slices"], comparison)
+        print(summary)
+        return summary
+
     @task.branch
-    def promotion_gate(evaluation: dict[str, Any], comparison: dict[str, Any] | None) -> str:
+    def promotion_gate(trained: dict[str, Any], comparison: dict[str, Any] | None) -> str:
         promote, reason = evaluate.should_promote(
-            evaluation["metrics"]["f1"],
+            trained["f1"],
             comparison,
             config.MIN_F1_TO_PROMOTE,
             config.MIN_NEW_TEST_ROWS,
@@ -453,7 +460,8 @@ answer is no: it is a *branch task*, a task that picks which of the Dag's two
         subject="Promote the new tag classifier?",
         body=(
             "The new version passed promotion_gate.\n\n"
-            "Read compare_with_champion's log, then approve to move `champion` to it."
+            "{{ ti.xcom_pull(task_ids='summarize_candidate') }}\n\n"
+            "Approve to move `champion` to it."
         ),
         defaults="Approve",
         response_timeout=timedelta(seconds=60),
@@ -461,9 +469,9 @@ answer is no: it is a *branch task*, a task that picks which of the Dag's two
 
     @task(outlets=[PRODUCTION_MODEL])
     def promote_model(
-        evaluation: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
+        trained: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
     ) -> dict[str, Any]:
-        champion = registry.promote(evaluation["version"])
+        champion = registry.promote(trained["version"])
         outlet_events[PRODUCTION_MODEL].extra = {
             "version": champion["version"],
             "f1": champion["metrics"]["f1"],
@@ -488,14 +496,17 @@ split: what the model was built on stays with it in MLflow after the snapshot
 folder is gone, and §12 reads it. Then the task **registers** the model: every
 final model becomes a new version of `project_tagger`, promoted or not, so a
 rejected candidate is still there to inspect. The task returns a run id, a
-version number and an f1, small and JSON-serialisable. The model itself stays
-in MLflow.
+version number, the f1 and the slice metrics, small and JSON-serialisable. The
+model itself stays in MLflow.
 
-`evaluate_best` reads back the `metrics.json` the run logged and prints the f1
-on each **evaluation slice**: a subgroup of the test set picked out by a rule
-in `evaluate.py` (short texts, and texts that mention transformers, BERT or
-LLMs). These are not the time slices of §7; they catch a model whose overall f1
-looks fine while one kind of input fails.
+The slice metrics are the f1 on each **evaluation slice**: a subgroup of the
+test set picked out by a rule in `evaluate.py` (short texts, and texts that
+mention transformers, BERT or LLMs). These are not the time slices of §7; they
+show a model whose overall f1 looks fine while one kind of input fails. They
+are small: of the 157 test rows in this section, 4 are short texts and 23
+mention transformers, so a single prediction moves a slice's f1 a lot. Too
+noisy for a fixed rule to decide on; a person can weigh them, which is what
+`approve_promotion` is for.
 
 `compare_with_champion` loads the production model and the version
 `train_best` just registered, and scores both on this run's test split. The
@@ -523,7 +534,12 @@ part is in the log for you to read; §12 comes back to it.
 
 `compare_with_champion` is a task of its own so that the Graph shows it and
 its log names the version it compared with, part by part. It takes
-`evaluate_best`'s output, which carries the new version, so it runs after it.
+`train_best`'s output, which carries the new version, so it runs after it.
+
+`summarize_candidate` writes up, with `evaluate.summarize`, what a person needs
+to judge the new model: its f1, both models' f1 on each part of the test split,
+and the f1 on each slice next to its row count. The text is Markdown, and the
+task returns it, so it goes to XCom for `approve_promotion` to show.
 
 `promotion_gate` applies the rule in `evaluate.should_promote`: the new
 model's f1 must clear the threshold, `config.MIN_F1_TO_PROMOTE` (0.65, or the
@@ -541,9 +557,12 @@ on the task instance's **Required Actions** tab and under Browse → **Required
 Actions** (§5). On **Approve**, `promote_model` runs; on **Reject**, it is
 skipped and production is left alone. `defaults` is the answer applied if
 nobody responds within `response_timeout`: sixty seconds here so the lesson's
-runs finish; give it hours in production. The gate checks the numbers; the
-person checks what numbers miss, with `compare_with_champion`'s log and the
-new version in MLflow in front of them. Airflow records the answer: the
+runs finish; give it hours in production. `body` is the text of the prompt,
+in Markdown, and it is a template field (§6): `ti.xcom_pull` puts
+`summarize_candidate`'s text in it when the task runs. The gate checks the
+numbers it has a rule for; the person checks what the rules miss, such as a
+slice that fell, with that summary and the new version in MLflow in front of
+them. Airflow records the answer: the
 choice, when, and *by whom*. A run that timed out and fell back to its
 `defaults` stores the choice with the "who" left empty, which is how you tell
 "a person approved this" from "nobody was looking".
@@ -572,10 +591,12 @@ Finish the file with the wiring:
     )
     gate >> results
 
-    evaluation = evaluate_best(train_best(best_params(study, results), paths))
-    decision = promotion_gate(evaluation, compare_with_champion(evaluation, paths))
+    trained = train_best(best_params(study, results), paths)
+    comparison = compare_with_champion(trained, paths)
+    decision = promotion_gate(trained, comparison)
+    summarize_candidate(trained, comparison) >> decision
 
-    decision >> approve_promotion >> promote_model(evaluation) >> done
+    decision >> approve_promotion >> promote_model(trained) >> done
     decision >> keep_current_model >> done
 
 
@@ -585,10 +606,13 @@ mlops()
 `gate >> results` wires `validate_training_data` upstream of *every* mapped
 instance of `run_trials`, carrying no data, only the order: no trial starts on
 data that failed its checks. `promotion_gate` takes the results of
-`evaluate_best` and `compare_with_champion`, which itself waits for
-`evaluate_best`, so the three run in that order. The two
-`decision >>` lines give it its two branches, the first through
-`approve_promotion`, and join them at `done`.
+`train_best` and `compare_with_champion`, which itself waits for `train_best`,
+so the three run in that order. `summarize_candidate >> decision` is the same
+kind of edge as `gate >> results`: `approve_promotion` reads the summary
+through a template, not through an argument, so Airflow sees no dependency on
+its own, and this line puts the summary before the gate that opens
+`approve_promotion`'s branch. The two `decision >>` lines give the gate its
+two branches, the first through `approve_promotion`, and join them at `done`.
 
 ### See the wiring
 
@@ -637,8 +661,9 @@ event has arrived. The second line starts everything without a trigger, by the
 un-paused the scheduler creates the run for the most recent 03:00 UTC it
 missed, and starts it. Give it a few minutes. Near the end, the `mlops` run
 stops at `approve_promotion`: open the run in the UI, click
-`approve_promotion`, and answer the prompt on its **Required Actions** tab, or
-leave it and the default approves it after 60 seconds. Then:
+`approve_promotion`, and answer the prompt on its **Required Actions** tab,
+under `summarize_candidate`'s numbers, or leave it and the default approves it
+after 60 seconds. Then:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs dataops -o plain

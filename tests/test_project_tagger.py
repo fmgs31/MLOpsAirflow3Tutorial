@@ -240,6 +240,17 @@ def test_should_promote() -> None:
     assert not promote and "same 105 test rows" in reason
 
 
+def test_summarize_lists_every_part_and_slice_with_its_rows() -> None:
+    from project_tagger import evaluate
+
+    slices = {"short_text": {"support": 4, "f1": 0.75}}
+    summary = evaluate.summarize(3, 0.9, slices, _comparison((0, None, None), (100, 0.9, 0.85), (100, 0.9, 0.85)))
+    assert "- old: 100 rows, f1 0.9000, champion 0.8500" in summary
+    assert "- new:" not in summary  # a part with no rows is left out
+    assert "- short_text: 4 rows, f1 0.7500" in summary
+    assert "No champion yet." in evaluate.summarize(1, 0.9, slices, None)
+
+
 def test_compare_splits_the_test_rows_by_what_the_champion_saw() -> None:
     from project_tagger import evaluate
 
@@ -298,7 +309,8 @@ def test_tune_train_register_promote_rollback(local_tracking) -> None:
     versions = []
     for i in range(2):
         trained = train_module.train_model(best["params"], splits, run_name=f"final-{i}")
-        assert registry.load_metrics(trained["run_id"])["f1"] == pytest.approx(trained["metrics"]["f1"])
+        logged = mlflow.artifacts.load_dict(f"runs:/{trained['run_id']}/metrics.json")
+        assert logged["f1"] == pytest.approx(trained["metrics"]["f1"])
         split_ids = registry.load_split_ids(trained["run_id"])
         assert split_ids == {name: df["id"].tolist() for name, df in splits.items()}
         versions.append(registry.register(trained["model_uri"]))
