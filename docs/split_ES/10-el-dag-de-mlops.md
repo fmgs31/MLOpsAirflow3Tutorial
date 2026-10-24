@@ -754,14 +754,16 @@ champion yet`), y la aprobación vino de ti o del default.
 Después mira lo que el run ha dejado en MLflow, en <http://localhost:5000>:
 
 **Comprobación.** El experiment `project_tagger` muestra dos runs:
-`project_tagger-asset_triggered__…`, el study, y `final-asset_triggered__…`.
+`project_tagger-asset_triggered__…`, el run del study, y
+`final-asset_triggered__…`, el run final.
 Despliega el run del study para ver sus veinte hijos, de `…-trial-0` a
 `-trial-19`, y ordena por la columna `f1` para ver la búsqueda en acción. Abre
 el run del study: `best_f1` es la puntuación del mejor trial, y el tag
 `best_trial_run_id` lo identifica. Abre el run final: sus parameters son los del mejor trial,
 sus metrics incluyen el f1 por tag y por slice, sus tags incluyen
-`snapshot_path`, y en **Artifacts** están `metrics.json`, `split_ids.json` y el
-modelo. En **Models**, `project_tagger` tiene la versión 1, con el alias
+`snapshot_path`, y en **Artifacts** están `metrics.json` y `split_ids.json`. El
+modelo no está ahí: MLflow lo guarda como un *logged model* propio, que aparece
+en el **Overview** del run, bajo **Logged models**, como `model`. En **Models**, `project_tagger` tiene la versión 1, con el alias
 `champion`.
 
 > **Pruébalo, una vez más a mano:**
@@ -796,7 +798,8 @@ modelo. En **Models**, `project_tagger` tiene la versión 1, con el alias
 > `approve_promotion` y `promote_model` quedan skipped, así que no se le
 > pregunta a nadie, `keep_current_model` corre, y el Dag run termina en
 > success igualmente. En MLflow la versión nueva queda registrada, y `champion` no se
-> ha movido.
+> ha movido. (No hay nada que revertir: `-e` define la variable solo para ese
+> comando, así que el siguiente run vuelve a usar 0.65.)
 
 ¿Atascado en algún punto? [`solutions/04_mlops.py`](../../solutions/04_mlops.py).
 

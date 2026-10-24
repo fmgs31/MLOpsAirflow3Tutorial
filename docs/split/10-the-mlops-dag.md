@@ -734,13 +734,16 @@ default.
 Then look at what the run left in MLflow, at <http://localhost:5000>:
 
 **Checkpoint.** The `project_tagger` experiment shows two runs:
-`project_tagger-asset_triggered__…`, the study, and `final-asset_triggered__…`.
+`project_tagger-asset_triggered__…`, the study's run, and
+`final-asset_triggered__…`, the final run.
 Expand the study's run to see its twenty children, `…-trial-0` to `-trial-19`,
 and sort by the `f1` column to see the search at work. Open the study's run:
 `best_f1` is the best trial's score, and the tag `best_trial_run_id` names it.
 Open the final run: its parameters are the best trial's, its metrics include
 the per-tag and per-slice f1, its tags include `snapshot_path`, and under
-**Artifacts** are `metrics.json`, `split_ids.json` and the model. Under
+**Artifacts** are `metrics.json` and `split_ids.json`. The model is not among
+them: MLflow stores it as a logged model of its own, listed on the run's
+**Overview** under **Logged models** as `model`. Under
 **Models**, `project_tagger` has version 1, with the alias `champion`.
 
 > **Try it, once more by hand:**
@@ -774,7 +777,9 @@ the per-tag and per-slice f1, its tags include `snapshot_path`, and under
 > `promotion_gate` logs `below threshold 0.99 - not promoting`,
 > `approve_promotion` and `promote_model` are skipped, so nobody is asked,
 > `keep_current_model` runs, and the Dag run still succeeds. In
-> MLflow the new version is registered, and `champion` has not moved.
+> MLflow the new version is registered, and `champion` has not moved. (There is
+> nothing to revert: `-e` sets the variable for that one command only, so the
+> next run is back on 0.65.)
 
 Stuck anywhere? [`solutions/04_mlops.py`](../../solutions/04_mlops.py).
 
