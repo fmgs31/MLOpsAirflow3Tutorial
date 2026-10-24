@@ -597,12 +597,12 @@ Finish the file with the wiring:
 
 ```python dags/04_mlops.py
     paths = prepare_data()
-    gate = validate_training_data(paths)
+    approved_data_gate = validate_training_data(paths)
     study = create_study()
     results = run_trials.partial(study_name=study, paths=paths).expand(
         n_trials=trial_budget()
     )
-    gate >> results
+    approved_data_gate >> results
 
     trained = train_best(best_params(study, results), paths)
     comparison = compare_with_champion(trained, paths)
@@ -616,23 +616,26 @@ Finish the file with the wiring:
 mlops()
 ```
 
-`gate >> results` wires `validate_training_data` upstream of *every* mapped
-instance of `run_trials`, carrying no data, only the order: no trial starts on
-data that failed its checks. `promotion_gate` takes the results of
-`train_best` and `compare_with_champion`, which itself waits for `train_best`,
-so the three run in that order; `summarize_candidate` takes the same two, so it
-runs alongside the gate. `[summary, decision] >> approve_promotion` is a
-fan-in (§9): `approve_promotion` waits for both. The edge from `summary` is
-the same kind as `gate >> results`: `approve_promotion` reads the summary
-through a template, not through an argument, so Airflow sees no dependency on
-its own, and without this edge the prompt could be built before the summary
-exists. The edge from `decision`, on to `promote_model` and `done`, is the
-gate's first branch; the last line is its second, and `done` joins them.
+`approved_data_gate >> results` wires `validate_training_data` upstream of
+*every* mapped instance of `run_trials`, carrying no data, only the order: no
+trial starts on data that failed its checks. `promotion_gate` takes the results
+of `train_best` and `compare_with_champion`, which itself waits for
+`train_best`, so the three run in that order; `summarize_candidate` takes the
+same two, so it runs alongside `promotion_gate`.
+`[summary, decision] >> approve_promotion` is a fan-in (§9):
+`approve_promotion` waits for both. The edge from `summary` is the same kind as
+`approved_data_gate >> results`: `approve_promotion` reads the summary through
+a template, not through an argument, so Airflow sees no dependency on its own,
+and without this edge the prompt could be built before the summary exists. The
+edge from `decision`, on to `promote_model` and `done`, is `promotion_gate`'s
+first branch; the last line is its second, and `done` joins them.
 
 ### See the wiring
 
 Save it. You have now written both Dags of the pipeline, `dataops` and
-`mlops`, and before running anything you can ask Airflow what it knows:
+`mlops`. Airflow links them as soon as it parses the two files, without running
+either: it records which task produces `labeled_projects` and which Dag waits
+for it. Ask for that asset's details:
 
 ```bash
 docker compose exec airflow-scheduler airflow assets details --name labeled_projects -o plain
@@ -655,7 +658,9 @@ and change **Options → Dependencies** (§5):
 
 - **Only tasks** — the fourteen tasks you just wrote, nothing else.
 - **External conditions** — the same tasks, plus `labeled_projects` flowing
-  into the Dag and `production_model` coming out of `promote_model`.
+  into the Dag and `production_model` coming out of `promote_model`. The
+  `labeled_projects` arrow reaches only the first task, but it starts the whole
+  Dag.
 - **All Dag Dependencies** — the chain the Assets page draws: `dataops` with
   the assets it produces, then `mlops` with its tasks inside it, then
   `production_model`.

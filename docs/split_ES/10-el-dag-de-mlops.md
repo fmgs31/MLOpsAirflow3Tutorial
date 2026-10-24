@@ -598,8 +598,8 @@ decisión, cuándo, y *quién*. Un run que agotó el timeout y aplicó sus
 "una persona aprobó esto" de "no había nadie mirando".
 
 `promote_model` mueve el alias `champion` y
-emite el asset propio de `mlops`, `production_model`, que todavía no consume nadie;
-apunta el `schedule` de un Dag hacia él y la arista aparece en el grafo de
+emite el asset propio de `mlops`, `production_model`, que todavía no consume nadie.
+Si apuntas el `schedule` de un Dag hacia él, la arista aparece en el grafo de
 Assets.
 
 Las **trigger rules** son la forma en que una task declara qué tienen que haber
@@ -616,12 +616,12 @@ Termina el archivo conectando las tasks:
 
 ```python dags/04_mlops.py
     paths = prepare_data()
-    gate = validate_training_data(paths)
+    approved_data_gate = validate_training_data(paths)
     study = create_study()
     results = run_trials.partial(study_name=study, paths=paths).expand(
         n_trials=trial_budget()
     )
-    gate >> results
+    approved_data_gate >> results
 
     trained = train_best(best_params(study, results), paths)
     comparison = compare_with_champion(trained, paths)
@@ -635,25 +635,27 @@ Termina el archivo conectando las tasks:
 mlops()
 ```
 
-`gate >> results` coloca `validate_training_data` aguas arriba de *todas* las
-instancias mapeadas de `run_trials`, sin llevar datos: solo fija el orden.
-Ningún trial arranca sobre datos que no han pasado sus comprobaciones.
-`promotion_gate` recibe los resultados de `train_best` y de
+`approved_data_gate >> results` coloca `validate_training_data` aguas arriba
+de *todas* las instancias mapeadas de `run_trials`, sin llevar datos: solo fija
+el orden. Ningún trial arranca sobre datos que no han pasado sus
+comprobaciones. `promotion_gate` recibe los resultados de `train_best` y de
 `compare_with_champion`, que a su vez espera a `train_best`, así que las tres
 corren en ese orden; `summarize_candidate` recibe los mismos dos, así que corre
-a la vez que el gate. `[summary, decision] >> approve_promotion` es un fan-in
-(§9): `approve_promotion` espera a los dos. La arista desde `summary` es del
-mismo tipo que `gate >> results`: `approve_promotion` lee el resumen a través
-de un template, no de un argumento, así que Airflow no ve la dependencia por
-sí solo, y sin esta arista el prompt podría construirse antes de que el
-resumen exista. La arista desde `decision`, que sigue hasta `promote_model` y
-`done`, es la primera rama del gate; la última línea es la segunda, y `done`
-las une.
+a la vez que `promotion_gate`. `[summary, decision] >> approve_promotion` es un
+fan-in (§9): `approve_promotion` espera a los dos. La arista desde `summary` es
+del mismo tipo que `approved_data_gate >> results`: `approve_promotion` lee el
+resumen a través de un template, no de un argumento, así que Airflow no ve la
+dependencia por sí solo, y sin esta arista el prompt podría construirse antes
+de que el resumen exista. La arista desde `decision`, que sigue hasta
+`promote_model` y `done`, es la primera rama de `promotion_gate`; la última
+línea es la segunda, y `done` las une.
 
 ### Comprueba las conexiones
 
-Guárdalo. Ya has escrito los dos Dags del pipeline, `dataops` y `mlops`, y
-antes de ejecutar nada puedes preguntarle a Airflow qué sabe:
+Guárdalo. Ya has escrito los dos Dags del pipeline, `dataops` y `mlops`.
+Airflow los enlaza en cuanto analiza los dos archivos, sin ejecutar ninguno:
+registra qué tarea produce `labeled_projects` y qué Dag espera por él. Pide los
+detalles de ese asset:
 
 ```bash
 docker compose exec airflow-scheduler airflow assets details --name labeled_projects -o plain
@@ -676,7 +678,8 @@ a **Graph** y ve cambiando **Options → Dependencies** (§5):
 
 - **Only tasks** — las catorce tasks que acabas de escribir, nada más.
 - **External conditions** — las mismas tasks, más `labeled_projects` entrando
-  en el Dag y `production_model` saliendo de `promote_model`.
+  en el Dag y `production_model` saliendo de `promote_model`. La flecha de
+  `labeled_projects` llega solo a la primera task, pero arranca el Dag entero.
 - **All Dag Dependencies** — la cadena que dibuja la página Assets: `dataops`
   con los assets que produce, luego `mlops` con sus tasks dentro, y luego
   `production_model`.

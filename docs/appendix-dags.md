@@ -782,14 +782,14 @@ def mlops():
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 
     paths = prepare_data()
-    gate = validate_training_data(paths)
+    approved_data_gate = validate_training_data(paths)
     study = create_study()
     results = run_trials.partial(study_name=study, paths=paths).expand(
         n_trials=trial_budget()
     )
     # No data flows from the gate to the trainers, only permission to run: every
     # mapped instance waits on it.
-    gate >> results
+    approved_data_gate >> results
 
     trained = train_best(best_params(study, results), paths)
     comparison = compare_with_champion(trained, paths)
