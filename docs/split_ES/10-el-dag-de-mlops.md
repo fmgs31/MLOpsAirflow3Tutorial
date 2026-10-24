@@ -733,9 +733,11 @@ clic en `run_trials` y lee su pestaña **Task Instances**: cuatro filas, map
 index del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan
 juntas; cada una de las otras dos arranca solo cuando ha terminado una del
 primer par. La vista *Show Gantt* (§5), disponible ahora que hay un run
-seleccionado, dibuja lo mismo como dos oleadas de barras. En el **Graph**, las
-cuatro son un único nodo colapsado hasta que subes el filtro **Min. map
-index** (§5). O léelo desde la CLI:
+seleccionado, dibuja lo mismo como dos oleadas de barras. En el **Graph**, prueba
+el filtro **Min. map index** (§5): ponlo en 3 y `run_trials` se sigue viendo igual
+mientras todos los demás nodos se atenúan, porque es la única mapped task y
+tiene una instancia con map index 3; ponlo en 4 y también se atenúa. O léelo
+desde la CLI:
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain

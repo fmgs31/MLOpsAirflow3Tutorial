@@ -714,8 +714,10 @@ Now the two waves of `run_trials`. Open that `mlops` run in the UI, click
 each with its own start and end time. Two start together; each of the other
 two starts only when one of the first pair has finished. The *Show Gantt* view
 (§5), available now that a run is selected, draws the same thing as two waves
-of bars. On the **Graph**, the four are one collapsed node until you raise the
-**Min. map index** filter (§5). Or read it off the CLI:
+of bars. On the **Graph**, try the **Min. map index** filter (§5): set it to 3
+and `run_trials` stays as it is while every other node dims, because it is the only
+mapped task and it has an instance at map index 3; set it to 4 and it dims too.
+Or read it off the CLI:
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain

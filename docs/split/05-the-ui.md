@@ -38,8 +38,9 @@ between them. At the other end of that row are the controls worth knowing:
   is something to filter: a run is selected, or the Dag has task groups or more
   than one kind of operator, so on `hello_airflow3` you see it once you open a
   run. It filters by state, task group, duration, and **Min. map index** — "shows mapped tasks expanded to at least
-  this index". A mapped task like `run_trials` (§10) is one collapsed node
-  until you raise it; raise it and each mapped instance gets its own.
+  this index": it keeps the mapped tasks, like `run_trials` (§10), that have
+  an instance at that map index or higher, and dims every other node, so 0
+  keeps every mapped task.
 - **Download graph image**, the arrow at the bottom right of the Graph.
 
 The tabs on the right follow what you select:

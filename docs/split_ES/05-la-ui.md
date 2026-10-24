@@ -42,9 +42,9 @@ conviene conocer:
   que filtrar: hay un run seleccionado, o el Dag tiene task groups o más de un
   tipo de operator, así que en `hello_airflow3` la ves en cuanto abres un run.
   Filtra por estado, task group, duración y **Min. map index** — "shows mapped
-  tasks expanded to at least this index". Una mapped task como `run_trials`
-  (§10) es un único nodo colapsado hasta que subes ese valor; súbelo y cada
-  instancia mapeada tiene su propio nodo.
+  tasks expanded to at least this index": mantiene las mapped tasks, como
+  `run_trials` (§10), que tienen una instancia con ese map index o mayor, y
+  atenúa todos los demás nodos, así que 0 mantiene todas las mapped tasks.
 - **Download graph image**, la flecha abajo a la derecha del Graph.
 
 Las pestañas de la derecha dependen de lo que selecciones:
