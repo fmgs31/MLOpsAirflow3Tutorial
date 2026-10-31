@@ -12,7 +12,7 @@ los datos del día anterior. Su `start_date` es 2025-01-01, y este es su run del
 | `data_interval_end` | ¿Hasta cuándo son los datos que procesa? | 2026-09-11 00:00 |
 | `run_after` | ¿Desde cuándo puede arrancar? | 2026-09-11 00:00 |
 | `start_date` del run | ¿Cuándo arrancó de verdad? | unos segundos después de `run_after`, u horas después si el Dag estaba en pausa u ocupado |
-| `start_date` del Dag | ¿Desde qué fecha programa runs el scheduler? | 2025-01-01 00:00: ninguna franja anterior tiene run |
+| `start_date` del Dag | ¿Desde qué fecha programa runs el Scheduler? | 2025-01-01 00:00: ninguna franja anterior tiene run |
 
 El run *del* día 10 arranca el día 11: no puede procesar los datos de un día
 hasta que ese día ha terminado. Sus tasks saben qué datos procesar por
@@ -63,7 +63,7 @@ timetable, y hay dos tipos:
   qué día es ese.
 
 La `start_date` del Dag marca dónde empiezan las franjas: nunca se programa un
-run para una franja anterior. Solo afecta a los runs que crea el scheduler; un
+run para una franja anterior. Solo afecta a los runs que crea el Scheduler; un
 trigger manual funciona aunque la `start_date` esté en el futuro.
 
 También es opcional, y sin ella no hay pasado que recuperar. Al quitar la pausa,
@@ -150,7 +150,7 @@ docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"
 - En la UI, el equivalente es el botón **Trigger**, con el formulario generado
   a partir de tus `params` — lo usaste en la §5.
 
-Pausar un Dag tiene dos efectos: el scheduler no le crea runs programados, y no
+Pausar un Dag tiene dos efectos: el Scheduler no le crea runs programados, y no
 arranca ninguno de sus runs, ni siquiera los que creas a mano. El primero es el
 que explica *`catchup` es `False` por defecto*. El segundo es la razón de que
 `hello_airflow3`, que no tiene schedule, necesite `unpause` igualmente. Un Dag
@@ -177,7 +177,7 @@ docker compose exec airflow-scheduler airflow dags unpause hello_airflow3     # 
 
 **Comprobación.** Ejecuta esos cuatro comandos tú mismo contra
 `hello_airflow3`. Mientras el Dag está en pausa el run está `queued` y ahí se
-queda por mucho que esperes: el scheduler lo ve en cada iteración del bucle y
+queda por mucho que esperes: el Scheduler lo ve en cada iteración del bucle y
 lo omite a propósito. Ejecuta `list-runs` otra vez poco después del `unpause`:
 muestra el mismo `run_id` como `success`, y su `start_date` (la del run, el
 momento en que arrancó, no la del Dag) es posterior a su `run_after`: arrancó
@@ -191,9 +191,9 @@ Además de `airflow dags trigger` y el botón **Trigger** de la UI, hay dos form
 más de arrancar un run. La REST API hace lo mismo que `trigger`, por HTTP —
 `POST /api/v2/dags/{dag_id}/dagRuns`, que es lo que llama el botón de la UI.
 `airflow dags test <dag_id>` es distinto: ejecuta el Dag entero dentro del
-propio comando, sin pasar por el scheduler (§4). Por eso la pausa no lo retiene,
+propio comando, sin pasar por el Scheduler (§4). Por eso la pausa no lo retiene,
 y por eso funcionó en la §4 con `hello_airflow3` todavía en pausa. Usa `test`
-mientras escribes un Dag, y `trigger` para ejecutarlo como lo hará el scheduler.
+mientras escribes un Dag, y `trigger` para ejecutarlo como lo hará el Scheduler.
 
 ---
 

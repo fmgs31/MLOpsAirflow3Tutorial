@@ -37,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
 **Checkpoint.** The script waits for the API server, then prints the service
 table. Open <http://localhost:8080> — there is no login. The Dags list is
 **empty**, and it should be: you have not written one yet. The Home page shows
-the scheduler, triggerer and Dag processor as healthy. If the page does not
+the Scheduler, Triggerer and Dag processor as healthy. If the page does not
 load, jump to [troubleshooting](../troubleshooting.md).
 
 ```bash
@@ -48,15 +48,15 @@ docker compose exec airflow-scheduler airflow dags list
 The second prints `No data found`, the same empty list. Every command from
 here on has the shape of one of those two: `docker compose …` runs on your
 machine, and the `docker compose exec airflow-scheduler` prefix runs
-`airflow …` inside the scheduler container. Any of the Airflow containers
+`airflow …` inside the Scheduler container. Any of the Airflow containers
 would do: they share the same image, settings and mounted folders, and differ
-only in which component they run (§3). The scheduler is the fixed choice
+only in which component they run (§3). The Scheduler is the fixed choice
 because it is always running. An `airflow …` command shown bare,
 in a transcript or in prose, means the same thing, prefix included.
 
 The stack is deliberately smaller than the [official
 docker-compose.yaml](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
-`LocalExecutor` instead of Celery + Redis (§3 explains what an executor is), and
+`LocalExecutor` instead of Celery + Redis (§3 explains what an Executor is), and
 the Simple auth manager instead of FAB — Flask-AppBuilder, the provider that
 gives Airflow users, roles and a login page. Fewer moving parts while you are
 learning.

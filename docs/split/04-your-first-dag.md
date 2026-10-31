@@ -96,14 +96,14 @@ Line by line:
 - **`schedule=None`** — this Dag runs only when someone triggers it: you,
   through the UI or the CLI, or a program through the API. §7 has the other
   values a schedule can take.
-- **`start_date`** — the earliest moment the scheduler creates runs for on its
+- **`start_date`** — the earliest moment the Scheduler creates runs for on its
   own; it never schedules one before it. It does not stop you starting a run
   yourself — a manual trigger works even with a `start_date` in the future — so
   on this `schedule=None` Dag it changes nothing yet; it is set so the Dag is
   ready the day it gets a schedule. It is optional; §7 explains when a
   scheduled Dag without one starts.
 - **`catchup=False`** — decides what happens when you un-pause a scheduled Dag
-  whose `start_date` is in the past. With `False`, the default, the scheduler
+  whose `start_date` is in the past. With `False`, the default, the Scheduler
   ignores the missed past and creates a single run, for the most recent time
   the schedule should have fired. With `True`, it creates one run for *every*
   time the schedule would have fired since `start_date` — months of runs, all
@@ -190,7 +190,7 @@ same code with the comments left in.
 
 The Dag processor (§3) scans `dags/` every five seconds on this stack, imports
 each `.py` file that looks like a Dag file (what that means comes further down),
-and writes what it parsed into the metadata database.
+and writes what it parsed into the Metadata database.
 Within a few seconds of saving:
 
 ```bash
@@ -252,7 +252,7 @@ there. Check `list-import-errors` first, then the bottom of the file.
 
 ### Run it
 
-This executes a complete Dag run in your terminal, no scheduler involved:
+This executes a complete Dag run in your terminal, no Scheduler involved:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test hello_airflow3
@@ -271,7 +271,7 @@ logs and no UI, the fastest way to try a Dag while you write it. You will use
 it after every Dag.
 
 > **What `airflow dags test` is, and is not.** It runs the whole Dag inside this
-> one command, with no scheduler, executor or triggerer. Three things behave
+> one command, with no Scheduler, Executor or Triggerer. Three things behave
 > differently from a real run, and you will meet each of them later:
 >
 > - Tasks run **one at a time**, in an order the graph allows. In the output
@@ -280,8 +280,8 @@ it after every Dag.
 > - It **always supplies a logical date**. A trigger from the CLI does not (§7),
 >   which is how a Dag can pass here and fail in production.
 > - A **deferrable** task (§11), when it has to wait, normally suspends itself
->   and leaves the waiting to another service, the triggerer. Here there is no
->   triggerer, so `airflow dags test` does the waiting itself, and the command
+>   and leaves the waiting to another service, the Triggerer. Here there is no
+>   Triggerer, so `airflow dags test` does the waiting itself, and the command
 >   does not return until the wait is over.
 >
 > It is **not a dry run** (a rehearsal that reports what a command would do

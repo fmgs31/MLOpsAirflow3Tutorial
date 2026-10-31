@@ -41,7 +41,7 @@ accepted and does nothing, and `execution_date` fails only once the task runs.
 
 **Unit tests on the workload** — [`tests/test_project_tagger.py`](../../tests/test_project_tagger.py).
 Nothing in `src/project_tagger/` imports Airflow, so the ML code is testable
-without a scheduler in the loop. That separation is deliberate: Airflow orchestrates the
+without a Scheduler in the loop. That separation is deliberate: Airflow orchestrates the
 code, it does not contain it.
 
 They do not need the warehouse or the MLflow server either, and that is
@@ -65,7 +65,7 @@ a data test proves today's data is what the pipeline expects. You need both.
 
 **Whole-run tests** — `airflow dags test <dag_id>` executes a real Dag run
 inside the command itself (§4), and `airflow tasks test <dag_id> <task_id>`
-runs a single task without recording its state in the metadata database.
+runs a single task without recording its state in the Metadata database.
 
 **Tests on the documentation** — two of them, because a tutorial that quotes
 code is only useful while the quotes are true.
@@ -98,7 +98,7 @@ well under a minute:
 ```
 
 The `s` is the drift test, skipped for the reason given under "Unit tests on
-the workload". No scheduler was involved, no Dag ran, and nothing reached
+the workload". No Scheduler was involved, no Dag ran, and nothing reached
 BigQuery or the MLflow server, so every one of those tests is fast enough to
 run on every commit.
 
@@ -129,7 +129,7 @@ None of those levels would have caught the failures in §7's "trap" box (the
 `KeyError` and the `UndefinedError` of a run without a logical date):
 `airflow dags test` always supplies a logical date, so a Dag that breaks on a
 run without one passes every test in this section. **Trigger each Dag once
-for real** before you trust it: through the scheduler, with
+for real** before you trust it: through the Scheduler, with
 `airflow dags trigger` and no `-l`, so the run has no logical date, like an
 asset-triggered one.
 

@@ -136,7 +136,7 @@ its `schedule=`:
 That Dag is the asset's **consumer**, and each new asset event starts a run of
 it. That replaces any "run 30 minutes after the other Dag, and hope" cron.
 
-The asset event itself is a row in the metadata database: which asset, which
+The asset event itself is a row in the Metadata database: which asset, which
 Dag run produced it, when, and an optional `extra` dict the producing task can
 fill in. A task that fails writes no event, so a consumer cannot be started by
 a producer that did not finish.
@@ -213,7 +213,7 @@ There are more; §16 shows how to use four of them.
 ### When the consumer runs
 
 When Airflow writes an asset event, it also adds a queue entry for **each
-unpaused Dag** scheduled on that asset. On its next loop, the scheduler turns
+unpaused Dag** scheduled on that asset. On its next loop, the Scheduler turns
 those entries into Dag runs.
 
 Events that arrive faster than the consumer can run are neither lost nor run

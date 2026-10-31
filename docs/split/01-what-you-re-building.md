@@ -96,7 +96,7 @@ worth learning first because:
 
 And, like Prefect or Dagster, it has what you expect of a modern
 orchestrator: workflows written in ordinary Python, testable with pytest (§15), and the
-same code running on your laptop and on a cluster — swap the executor, not the
+same code running on your laptop and on a cluster — swap the Executor, not the
 Dag.
 
 ### The ML project it orchestrates
@@ -165,12 +165,16 @@ The SQL is not in that package: it is the dbt project you create in §9, in
 `dbt/`. Nor are the Airflow Assets the Dags share: they are orchestration, and
 you write them next to the Dags, in §8.
 
-### What changes from Made With ML's lesson
+### What changes from Made With ML
 
 This tutorial starts from Made With ML's
 [orchestration lesson](https://madewithml.com/courses/mlops/orchestration/):
-the same project, the same starting data and the same tools. What makes it
-different:
+the same project, the same starting data and the same pipeline of DataOps,
+MLOps and continual learning. Some pieces come from other lessons of the same
+[MLOps course](https://madewithml.com/courses/mlops/): the data stack setup
+from *Data engineering*, Optuna from *Tuning*, MLflow from *Experiment
+tracking*, the evaluation slices from *Evaluation* and the drift tests from
+*Monitoring*. What is new is how they are put together:
 
 - **Airflow 3.** All the code is written for Airflow 3.3.1; the original uses
   an earlier version.
@@ -180,17 +184,19 @@ different:
   stack.
 - **A pipeline that starts itself.** New data starts training through an
   asset, with no manual triggers (§8).
-- **The full MLOps cycle.** The model is evaluated, compared with the one in
-  production, approved by a person and promoted in MLflow (§10).
-- **Continual learning, implemented.** The original only describes it; here a
-  Dag measures drift and decides whether to continue, retrain, inspect or
-  roll back (§12).
+- **A promotion step.** The orchestration lesson's `mlops` Dag ends at
+  training. Here the model is evaluated, compared with the one in production,
+  approved by a person and promoted in MLflow's registry (§10).
+- **Continual learning as a Dag.** The orchestration lesson describes the
+  responses to drift, and the *Monitoring* lesson measures drift; here one Dag
+  does both: it measures drift and decides whether to continue, retrain,
+  inspect or roll back (§12).
 - **Data that changes and data that breaks.** arXiv papers that cause real
   drift (§12), and deliveries with the failures of a real load (§14).
-- **New sections:** Airflow's components and UI (§3, §5), scheduling and
-  assets (§7, §8), sensors and events (§11), deadline alerts (§13), what to do
-  when the data goes wrong (§14), testing Dags (§15) and taking it to
-  production (§16).
+- **Topics the original does not cover:** Airflow's components and UI (§3,
+  §5), logical dates and assets (§7, §8), deferrable tasks and events (§11),
+  deadline alerts (§13), what to do when the data goes wrong (§14), testing
+  Dags (§15) and taking it to production (§16).
 
 ---
 

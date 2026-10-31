@@ -37,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
 **Comprobación.** El script espera al API server y luego imprime la tabla de
 servicios. Abre <http://localhost:8080> — no hay login. La lista de Dags está
 **vacía**, y así debe ser: todavía no has escrito ninguno. La página Home
-muestra el scheduler, el triggerer y el Dag processor como healthy. Si la página
+muestra el Scheduler, el Triggerer y el Dag processor como healthy. Si la página
 no carga, salta a [troubleshooting](../troubleshooting.md).
 
 ```bash
@@ -48,16 +48,16 @@ docker compose exec airflow-scheduler airflow dags list
 El segundo imprime `No data found`, la misma lista vacía. Todos los comandos
 de aquí en adelante siguen el patrón de uno de esos dos: `docker compose …`
 corre en tu máquina, y el prefijo `docker compose exec airflow-scheduler`
-ejecuta `airflow …` dentro del contenedor del scheduler. Valdría cualquiera de los
+ejecuta `airflow …` dentro del contenedor del Scheduler. Valdría cualquiera de los
 contenedores de Airflow: comparten imagen, configuración y carpetas montadas, y
-solo cambia el componente que ejecuta cada uno (§3). El del scheduler es la
+solo cambia el componente que ejecuta cada uno (§3). El del Scheduler es la
 elección fija porque siempre está en marcha. Un comando
 `airflow …` a secas, en una transcripción o en el texto, significa lo mismo,
 prefijo incluido.
 
 El stack es deliberadamente más pequeño que el [docker-compose.yaml
 oficial](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
-`LocalExecutor` en vez de Celery + Redis (la §3 explica qué es un executor), y el
+`LocalExecutor` en vez de Celery + Redis (la §3 explica qué es un Executor), y el
 Simple auth manager en vez de FAB — Flask-AppBuilder, el provider que da a
 Airflow usuarios, roles y una página de login. Menos piezas en juego mientras
 aprendes.

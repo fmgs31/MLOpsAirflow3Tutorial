@@ -53,8 +53,8 @@ lista a `deadline=` para varios plazos.
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)`; esta última es "más lento que la propia media
 reciente de este Dag", que suele ser lo que quieres decir. Callbacks:
-`SyncCallback` (corre en el executor) o `AsyncCallback` (corre en el
-triggerer; úsalo para Notifiers, los emisores de alertas ya hechos que los
+`SyncCallback` (corre en el Executor) o `AsyncCallback` (corre en el
+Triggerer; úsalo para Notifiers, los emisores de alertas ya hechos que los
 providers traen para Slack, email y similares, p. ej.
 `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
 
@@ -94,7 +94,7 @@ listan bajo Browse → **Deadlines**.
 > (`psycopg2.ProgrammingError: can't adapt type 'dict'`
 > lanzado desde `DagRun.update_state`). Las tasks corren bien; lo único que falla
 > es la actualización final de estado de la CLI. Dispara esos Dags a través del
-> scheduler en su lugar. Por eso `mlops` no lleva deadline: rompería el paso
+> Scheduler en su lugar. Por eso `mlops` no lleva deadline: rompería el paso
 > `airflow dags test mlops` de la §10.
 > [Detalles.](../troubleshooting.md)
 

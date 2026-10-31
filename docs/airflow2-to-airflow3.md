@@ -21,17 +21,17 @@ Prerequisite for an in-place upgrade: **Airflow 2.7+ and Python 3.10–3.14**
 | Airflow 2 | Airflow 3 | Notes |
 |---|---|---|
 | `airflow webserver` | `airflow api-server` | The webserver is gone. The API server serves the REST API, the React UI, **and** the Task Execution API that workers call. |
-| (part of the scheduler) | `airflow dag-processor` | Now a **mandatory separate process**, even locally. Forget it and your Dags never appear. |
+| (part of the Scheduler) | `airflow dag-processor` | Now a **mandatory separate process**, even locally. Forget it and your Dags never appear. |
 | `airflow db init` / `db upgrade` | `airflow db migrate` | Both old commands removed. |
 | `airflow dags backfill` | `airflow backfill create` | Backfills are first-class objects with their own UI, API and reprocess policy. |
 | `airflow users create` | FAB provider only | The default auth manager is now Simple auth. `airflow users` exists only when `apache-airflow-providers-fab` is installed (it ships in the official image). |
 | `--subdir` / `-S` | Dag bundles | Removed from every command. |
 | `airflow dags list-runs -d ID` | `airflow dags list-runs ID` | `dag_id` is positional now. *(Verified.)* |
 | SequentialExecutor | LocalExecutor | Removed. LocalExecutor works with SQLite for local dev. |
-| CeleryKubernetes / LocalKubernetes executors | Multiple Executor Configuration | Removed. |
+| CeleryKubernetes / LocalKubernetes Executors | Multiple Executor Configuration | Removed. |
 | — | `airflow config update --fix` | Rewrites a 2.x `airflow.cfg` to 3.x names. |
 
-The default executor is now `LocalExecutor`, not `SequentialExecutor`.
+The default Executor is now `LocalExecutor`, not `SequentialExecutor`.
 
 ## 2. Imports
 
@@ -57,7 +57,7 @@ operators moved to `apache-airflow-providers-standard`.
 | `from airflow.sensors.external_task import ExternalTaskSensor` | `from airflow.providers.standard.sensors.external_task import ExternalTaskSensor` |
 | `from airflow.models.dagbag import DagBag` | `from airflow.dag_processing.dagbag import DagBag` — and `include_examples` is gone *(verified)* |
 | `from airflow.hooks.base import BaseHook` | `from airflow.sdk import BaseHook` — old path warns *(verified)* |
-| `from airflow.sensors.smart_sensor import SmartSensorOperator` | **gone.** Smart sensors were deprecated in 2.2 and removed in 2.4; the module does not exist *(verified)*. Use deferrable operators + the triggerer |
+| `from airflow.sensors.smart_sensor import SmartSensorOperator` | **gone.** Smart sensors were deprecated in 2.2 and removed in 2.4; the module does not exist *(verified)*. Use deferrable operators + the Triggerer |
 
 Full contents of the standard provider (v1.18.0):
 
@@ -256,7 +256,7 @@ Connection id.
    ruff check dags/ --select AIR311,AIR312          # recommended, non-breaking
    ```
 3. `airflow config update --fix` to migrate `airflow.cfg`.
-4. Back up the metadata DB, then `airflow db migrate`.
+4. Back up the Metadata DB, then `airflow db migrate`.
 5. Replace `webserver` with `api-server` and **add a `dag-processor`** to your
    deployment.
 6. Add a Dag-integrity test (see `tests/test_dag_integrity.py`) so the removed

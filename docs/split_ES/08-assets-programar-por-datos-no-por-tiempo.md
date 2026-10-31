@@ -141,7 +141,7 @@ Ese Dag es el **consumidor** del asset, y cada asset event nuevo arranca un run
 suyo. Eso sustituye a cualquier cron del tipo "corre 30 minutos después del
 otro Dag, y cruza los dedos".
 
-El asset event en sí es una fila en la metadata database: qué asset, qué Dag run
+El asset event en sí es una fila en la Metadata database: qué asset, qué Dag run
 lo produjo, cuándo, y un dict `extra` opcional que la task productora puede
 rellenar. Una task que falla no escribe evento, así que a un consumidor no lo
 puede arrancar un productor que no terminó.
@@ -219,7 +219,7 @@ Hay más; la §16 explica cómo se usan cuatro de ellas.
 
 Cuando Airflow escribe un asset event, añade también una entrada a una cola por
 **cada Dag sin pausa** programado con ese asset. En su siguiente bucle, el
-scheduler convierte esas entradas en Dag runs.
+Scheduler convierte esas entradas en Dag runs.
 
 Los eventos que llegan más rápido de lo que el consumidor puede procesarlos no
 se pierden ni se procesan de uno en uno. `mlops` permite un único run activo

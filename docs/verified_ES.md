@@ -16,7 +16,7 @@ Sáltatelo, o vuelve cuando quieras saber hasta qué punto fiarte de un número.
 `mlops` (`approve_promotion`, entre `promotion_gate` y `promote_model`); el
 `decide` de la §12 ahora va directo a `trigger_retraining`. No se recorrió en
 vivo. Los dos Dags de las soluciones se construyeron en el contenedor del
-scheduler: `mlops` tiene 14 tasks, `promotion_gate → approve_promotion,
+Scheduler: `mlops` tiene 14 tasks, `promotion_gate → approve_promotion,
 keep_current_model`, `approve_promotion → promote_model`; `monitoring` tiene
 8, `decide → continue_serving, inspect, rollback, trigger_retraining`. El
 comportamiento de Reject de `ApprovalOperator` (salta la task directamente
@@ -244,14 +244,14 @@ afirmaciones que el cuerpo te devuelve impresos:
 - La espera de la §10, descompuesta a partir de timestamps de la base de datos en
   tres triggers: el propio run de `dataops` tardó 5.2–5.9s desde queued hasta
   terminado; el intervalo desde que se escribió su asset event hasta que se encoló el
-  run de `mlops` fue de 0.12–0.65s — un bucle del scheduler. El texto no cita
+  run de `mlops` fue de 0.12–0.65s — un bucle del Scheduler. El texto no cita
   ninguna cifra de extremo a extremo porque la parte de `dataops` depende de la
   red.
 - El `wait_for_table` de la §11 comprueba una vez en el worker antes de
   quedar en `deferred` (`BigQueryTableExistenceSensor.execute`: `if not
   self.poke(context=context): self.defer(...)`), así que con `labeled_projects`
   presente `airflow dags test` no registra `running trigger in line` y nada
-  queda en `deferred`. El 2026-10-31, por el scheduler contra
+  queda en `deferred`. El 2026-10-31, por el Scheduler contra
   `labeled_projects_copy`: `wait_for_table` `queued` → `running` → `deferred`,
   mientras `enough_rows` y `proceed` salían con el estado vacío en
   `states-for-dag-run`. `CREATE TABLE … LIMIT 300`: `wait_for_table` `success`
@@ -262,9 +262,9 @@ afirmaciones que el cuerpo te devuelve impresos:
   `CREATE OR REPLACE TABLE` de la §11; tras él, `764 rows` y las tres en
   `success` en menos de 10 s.
 - El `ApprovalOperator` de la §12 en 3.3 aparca la task en `awaiting_input` sin
-  ningún trigger de por medio; la resuelve el barrido del scheduler —
+  ningún trigger de por medio; la resuelve el barrido del Scheduler —
   `AWAITING_INPUT timeout sweep: 1 resolved (response/defaults)` en el log del
-  scheduler — y la task se reanuda en `execute_complete`. El triggerer no hace
+  Scheduler — y la task se reanuda en `execute_complete`. El Triggerer no hace
   falta para HITL.
 - El fan-out de la §10 es **de dos en dos, en dos oleadas**
   (`max_active_tis_per_dag=2`), leído de las horas de inicio y fin de las cuatro
@@ -328,7 +328,7 @@ todos los comandos de la §2 a la §13 y de la §15 en orden:
   consumiendo de 2 a 6 cada uno (`dagrun_asset_event`).
 - §9 `passed=4/4`, `6/6`, `Wrote 764 rows`; con `mlops` en pausa, un evento y
   cero runs.
-- §11 `deferred → scheduled → success` a través del scheduler; ambos sensors
+- §11 `deferred → scheduled → success` a través del Scheduler; ambos sensors
   `up_for_reschedule` con el archivo apartado; `764 rows` una vez restaurado.
 - §12 76s con `--conf` — `awaiting_input`, `Approved`, `trigger_dag_id=mlops`,
   un run `manual__` nuevo; 9s y `continue_serving` sin él.
@@ -404,7 +404,7 @@ escritos.
   `keep_current_model` skipped. El "pruébalo" con `PROJECT_TAGGER_MIN_F1=0.99`: `below
   threshold 0.99 - not promoting`, `Branch into keep_current_model`.
 - §11 `dags test`: `curated table has 764 rows`, `Success criteria met`, `Data
-  is ready (764 rows)`, 5,6 s. Por el scheduler, consultado cada medio segundo:
+  is ready (764 rows)`, 5,6 s. Por el Scheduler, consultado cada medio segundo:
   `settle` `deferred` a +2 s, `success` a +8 s.
 - §12 con `--conf`: 74 s; `Branch into request_retraining`, `Waiting for
   response`, `Approved` 65 s después, `trigger_dag_id=mlops`, y un run
@@ -432,7 +432,7 @@ después de que un lector detectara una afirmación errónea sobre `run_after`:
   quitar la pausa, no después del primer parseo.
 - La cola de la §8: `AssetManager.register_asset_change` escribe la entrada de
   cola de cada consumidor sin pausa en el mismo paso que el evento; el
-  scheduler solo convierte esas entradas en runs.
+  Scheduler solo convierte esas entradas en runs.
 - El rango del backfill de la §9: `iter_dagrun_infos_between` incluye los dos
   extremos. Para `dataops`, `2026-02-01` → `2026-02-04` da tres runs y
   `2026-02-01` → `2026-02-04T03:00:00` da cuatro.

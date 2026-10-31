@@ -2,12 +2,12 @@
 
 **Executors.** `LocalExecutor` es el de por defecto y sirve mientras baste una
 máquina. Más allá: `CeleryExecutor` (varias máquinas worker que toman tasks de
-una cola), `KubernetesExecutor` (un pod por task) o **varios executors**
+una cola), `KubernetesExecutor` (un pod por task) o **varios Executors**
 configurados a la vez. También existe el **Edge
-executor**, para workers fuera de tu clúster, algo que es posible gracias a la
+Executor**, para workers fuera de tu clúster, algo que es posible gracias a la
 Task Execution API (§3).
 
-Cambiar de executor cambia dónde pueden vivir los archivos. `mlops` y
+Cambiar de Executor cambia dónde pueden vivir los archivos. `mlops` y
 `monitoring` escriben sus snapshots en `data/snapshots/` (§10, §12), una
 carpeta en la única máquina que corre todas las tasks de este stack. Con
 Celery o Kubernetes la siguiente task puede correr en una máquina que no tiene
@@ -147,15 +147,15 @@ la gente se salta hasta que hay un incidente. Tres capas:
   `dag_processing.import_errors`. Los nombres de métrica llevan `dag_id`/`task_id`
   como **tags**; `[metrics] legacy_names_on` (por defecto `True`) también exporta
   la forma antigua con el nombre como sufijo.
-- **Traces** — `[traces] otel_on = True` envía spans de los bucles del scheduler
+- **Traces** — `[traces] otel_on = True` envía spans de los bucles del Scheduler
   y de los runs de task, y así encuentras *qué* task de un Dag lento se
   volvió más lenta.
-- **Health** — `GET /api/v2/monitor/health` informa del estado de la metadata
-  database, el scheduler, el triggerer y el Dag processor; la página Home de la
+- **Health** — `GET /api/v2/monitor/health` informa del estado de la Metadata
+  database, el Scheduler, el Triggerer y el Dag processor; la página Home de la
   UI muestra lo mismo.
 
 Y luego el mantenimiento de siempre: `airflow db clean` programado (si no, la
-metadata database crece indefinidamente), deadline alerts en los Dags que
+Metadata database crece indefinidamente), deadline alerts en los Dags que
 importan (§13), y Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — conectados a
 `on_failure_callback` o a un `AsyncCallback`.
 

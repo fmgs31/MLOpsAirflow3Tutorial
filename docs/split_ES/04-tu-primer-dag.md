@@ -99,7 +99,7 @@ Línea a línea:
 - **`schedule=None`** — este Dag corre solo cuando alguien lo dispara: tú, desde
   la UI o la CLI, o un programa a través de la API. La §7 tiene los otros
   valores que puede tomar un schedule.
-- **`start_date`** — el primer momento para el que el scheduler crea runs por su
+- **`start_date`** — el primer momento para el que el Scheduler crea runs por su
   cuenta; nunca programa uno antes. No te impide lanzar un run tú mismo — un
   trigger manual funciona aunque el `start_date` esté en el futuro —, así que en
   este Dag con `schedule=None` todavía no cambia nada; está puesto para que el
@@ -107,7 +107,7 @@ Línea a línea:
   cuándo arranca un Dag con schedule que no lo tiene.
 - **`catchup=False`** — decide qué pasa cuando quitas la pausa a un Dag con
   schedule cuyo `start_date` ya pasó. Con `False`, el valor por defecto, el
-  scheduler ignora el pasado perdido y crea un solo run, para la vez más
+  Scheduler ignora el pasado perdido y crea un solo run, para la vez más
   reciente en que el schedule debería haberse disparado. Con `True`, crea un run
   por *cada* vez que el schedule se habría disparado desde el `start_date` —
   meses de runs, todos de golpe. Está escrito aquí, aunque sea el valor por
@@ -174,7 +174,7 @@ hello_airflow3()
 que hace que `shout` corra después de `make_greeting`. El grafo se construye
 cuando se parsea el archivo; el código corre después, posiblemente en otra
 máquina. Nada hace que `shout` y `count_words` se esperen entre sí, así que en
-un run dirigido por el scheduler pueden ejecutarse a la vez (la §3 dice qué lo
+un run dirigido por el Scheduler pueden ejecutarse a la vez (la §3 dice qué lo
 decide):
 
 ```
@@ -195,7 +195,7 @@ mismo código con los comentarios dentro.
 
 El Dag processor (§3) escanea `dags/` cada cinco segundos en este stack,
 importa cada archivo `.py` que parece un archivo de Dag (qué significa eso
-viene más abajo), y escribe lo que parseó en la metadata database. A los
+viene más abajo), y escribe lo que parseó en la Metadata database. A los
 pocos segundos de guardar:
 
 ```bash
@@ -259,7 +259,7 @@ archivo.
 
 ### Ejecútalo
 
-Esto ejecuta un Dag run completo en tu terminal, sin scheduler de por medio:
+Esto ejecuta un Dag run completo en tu terminal, sin Scheduler de por medio:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test hello_airflow3
@@ -278,7 +278,7 @@ reales y sin UI, la forma más rápida de probar un Dag mientras lo escribes. Lo
 vas a usar después de cada Dag.
 
 > **Qué es `airflow dags test`, y qué no.** Ejecuta el Dag entero dentro de este
-> único comando, sin scheduler, executor ni triggerer. Hay tres cosas que
+> único comando, sin Scheduler, Executor ni Triggerer. Hay tres cosas que
 > funcionan distinto que en un run real, y te las encontrarás más adelante:
 >
 > - Las tasks corren **de una en una**, en un orden que el grafo permita. En la
@@ -287,8 +287,8 @@ vas a usar después de cada Dag.
 > - **Siempre aporta una logical date.** Un trigger desde la CLI no (§7), y por
 >   eso un Dag puede pasar aquí y fallar en producción.
 > - Una task **deferrable** (§11), cuando tiene que esperar, normalmente se
->   suspende y deja la espera en manos de otro servicio, el triggerer. Aquí no
->   hay triggerer, así que la espera la hace el propio `airflow dags test`, y el
+>   suspende y deja la espera en manos de otro servicio, el Triggerer. Aquí no
+>   hay Triggerer, así que la espera la hace el propio `airflow dags test`, y el
 >   comando no termina hasta que acaba la espera.
 >
 > Eso sí, **no es un dry run** (un ensayo que informa de lo que haría un

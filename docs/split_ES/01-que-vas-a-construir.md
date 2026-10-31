@@ -101,7 +101,7 @@ la pena como primer orquestador porque:
 
 Y, como Prefect o Dagster, tiene lo que se espera de un orquestador moderno:
 workflows escritos en Python normal, testeables con pytest (§15), y el mismo
-código ejecutándose en tu portátil y en un clúster — cambias el executor, no el
+código ejecutándose en tu portátil y en un clúster — cambias el Executor, no el
 Dag.
 
 ### El proyecto de ML que orquesta
@@ -173,12 +173,16 @@ El SQL no está en ese paquete: es el proyecto de dbt que creas en la §9, en
 `dbt/`. Tampoco los Assets de Airflow que comparten los Dags: son
 orquestación, y los escribes junto a los Dags, en la §8.
 
-### Qué cambia respecto a la lección de Made With ML
+### Qué cambia respecto a Made With ML
 
 Este tutorial parte de la
 [lección de orquestación](https://madewithml.com/courses/mlops/orchestration/)
-de Made With ML: el mismo proyecto, los mismos datos de partida y las mismas
-herramientas. Lo que lo hace distinto:
+de Made With ML: el mismo proyecto, los mismos datos de partida y el mismo
+pipeline de DataOps, MLOps y continual learning. Algunas piezas vienen de otras
+lecciones del mismo [curso de MLOps](https://madewithml.com/courses/mlops/):
+la puesta en marcha del data stack de *Data engineering*, Optuna de *Tuning*,
+MLflow de *Experiment tracking*, los slices de evaluación de *Evaluation* y los
+tests de drift de *Monitoring*. Lo nuevo es cómo se combinan:
 
 - **Airflow 3.** Todo el código está escrito para Airflow 3.3.1; el original
   usa una versión anterior.
@@ -188,17 +192,20 @@ herramientas. Lo que lo hace distinto:
   stack real.
 - **Un pipeline que se dispara solo.** Los datos nuevos arrancan el
   entrenamiento a través de un asset, sin triggers manuales (§8).
-- **El ciclo de MLOps completo.** El modelo se evalúa, se compara con el que
-  está en producción, lo aprueba una persona y se promociona en MLflow (§10).
-- **Continual learning implementado.** En el original solo se describe; aquí
-  un Dag mide el drift y decide si seguir, reentrenar, inspeccionar o hacer
-  rollback (§12).
+- **Un paso de promoción.** El Dag `mlops` de la lección de orquestación
+  termina en el entrenamiento. Aquí el modelo se evalúa, se compara con el que
+  está en producción, lo aprueba una persona y se promociona en el registry de
+  MLflow (§10).
+- **Continual learning como un Dag.** La lección de orquestación describe las
+  respuestas al drift, y la lección *Monitoring* mide el drift; aquí un solo
+  Dag hace las dos cosas: mide el drift y decide si seguir, reentrenar,
+  inspeccionar o hacer rollback (§12).
 - **Datos que cambian y que fallan.** Papers de arXiv que provocan drift de
   verdad (§12), y entregas con los fallos típicos de una carga real (§14).
-- **Secciones nuevas:** las piezas de Airflow y su UI (§3, §5), scheduling y
-  assets (§7, §8), sensors y eventos (§11), deadline alerts (§13), qué hacer
-  cuando los datos fallan (§14), testear Dags (§15) y llevarlo a producción
-  (§16).
+- **Temas que el original no cubre:** las piezas de Airflow y su UI (§3, §5),
+  logical dates y assets (§7, §8), deferrable tasks y eventos (§11), deadline
+  alerts (§13), qué hacer cuando los datos fallan (§14), testear Dags (§15) y
+  llevarlo a producción (§16).
 
 ---
 

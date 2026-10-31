@@ -44,7 +44,7 @@ falla cuando corre la task.
 
 **Tests unitarios sobre la carga de trabajo** — [`tests/test_project_tagger.py`](../../tests/test_project_tagger.py).
 Nada en `src/project_tagger/` importa Airflow, así que el código de ML es
-testeable sin un scheduler de por medio. Esa separación es deliberada: Airflow
+testeable sin un Scheduler de por medio. Esa separación es deliberada: Airflow
 orquesta el código, no lo contiene.
 
 Tampoco necesitan el warehouse ni el servidor de MLflow, y eso también es
@@ -72,7 +72,7 @@ dos.
 
 **Tests de run completo** — `airflow dags test <dag_id>` ejecuta un Dag run real
 dentro del propio comando (§4), y `airflow tasks test <dag_id> <task_id>`
-ejecuta una sola task sin guardar su estado en la metadata database.
+ejecuta una sola task sin guardar su estado en la Metadata database.
 
 **Tests sobre la documentación** — dos, porque un tutorial que cita código solo
 es útil mientras las citas sean correctas.
@@ -107,7 +107,7 @@ en bastante menos de un minuto:
 ```
 
 La `s` es el test de drift, que se salta por el motivo que da «Tests
-unitarios sobre la carga de trabajo». No intervino ningún scheduler, no corrió
+unitarios sobre la carga de trabajo». No intervino ningún Scheduler, no corrió
 ningún Dag, y nada llegó a BigQuery ni al servidor de MLflow, así que cada uno
 de esos tests es lo bastante rápido para ejecutarse en cada commit.
 
@@ -138,7 +138,7 @@ Ninguno de esos niveles habría detectado los fallos del recuadro de la "trampa"
 de la §7 (el `KeyError` y el `UndefinedError` de un run sin logical date):
 `airflow dags test` siempre aporta una logical date, así que un Dag que se
 rompe en un run sin ella pasa todos los tests de esta sección. **Dispara cada
-Dag una vez de verdad** antes de darlo por bueno: a través del scheduler, con
+Dag una vez de verdad** antes de darlo por bueno: a través del Scheduler, con
 `airflow dags trigger` y sin `-l`, para que el run no tenga logical date, igual
 que uno disparado por asset.
 

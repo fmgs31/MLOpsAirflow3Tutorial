@@ -33,7 +33,7 @@ TaskFlow `@task` — and passes a number between them, to teach how tasks hand
 values to each other.
 
 **XComs** ("cross-communications") are how tasks pass small values. They are
-stored in the metadata database, but a task never accesses the metadata
+stored in the Metadata database, but a task never accesses the Metadata
 database directly: it reads and writes XComs by asking the API server, through
 the Task Execution API (§3). §4's `@task` functions already used them, out of
 sight: every `return` was an XCom push, every argument an XCom pull. With
@@ -81,7 +81,7 @@ the same name-based injection `**context` did in §4. Its type,
 quietly returns `None`. Almost every pull you write needs `task_ids=`;
 `_multiply` names its source.
 
-**XComs are for metadata, not payloads.** They live in the metadata database.
+**XComs are for metadata, not payloads.** They live in the Metadata database.
 Pass a path, a run id, a row count; put the dataframe in object storage and
 the model in a registry. Airflow serialises the value when it stores it and
 accepts more than JSON — a `datetime`, a `set`, even a dataframe —, but that
@@ -351,7 +351,7 @@ not get:
   is stopped (for example, when you mark the task instance as failed in the
   UI), so it can cancel the work the task started on another service, such as
   a BigQuery query. `self.defer(...)` suspends the task and hands the wait to
-  the triggerer (§3); that is how the deferrable operators in §11 are built.
+  the Triggerer (§3); that is how the deferrable operators in §11 are built.
 - **Buttons of its own in the UI.** `operator_extra_links`, a class
   attribute, adds an **Extra Links** section to the task instance view in the
   UI, with one button per link. Each link is a `BaseOperatorLink` subclass
@@ -521,7 +521,7 @@ in one of three ways:
 
 - **In the UI** (Admin → Connections / Variables) **or with the CLI**
   (`airflow connections add`, `airflow variables set`). They are stored in the
-  metadata database, in the `connection` and `variable` tables. Airflow
+  Metadata database, in the `connection` and `variable` tables. Airflow
   encrypts the password, the extra and each Variable's value with the key in
   `[core] fernet_key`; with no key it stores them in plain text, which is what
   happens on this stack, since it sets none.
@@ -534,11 +534,11 @@ in one of three ways:
 
 Templates read them as `{{ conn.warehouse.host }}` and `{{ var.value.min_rows }}`.
 
-> A task fetching either one does not touch the metadata database. It first
+> A task fetching either one does not touch the Metadata database. It first
 > looks at the `AIRFLOW_CONN_*` / `AIRFLOW_VAR_*` environment variables, which
 > is how it finds `google_cloud_default`, and, if it is not there, asks the API
 > server over the Task Execution API, which is what lets a remote
-> worker resolve a Connection without access to the metadata database.
+> worker resolve a Connection without access to the Metadata database.
 >
 > Prefer a **param** (§4) over a global Variable when the value is a setting
 > that changes what the Dag decides, such as a threshold: params are recorded

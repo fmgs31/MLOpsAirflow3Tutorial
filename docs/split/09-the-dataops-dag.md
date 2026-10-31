@@ -555,7 +555,7 @@ runs.
 
 The first two tasks start the Airbyte syncs and wait for them to finish. A sync
 can take minutes, so they are **deferrable**: while waiting, the task is in
-the `deferred` state (§3) and the triggerer checks on Airbyte instead of a
+the `deferred` state (§3) and the Triggerer checks on Airbyte instead of a
 worker slot (§11 covers deferral in full). Add them inside `dataops()`:
 
 ```python dags/03_dataops.py
@@ -714,9 +714,9 @@ the other because `airflow dags test` runs one task at a time.
 `suite=labeled_projects passed=6/6`; and from the task group,
 `projects: 6 checks, failed=none` and the same for the other two.
 
-`airflow dags test` has no triggerer, so it runs the Airbyte tasks' triggers
+`airflow dags test` has no Triggerer, so it runs the Airbyte tasks' triggers
 itself and logs `[DAG TEST] running trigger in line` (§4). In a normal
-run the triggerer runs those triggers, and the tasks sit in `deferred` while
+run the Triggerer runs those triggers, and the tasks sit in `deferred` while
 Airbyte works.
 
 A failed task? Compare with [`solutions/03_dataops.py`](../../solutions/03_dataops.py).
@@ -725,7 +725,7 @@ A failed Airbyte task usually means a wrong Connection or Variable: check with
 
 > **`airflow dags test` is not a dry run.** Airbyte re-synced both tables, dbt
 > rebuilt `labeled_projects`, and a real `labeled_projects` asset event is in
-> the metadata database, with your `extra`, on the Assets page. Nothing is
+> the Metadata database, with your `extra`, on the Assets page. Nothing is
 > scheduled on that asset yet, so nothing else happens, and per §8 nothing
 > will: when `mlops` appears in §10 this event is already in the past, and
 > Airflow does not replay past events.

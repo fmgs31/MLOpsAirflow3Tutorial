@@ -12,7 +12,7 @@ airflow.sdk.exceptions.AirflowNotFoundException: The conn_id `fs_default` isn't 
 ```
 
 `FileSensor` needs the `fs_default` connection, and **`airflow db migrate` does
-not create any default connections** — the metadata database starts empty.
+not create any default connections** — the Metadata database starts empty.
 Create it yourself:
 
 ```bash
@@ -38,7 +38,7 @@ Raised from `DagRun.update_state` → `DeadlineAlertModel.get_by_id`: the
 expected. **The tasks all run to completion first** — only the CLI's final state
 update fails, so the traceback is noisier than the actual damage.
 
-Workaround: exercise deadline Dags through the scheduler, not `dags test`:
+Workaround: exercise deadline Dags through the Scheduler, not `dags test`:
 
 ```bash
 airflow dags unpause deadline_alerts
@@ -187,7 +187,7 @@ airflow dags reserialize
 ## A deferrable task or a HITL task hangs forever
 
 `deferrable=True` sensors and operators, and `ApprovalOperator`, all
-depend on the **triggerer**. Without `airflow triggerer` running they sit in
+depend on the **Triggerer**. Without `airflow triggerer` running they sit in
 `deferred` / `awaiting_input` indefinitely.
 
 ## macOS: tasks die with `+[__NSCFConstantString initialize] may have been in progress in another thread when fork() was called`
@@ -233,7 +233,7 @@ Passwords land in `$AIRFLOW_HOME/simple_auth_manager_passwords.json.generated`.
 
 ## Tasks fail with `ModuleNotFoundError: No module named 'project_tagger'`
 
-The Dag processor parses the files, but the **executor** runs the tasks — both
+The Dag processor parses the files, but the **Executor** runs the tasks — both
 need the package on `PYTHONPATH`. In this repo `PYTHONPATH=/opt/airflow/src` is
 set on every service in `docker-compose.yaml`. Natively:
 

@@ -575,7 +575,7 @@ como cuando corre una task.
 
 Las dos primeras tasks arrancan los syncs de Airbyte y esperan a que terminen.
 Un sync puede tardar minutos, así que son **deferrable**: mientras esperan, la
-task está en estado `deferred` (§3) y es el triggerer quien vigila Airbyte, no
+task está en estado `deferred` (§3) y es el Triggerer quien vigila Airbyte, no
 un worker slot (la §11 lo explica a fondo). Añádelas dentro de `dataops()`:
 
 ```python dags/03_dataops.py
@@ -735,9 +735,9 @@ de `transform`;
 `suite=labeled_projects passed=6/6`; y del task group,
 `projects: 6 checks, failed=none` y lo mismo para las otras dos.
 
-`airflow dags test` no tiene triggerer, así que ejecuta él mismo los triggers
+`airflow dags test` no tiene Triggerer, así que ejecuta él mismo los triggers
 de las tasks de Airbyte y lo anuncia en el log con `[DAG TEST] running trigger
-in line` (§4). En un run normal esos triggers los ejecuta el triggerer, y las
+in line` (§4). En un run normal esos triggers los ejecuta el Triggerer, y las
 tasks se quedan en `deferred` mientras Airbyte trabaja.
 
 ¿Falla una task? Compara con [`solutions/03_dataops.py`](../../solutions/03_dataops.py).
@@ -747,7 +747,7 @@ puesta: compruébalo con `airflow connections get my_airbyte_conn` y
 
 > **`airflow dags test` no es un dry run.** Airbyte volvió a sincronizar las dos
 > tablas, dbt reconstruyó `labeled_projects`, y hay un asset event
-> `labeled_projects` real en la metadata database, visible en la página Assets
+> `labeled_projects` real en la Metadata database, visible en la página Assets
 > con el `extra` que le pusiste. Todavía no hay nada programado con ese asset,
 > así que no pasa nada más, y según la §8 no pasará: cuando `mlops` aparezca en la §10 este evento
 > ya será historia, y Airflow no recupera eventos pasados.

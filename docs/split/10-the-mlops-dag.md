@@ -365,7 +365,7 @@ study.
 **How many `run_trials` instances run at once is a choice, written in
 `run_trials`' decorator.** Nothing about `.expand()` says "in parallel"; it
 says "these are four separate task instances". Whether they overlap is the
-executor's business, bounded by the narrowest of the limits from §3, and
+Executor's business, bounded by the narrowest of the limits from §3, and
 `max_active_tis_per_dag=2` on that task is deliberately the narrowest one here.
 So the fan-out runs **two at a time, in two waves**. Raise the cap and all four overlap; remove it and `[core]
 max_active_tasks_per_dag` (16) is the next limit up. A cap on a training task
@@ -678,7 +678,7 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 Nothing happens on the first line: `mlops`'s schedule is an asset, and no
 event has arrived. The second line starts everything without a trigger, by the
 §7 rule: `dataops` has a cron and a 2025 `start_date`, so the moment it is
-un-paused the scheduler creates the run for the most recent 03:00 UTC it
+un-paused the Scheduler creates the run for the most recent 03:00 UTC it
 missed, and starts it. Give it a few minutes. Near the end, the `mlops` run
 stops at `approve_promotion`: open the run in the UI, click
 `approve_promotion`, and answer the prompt on its **Required Actions** tab,
@@ -703,7 +703,7 @@ that caused it.
 Know where the wait comes from. Almost all of it is the tools: the two Airbyte
 syncs in `dataops`, then twenty trials and a final fit in `mlops`, and up to a
 minute at `approve_promotion`. The Airflow
-part is small: one scheduler loop to create the `dataops` run after the
+part is small: one Scheduler loop to create the `dataops` run after the
 un-pause, and one more to create the `mlops` run once the asset event is
 recorded (§3, §8). If nothing has appeared after a few minutes, check that both
 Dags are un-paused and that the `dataops` run succeeded — a failed

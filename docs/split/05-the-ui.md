@@ -8,7 +8,7 @@ take the tour now that there is a Dag to look at.
 The nav is **Home · Dags · Assets · Browse · Admin** at the top and **Docs**, a
 clock and **User** at the bottom.
 
-**Home** — health of the scheduler, triggerer and Dag processor, import errors,
+**Home** — health of the Scheduler, Triggerer and Dag processor, import errors,
 failed runs and tasks, recent asset events, deadlines and pool slots. Open it
 first when something is not running.
 
@@ -139,7 +139,7 @@ running the producer at all.
 
 **Browse** — Audit Log (who triggered, paused, cleared what — your UI trigger
 is in it now), **Deadlines** (pending and missed deadline alerts, §13), Jobs
-(the scheduler, triggerer and Dag processor and their heartbeats), XComs, and
+(the Scheduler, Triggerer and Dag processor and their heartbeats), XComs, and
 **Required Actions** (every task waiting on a human, across all Dags).
 
 **Admin** — Variables, Pools, Providers, Plugins, Connections and the rendered

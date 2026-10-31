@@ -8,7 +8,7 @@ leyéndolo, así que haz el recorrido ahora que hay un Dag que mirar.
 La navegación es **Home · Dags · Assets · Browse · Admin** arriba y, abajo,
 **Docs**, un reloj y **User**.
 
-**Home** — salud del scheduler, el triggerer y el Dag processor, errores de
+**Home** — salud del Scheduler, el Triggerer y el Dag processor, errores de
 import, runs y tasks fallidos, asset events recientes, deadlines y slots de
 pools. Ábrela primero cuando algo no arranca.
 
@@ -147,7 +147,7 @@ dispara los Dags aguas abajo sin ejecutar el productor.
 
 **Browse** — Audit Log (quién disparó, pausó o limpió qué — tu trigger desde la
 UI ya está ahí), **Deadlines** (deadline alerts pendientes y perdidas, §13), Jobs
-(el scheduler, el triggerer y el Dag processor con sus heartbeats), XComs y
+(el Scheduler, el Triggerer y el Dag processor con sus heartbeats), XComs y
 **Required Actions** (todas las tasks que esperan a una persona, en todos los
 Dags).
 

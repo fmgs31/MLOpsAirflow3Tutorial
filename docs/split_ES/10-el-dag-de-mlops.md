@@ -374,7 +374,7 @@ study.
 **Cuántas instancias de `run_trials` corren a la vez es una decisión, escrita
 en el decorador de `run_trials`.** Nada en `.expand()` dice "en paralelo";
 dice "estas son cuatro task instances separadas". Que se solapen o no es
-asunto del executor, acotado por el más restrictivo de los límites de la §3, y
+asunto del Executor, acotado por el más restrictivo de los límites de la §3, y
 `max_active_tis_per_dag=2` en esa task es deliberadamente el más restrictivo
 aquí. Así que el fan-out corre **de dos en dos, en dos oleadas**. Sube el tope y las cuatro se solapan; quítalo y `[core]
 max_active_tasks_per_dag` (16) es el siguiente límite. Un tope en una task de
@@ -697,7 +697,7 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 Con la primera línea no pasa nada: el schedule de `mlops` es un asset, y no ha
 llegado ningún evento. La segunda línea lo arranca todo sin ningún trigger,
 por la regla de la §7: `dataops` tiene un cron y un `start_date` de 2025, así
-que en el momento en que se le quita la pausa el scheduler crea el run que se
+que en el momento en que se le quita la pausa el Scheduler crea el run que se
 perdió, el de las 03:00 UTC más recientes, y lo arranca. Espera unos minutos.
 Cerca del final, el run de `mlops` se detiene en `approve_promotion`: abre el
 run en la UI, haz clic en `approve_promotion` y responde al aviso en su
@@ -722,7 +722,7 @@ date, igual que un run disparado desde la CLI sin ella (§7). En la UI,
 Ten claro de dónde viene la espera. Casi toda la ponen las herramientas: los
 dos syncs de Airbyte en `dataops`, y luego veinte trials y un entrenamiento
 final en `mlops`, y hasta un minuto en `approve_promotion`. La parte de
-Airflow es pequeña: un bucle del scheduler para
+Airflow es pequeña: un bucle del Scheduler para
 crear el run de `dataops` tras quitar la pausa, y uno más para crear el run de `mlops`
 cuando se registra el asset event (§3, §8). Si tras unos minutos no ha aparecido
 nada, comprueba que ambos Dags están sin pausa y que el run de `dataops` tuvo

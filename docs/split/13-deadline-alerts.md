@@ -53,7 +53,7 @@ list to `deadline=` for several deadlines.
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
 `AVERAGE_RUNTIME(max_runs=10)`; that last one is "slower than this Dag's own
 recent average", which is usually what you mean. Callbacks: `SyncCallback`
-(runs on the executor) or `AsyncCallback` (runs on the triggerer; use it for
+(runs on the Executor) or `AsyncCallback` (runs on the Triggerer; use it for
 Notifiers, the ready-made alert senders that providers ship for Slack, email
 and the like, e.g. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
 
@@ -91,7 +91,7 @@ Browse → **Deadlines**.
 > crashes on any Dag that sets `deadline=`
 > (`psycopg2.ProgrammingError: can't adapt type 'dict'` out of
 > `DagRun.update_state`). The tasks run fine; only the CLI's final state update
-> fails. Trigger such Dags through the scheduler instead. That is why `mlops`
+> fails. Trigger such Dags through the Scheduler instead. That is why `mlops`
 > carries no deadline: it would break the `airflow dags test mlops` step in
 > §10. [Details.](../troubleshooting.md)
 

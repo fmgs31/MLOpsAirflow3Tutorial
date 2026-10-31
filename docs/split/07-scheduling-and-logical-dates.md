@@ -12,7 +12,7 @@ its run for 10 September 2026:
 | `data_interval_end` | Until when is the data it processes? | 2026-09-11 00:00 |
 | `run_after` | From when may it start? | 2026-09-11 00:00 |
 | `start_date` of the run | When did it actually start? | a few seconds after `run_after`, or hours later if the Dag was paused or busy |
-| `start_date` of the Dag | From what date does the scheduler schedule runs? | 2025-01-01 00:00: no earlier slice gets a run |
+| `start_date` of the Dag | From what date does the Scheduler schedule runs? | 2025-01-01 00:00: no earlier slice gets a run |
 
 The run *of* the 10th starts on the 11th: it cannot process a day's data until
 that day is over. Its tasks know which data to process from
@@ -61,7 +61,7 @@ and there are two kinds:
   is.
 
 The Dag's `start_date` is where the slices begin: no run is ever scheduled for
-an earlier slice. It only governs the runs the scheduler creates; a manual
+an earlier slice. It only governs the runs the Scheduler creates; a manual
 trigger works even with a `start_date` in the future.
 
 It is also optional, and without one there is no past to catch up on. When you
@@ -145,7 +145,7 @@ docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"
 - In the UI the same thing is the **Trigger** button, with the form generated
   from your `params` — you used it in §5.
 
-Pausing a Dag does two things: the scheduler creates none of its scheduled
+Pausing a Dag does two things: the Scheduler creates none of its scheduled
 runs, and it starts none of its runs, not even the ones you create by hand. The
 first is what *`catchup` defaults to `False`* is about. The second is why
 `hello_airflow3`, which has no schedule, needs `unpause` all the same. A new Dag
@@ -172,7 +172,7 @@ docker compose exec airflow-scheduler airflow dags unpause hello_airflow3     # 
 
 **Checkpoint.** Run those four commands yourself against `hello_airflow3`.
 While the Dag is paused the run is `queued` and stays there however long you
-wait: the scheduler sees it every loop and deliberately passes over it. Run
+wait: the Scheduler sees it every loop and deliberately passes over it. Run
 `list-runs` again shortly after the `unpause`: it shows the same `run_id` as
 `success`, and its `start_date` (the run's, the moment it began, not the Dag's)
 is later than its `run_after`: it started when you un-paused, not when you
@@ -184,9 +184,9 @@ Besides `airflow dags trigger` and the UI's **Trigger** button, there are two
 more ways to start a run. The REST API does what `trigger` does, over HTTP —
 `POST /api/v2/dags/{dag_id}/dagRuns`, which is what the UI button calls.
 `airflow dags test <dag_id>` is different: it runs the whole Dag inside the
-command itself, without the scheduler (§4). That is why pausing does not hold
+command itself, without the Scheduler (§4). That is why pausing does not hold
 it back, and why it worked in §4 while `hello_airflow3` was still paused. Use
-`test` while you write a Dag, and `trigger` to run it the way the scheduler
+`test` while you write a Dag, and `trigger` to run it the way the Scheduler
 will.
 
 ---

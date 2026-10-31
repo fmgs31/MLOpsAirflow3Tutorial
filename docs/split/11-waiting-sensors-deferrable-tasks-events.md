@@ -25,13 +25,13 @@ BigQueryTableExistenceSensor(..., deferrable=True)
 In the default mode, `mode="poke"`, the task's process stays alive between
 pokes, asleep, holding its worker slot. With `mode="reschedule"`, the process
 exits after each poke; the task instance sits in `up_for_reschedule` (§3), and
-the scheduler re-queues it for the next poke.
+the Scheduler re-queues it for the next poke.
 
 The third option, deferrable, needs one term first: a **trigger** is a small
 piece of asynchronous code that waits for one thing (a moment in time, a table,
-a message) and fires an event when it happens. The triggerer process from §3
+a message) and fires an event when it happens. The Triggerer process from §3
 runs them. This has nothing to do with *triggering* a Dag (§7), which means
-starting a run. "Deferrable" means the task hands the triggerer such a
+starting a run. "Deferrable" means the task hands the Triggerer such a
 trigger, exits, and is resumed when the event arrives.
 
 ### Which way to wait
@@ -43,9 +43,9 @@ the check itself:
   asynchronous code, and someone has to have written it. Providers ship
   triggers for their common waits: the Google provider has one that asks
   BigQuery whether a table exists, and `BigQueryTableExistenceSensor(deferrable=True)`
-  hands it to the triggerer. A check of your own (a row count against a
+  hands it to the Triggerer. A check of your own (a row count against a
   threshold, a question to a system with no Airflow provider) has no trigger.
-  Writing one means writing asynchronous code that never blocks: the triggerer
+  Writing one means writing asynchronous code that never blocks: the Triggerer
   runs all triggers in one process, so one blocking call stalls every wait
   it holds.
 - **`poke` and `reschedule` work with any check** written as ordinary Python,
@@ -55,9 +55,9 @@ the check itself:
 When a check can be deferrable or `reschedule`, two things decide:
 
 - **How long, and how often.** Each `reschedule` poke is a full task start: the
-  scheduler queues it, and a worker starts a process and loads the Dag file. A
+  Scheduler queues it, and a worker starts a process and loads the Dag file. A
   poke every few minutes for an hour costs little. A poke every few seconds for
-  a day adds up, and deferrable is cheaper: one triggerer process holds many
+  a day adds up, and deferrable is cheaper: one Triggerer process holds many
   waits at once.
 - **How heavy the check is.** A check that needs pandas, an ML library or a
   query that takes seconds belongs in a task process. A trigger should only
@@ -74,7 +74,7 @@ rows: a threshold of your own, with no trigger, so it is a `@task.sensor` in
 each step waits. Each column is one system, as in the §9 diagram:
 
 ```
- Airflow: task process          │ Airflow: the triggerer │ BigQuery
+ Airflow: task process          │ Airflow: the Triggerer │ BigQuery
  sensors_and_events Dag         │ (§3)                   │ mlops_course
 ────────────────────────────────┼────────────────────────┼──────────────────
                                 │                        │
@@ -88,7 +88,7 @@ each step waits. Each column is one system, as in the §9 diagram:
  3 proceed: 500+ rows           │                        │
 ```
 
-While `wait_for_table` waits, the waiting happens in the triggerer, and no
+While `wait_for_table` waits, the waiting happens in the Triggerer, and no
 task process exists. `enough_rows` does its own checking: a poke every 10
 seconds, with its process gone in between.
 
@@ -135,7 +135,7 @@ def sensors_and_events():
     )
 ```
 
-`deferrable=True` makes it deferrable. Its trigger, running in the triggerer,
+`deferrable=True` makes it deferrable. Its trigger, running in the Triggerer,
 asks BigQuery every `poke_interval` seconds whether the table exists, through
 the `google_cloud_default` connection the compose file defines (§9). After
 `timeout` seconds without the table, the task fails.
@@ -179,7 +179,7 @@ result of `enough_rows()` goes in a variable, `rows`, because it is used
 twice: `wait_for_table >> rows` sets the order, and `proceed(rows)` passes the
 row count (§6).
 
-> Deferrable sensors need the triggerer (§3) running. Without it, they sit in
+> Deferrable sensors need the Triggerer (§3) running. Without it, they sit in
 > `deferred` indefinitely.
 
 ### Run it
@@ -203,12 +203,12 @@ Data is ready (764 rows). Downstream work can start.
 `wait_for_table` finds the table on its first check; `enough_rows` counts the
 rows and clears its threshold on the first poke. Nothing deferred: a
 deferrable sensor checks once in its own process before it hands anything to
-the triggerer, and defers only if the answer is no.
+the Triggerer, and defers only if the answer is no.
 
 When a sensor does defer, `airflow dags test`, which has no workers and no
-triggerer, runs the trigger in its own process and says so in the log with
+Triggerer, runs the trigger in its own process and says so in the log with
 `[DAG TEST] running trigger in line` (§4). To see the two ways of waiting as
-they really happen, send a run through the scheduler instead.
+they really happen, send a run through the Scheduler instead.
 
 **Now the interesting case**: sensors that have to wait. Trigger a run that
 points at a table that does not exist yet, then check its task states:
@@ -220,7 +220,7 @@ docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_a
 ```
 
 **Checkpoint.** After a few seconds, `wait_for_table` reads `deferred`: its
-first check found no table, its process has exited, and the triggerer asks
+first check found no table, its process has exited, and the Triggerer asks
 BigQuery every ten seconds. `enough_rows` and `proceed` have
 no state yet, because they have not been scheduled. That `deferred` is the
 state from §3, and it is what "frees the worker slot" looks like from outside.
@@ -239,7 +239,7 @@ Wait about twenty seconds and run the `states-for-dag-run` command again.
 **Checkpoint.** `wait_for_table` reads `success`: its trigger saw the table.
 `enough_rows` reads `up_for_reschedule`, the state §3 gives for a sensor
 between pokes. It has poked, counted 300 rows, and exited; ten seconds after
-each poke the scheduler queues it again, and it pokes again. Its log in the UI
+each poke the Scheduler queues it again, and it pokes again. Its log in the UI
 (§5) shows `labeled_projects_copy has 300 rows` once per poke.
 
 Now give it enough rows, by replacing the copy with the whole table:
@@ -254,7 +254,7 @@ and the `states-for-dag-run` command shows all three tasks as `success`.
 `proceed`'s log reads `Data is ready (764 rows)`.
 
 Neither sensor held a worker slot while it waited: `wait_for_table` waited in
-the triggerer, and `enough_rows` gave its slot back between pokes. In the
+the Triggerer, and `enough_rows` gave its slot back between pokes. In the
 default `poke` mode each would have held one for its whole wait, doing
 nothing. Stop at either step instead and the sensor waiting there fails on its
 `timeout`, five minutes, and the tasks after it end `upstream_failed` (§3).
@@ -292,7 +292,7 @@ Only triggers deriving from `BaseEventTrigger` can be watchers. A watcher keeps
 watching after each event, so a trigger that tests a lasting condition ("the
 table exists") would fire again at once, and start runs forever.
 
-Like deferrable sensors, watchers run in the triggerer: without it, a watcher
+Like deferrable sensors, watchers run in the Triggerer: without it, a watcher
 sees no messages, so it starts no runs.
 
 **Rule of thumb:** seconds → the default `poke` mode is fine. Minutes or hours →

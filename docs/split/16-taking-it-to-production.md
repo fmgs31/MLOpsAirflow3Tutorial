@@ -3,11 +3,11 @@
 **Executors.** `LocalExecutor` is the default and is fine as long as one
 machine is enough. Beyond that: `CeleryExecutor` (several worker machines
 taking tasks from a queue), `KubernetesExecutor` (a pod per task), or
-**multiple executors** configured together. There is also the **Edge
-executor**, for workers outside your cluster, which the Task Execution API (§3)
+**multiple Executors** configured together. There is also the **Edge
+Executor**, for workers outside your cluster, which the Task Execution API (§3)
 makes possible.
 
-Changing executor changes where files can live. `mlops` and `monitoring` write
+Changing Executor changes where files can live. `mlops` and `monitoring` write
 their snapshots to `data/snapshots/` (§10, §12), a folder on the one machine
 that runs every task in this stack. With Celery or Kubernetes the next task
 can run on a machine that does not have that folder, so the snapshots go to
@@ -145,13 +145,13 @@ skip until an incident. Three layers:
   and `dag_processing.import_errors`. Metric names carry `dag_id`/`task_id` as
   **tags**; `[metrics] legacy_names_on` (default `True`) also exports the older
   name-suffix form.
-- **Traces** — `[traces] otel_on = True` sends spans for scheduler loops and
+- **Traces** — `[traces] otel_on = True` sends spans for Scheduler loops and
   task runs, which is how you find *which* task in a slow Dag got slower.
-- **Health** — `GET /api/v2/monitor/health` reports metadata database,
-  scheduler, triggerer and Dag processor status; the UI Home page renders the
+- **Health** — `GET /api/v2/monitor/health` reports Metadata database,
+  Scheduler, Triggerer and Dag processor status; the UI Home page renders the
   same thing.
 
-Then the ordinary hygiene: `airflow db clean` on a schedule (the metadata
+Then the ordinary hygiene: `airflow db clean` on a schedule (the Metadata
 database grows forever otherwise), deadline alerts on the Dags that matter
 (§13), and Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — wired to
 `on_failure_callback` or an `AsyncCallback`.

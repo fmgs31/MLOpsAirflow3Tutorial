@@ -15,7 +15,7 @@ Skip it, or come back when you want to know how far to trust a number.
 `ApprovalOperator` left `monitoring` (`request_retraining`) for `mlops`
 (`approve_promotion`, between `promotion_gate` and `promote_model`); §12's
 `decide` now branches straight to `trigger_retraining`. Not walked live. Both
-solution Dags were built in the scheduler container: `mlops` has 14 tasks,
+solution Dags were built in the Scheduler container: `mlops` has 14 tasks,
 `promotion_gate → approve_promotion, keep_current_model`,
 `approve_promotion → promote_model`; `monitoring` has 8, `decide →
 continue_serving, inspect, rollback, trigger_retraining`. `ApprovalOperator`'s
@@ -228,13 +228,13 @@ the body prints back to you:
 - §10's wait, decomposed from database timestamps over three triggers: the
   `dataops` run itself took 5.2–5.9s from queued to finished; the gap from its
   asset event being written to the `mlops` run being queued was 0.12–0.65s —
-  one scheduler loop. The text quotes no end-to-end figure because the
+  one Scheduler loop. The text quotes no end-to-end figure because the
   `dataops` part depends on the network.
 - §11's `wait_for_table` checks once on the worker before deferring
   (`BigQueryTableExistenceSensor.execute`: `if not self.poke(context=context):
   self.defer(...)`), so with `labeled_projects` present `airflow dags test`
   logs no `running trigger in line` and nothing defers. On 2026-10-31, run
-  through the scheduler against `labeled_projects_copy`: `wait_for_table`
+  through the Scheduler against `labeled_projects_copy`: `wait_for_table`
   `queued` → `running` → `deferred`, while `enough_rows` and `proceed` showed an
   empty state in `states-for-dag-run`. `CREATE TABLE … LIMIT 300`:
   `wait_for_table` `success` within 10 s; `enough_rows`'s first poke 4 s later,
@@ -244,9 +244,9 @@ the body prints back to you:
   `CREATE OR REPLACE TABLE`; after it, `764 rows` and all three `success`
   within 10 s.
 - §12's `ApprovalOperator` on 3.3 parks the task in `awaiting_input` with no
-  trigger involved; the scheduler's sweep resolves it — `AWAITING_INPUT timeout
-  sweep: 1 resolved (response/defaults)` in the scheduler log — and the task
-  resumes in `execute_complete`. The triggerer is not needed for HITL.
+  trigger involved; the Scheduler's sweep resolves it — `AWAITING_INPUT timeout
+  sweep: 1 resolved (response/defaults)` in the Scheduler log — and the task
+  resumes in `execute_complete`. The Triggerer is not needed for HITL.
 - §10's fan-out is **two at a time, in two waves** (`max_active_tis_per_dag=2`),
   read off the four mapped task instances' start and end times — not four at
   once.
@@ -305,7 +305,7 @@ in §2–§13 and §15 in order:
   (`dagrun_asset_event`).
 - §9 `passed=4/4`, `6/6`, `Wrote 764 rows`; with `mlops` paused, one event and
   zero runs.
-- §11 `deferred → scheduled → success` through the scheduler; both sensors
+- §11 `deferred → scheduled → success` through the Scheduler; both sensors
   `up_for_reschedule` with the file moved; `764 rows` once restored.
 - §12 76s with `--conf` — `awaiting_input`, `Approved`, `trigger_dag_id=mlops`,
   one new `manual__` run; 9s and `continue_serving` without it.
@@ -376,7 +376,7 @@ files typed from the "Build it" blocks, every command in §2–§13 and §15 as 
   with `PROJECT_TAGGER_MIN_F1=0.99`: `below threshold 0.99 - not promoting`, `Branch
   into keep_current_model`.
 - §11 `dags test`: `curated table has 764 rows`, `Success criteria met`,
-  `Data is ready (764 rows)`, 5.6 s. Through the scheduler, polled every half
+  `Data is ready (764 rows)`, 5.6 s. Through the Scheduler, polled every half
   second: `settle` `deferred` at +2 s, `success` at +8 s.
 - §12 with `--conf`: 74 s; `Branch into request_retraining`, `Waiting for
   response`, `Approved` 65 s later, `trigger_dag_id=mlops`, and one new
@@ -402,7 +402,7 @@ a reader caught a wrong claim about `run_after`:
   next run recomputed at every parse (08:00, then 08:02), so the first run is
   the next tick after the un-pause, not after the first parse.
 - §8's queueing: `AssetManager.register_asset_change` writes the queue entry
-  for every unpaused consumer in the same step as the event; the scheduler
+  for every unpaused consumer in the same step as the event; the Scheduler
   only turns those entries into runs.
 - §9's backfill range: `iter_dagrun_infos_between` includes both ends. For
   `dataops`, `2026-02-01` → `2026-02-04` gives three runs and `2026-02-01` →
