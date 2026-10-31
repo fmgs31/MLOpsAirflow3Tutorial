@@ -230,18 +230,19 @@ the body prints back to you:
   asset event being written to the `mlops` run being queued was 0.12–0.65s —
   one scheduler loop. The text quotes no end-to-end figure because the
   `dataops` part depends on the network.
-- §11's `settle` (`TimeDeltaSensor(deferrable=True)`, 5s) under `airflow dags
-  test`: its target is measured from the run's `data_interval_end` (or
-  `run_after` when there is none, per `TimeDeltaSensor._derive_base_time`), which
-  the command sets when it starts. If the moment has passed by the time the task
-  runs, it returns at once (`sensors/time_delta.py`: `if utcnow() > target_dttm:
-  return True`); if not, it defers, and the command runs the trigger inline —
-  log line `[DAG TEST] running trigger in line` — never reaching the triggerer.
-  Which of the two happens depends on how long the task took to start: on
-  2026-10-10 a one-task probe Dag started 3s after `run_after` and deferred. Sent
-  through the scheduler with `airflow dags trigger`, the same task sat in
-  `deferred` for six seconds, went to `scheduled`, then `success` — polled every
-  half-second from the `task_instance` table.
+- §11's `wait_for_table` checks once on the worker before deferring
+  (`BigQueryTableExistenceSensor.execute`: `if not self.poke(context=context):
+  self.defer(...)`), so with `labeled_projects` present `airflow dags test`
+  logs no `running trigger in line` and nothing defers. On 2026-10-31, run
+  through the scheduler against `labeled_projects_copy`: `wait_for_table`
+  `queued` → `running` → `deferred`, while `enough_rows` and `proceed` showed an
+  empty state in `states-for-dag-run`. `CREATE TABLE … LIMIT 300`:
+  `wait_for_table` `success` within 10 s; `enough_rows`'s first poke 4 s later,
+  then `up_for_reschedule`, logging `labeled_projects_copy has 300 rows` every
+  ~14 s. `INSERT INTO` failed on this project with `403 Billing has not been
+  enabled … DML queries are not allowed in the free tier`, hence §11's
+  `CREATE OR REPLACE TABLE`; after it, `764 rows` and all three `success`
+  within 10 s.
 - §12's `ApprovalOperator` on 3.3 parks the task in `awaiting_input` with no
   trigger involved; the scheduler's sweep resolves it — `AWAITING_INPUT timeout
   sweep: 1 resolved (response/defaults)` in the scheduler log — and the task

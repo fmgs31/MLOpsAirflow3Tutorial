@@ -247,17 +247,20 @@ afirmaciones que el cuerpo te devuelve impresos:
   run de `mlops` fue de 0.12–0.65s — un bucle del scheduler. El texto no cita
   ninguna cifra de extremo a extremo porque la parte de `dataops` depende de la
   red.
-- El `settle` de la §11 (`TimeDeltaSensor(deferrable=True)`, 5s) bajo `airflow
-  dags test`: su objetivo se mide desde el `data_interval_end` del run (o
-  `run_after` si no hay, según `TimeDeltaSensor._derive_base_time`), que el
-  comando fija al arrancar. Si el momento ya pasó cuando la task corre, vuelve
-  de inmediato (`sensors/time_delta.py`: `if utcnow() > target_dttm: return
-  True`); si no, se difiere, y el comando ejecuta el trigger él mismo — línea de
-  log `[DAG TEST] running trigger in line` — sin llegar al triggerer. Cuál de
-  las dos ocurre depende de cuánto tardó en arrancar la task: el 2026-10-10 un
-  Dag de prueba de una sola task arrancó 3s después de `run_after` y se difirió. Enviada por el scheduler con `airflow dags trigger`, la
-  misma task estuvo `deferred` seis segundos, pasó a `scheduled` y luego a
-  `success` — consultado cada medio segundo desde la tabla `task_instance`.
+- El `wait_for_table` de la §11 comprueba una vez en el worker antes de
+  quedar en `deferred` (`BigQueryTableExistenceSensor.execute`: `if not
+  self.poke(context=context): self.defer(...)`), así que con `labeled_projects`
+  presente `airflow dags test` no registra `running trigger in line` y nada
+  queda en `deferred`. El 2026-10-31, por el scheduler contra
+  `labeled_projects_copy`: `wait_for_table` `queued` → `running` → `deferred`,
+  mientras `enough_rows` y `proceed` salían con el estado vacío en
+  `states-for-dag-run`. `CREATE TABLE … LIMIT 300`: `wait_for_table` `success`
+  en menos de 10 s; el primer poke de `enough_rows` 4 s después, luego
+  `up_for_reschedule`, registrando `labeled_projects_copy has 300 rows` cada
+  ~14 s. `INSERT INTO` falló en este proyecto con `403 Billing has not been
+  enabled … DML queries are not allowed in the free tier`, de ahí el
+  `CREATE OR REPLACE TABLE` de la §11; tras él, `764 rows` y las tres en
+  `success` en menos de 10 s.
 - El `ApprovalOperator` de la §12 en 3.3 aparca la task en `awaiting_input` sin
   ningún trigger de por medio; la resuelve el barrido del scheduler —
   `AWAITING_INPUT timeout sweep: 1 resolved (response/defaults)` en el log del
