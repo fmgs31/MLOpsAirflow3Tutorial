@@ -13,14 +13,18 @@ it fails. The three ways differ in what happens *between* pokes:
 ```python
 # 1. `poke` mode (the default) — holds a worker slot the entire time. For waits of seconds, not hours.
 BigQueryTableExistenceSensor(task_id="wait", project_id=..., dataset_id=..., table_id=...,
-                             poke_interval=10, timeout=300)
+                             poke_interval=10, timeout=300, mode="poke")
 
 # 2. `reschedule` mode — the task's process exits between pokes and is re-queued.
-BigQueryTableExistenceSensor(..., mode="reschedule")
+BigQueryTableExistenceSensor(..., poke_interval=10, timeout=300, mode="reschedule")
 
 # 3. Deferrable — hands the wait to the triggerer and frees the slot entirely.
-BigQueryTableExistenceSensor(..., deferrable=True)
+BigQueryTableExistenceSensor(..., poke_interval=10, timeout=300, deferrable=True)
 ```
+
+`poke_interval` and `timeout` apply to all three. `mode` chooses between the
+first two; `deferrable=True` takes the place of both, and `mode` is then
+ignored.
 
 In the default mode, `mode="poke"`, the task's process stays alive between
 pokes, asleep, holding its worker slot. With `mode="reschedule"`, the process

@@ -14,14 +14,17 @@ comprobación se llama **poke**. Si el poke da verdadero, la task termina con
 ```python
 # 1. `poke` mode (the default) — holds a worker slot the entire time. For waits of seconds, not hours.
 BigQueryTableExistenceSensor(task_id="wait", project_id=..., dataset_id=..., table_id=...,
-                             poke_interval=10, timeout=300)
+                             poke_interval=10, timeout=300, mode="poke")
 
 # 2. `reschedule` mode — the task's process exits between pokes and is re-queued.
-BigQueryTableExistenceSensor(..., mode="reschedule")
+BigQueryTableExistenceSensor(..., poke_interval=10, timeout=300, mode="reschedule")
 
 # 3. Deferrable — hands the wait to the triggerer and frees the slot entirely.
-BigQueryTableExistenceSensor(..., deferrable=True)
+BigQueryTableExistenceSensor(..., poke_interval=10, timeout=300, deferrable=True)
 ```
+
+`poke_interval` y `timeout` se aplican a las tres. `mode` elige entre las dos
+primeras; `deferrable=True` sustituye a ambas, y entonces `mode` se ignora.
 
 Con el modo por defecto, `mode="poke"`, el proceso de la task sigue vivo entre
 pokes, dormido, ocupando su worker slot. Con `mode="reschedule"`, el proceso
