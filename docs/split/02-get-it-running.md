@@ -97,9 +97,9 @@ tutorial needs it; it is here for the day something is stuck and
 > **One shell for the rest.** Every command after this point is written for
 > bash: Linux, macOS, WSL2, or Git Bash on Windows. The two `.ps1` scripts
 > exist so that PowerShell can start and reset the stack, but the tutorial's
-> commands use `\` line continuations, `grep` and single-quoted JSON, all of
-> which PowerShell reads differently. On Windows, open Git Bash for everything
-> below.
+> commands use `\` line continuations, `grep`, `#` comments and single-quoted
+> JSON, all of which PowerShell and the Command Prompt (`cmd`) read
+> differently. On Windows, open Git Bash for everything below.
 >
 > On **Git Bash**, a few later commands pass a `/opt/...` path into a
 > container, and each carries the prefix `MSYS_NO_PATHCONV=1`. Without it,

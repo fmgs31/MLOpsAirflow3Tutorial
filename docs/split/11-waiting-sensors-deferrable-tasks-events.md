@@ -70,10 +70,11 @@ When a check can be deferrable or `reschedule`, two things decide:
 `poke` is for waits of seconds: it holds the slot the whole time, and in
 exchange the task does not restart between pokes.
 
-`dags/05_sensors_and_events.py` chains one of each. `wait_for_table` waits for
-the table to exist: the Google provider has the trigger, and the wait may be
-long, so it is deferrable. `enough_rows` then waits for the table to have 500
-rows: a threshold of your own, with no trigger, so it is a `@task.sensor` in
+`dags/05_sensors_and_events.py` chains two sensors. Both waits may be long, so
+neither uses `poke`; what separates them is the trigger. `wait_for_table` waits
+for the table to exist, and the Google provider has the trigger for that, so it
+is deferrable. `enough_rows` then waits for the table to have 500 rows: a
+threshold of your own, with no trigger, so it is a `@task.sensor` in
 `reschedule` mode. It starts only once there is a table to count. Here is where
 each step waits. Each column is one system, as in the §9 diagram:
 
@@ -144,8 +145,8 @@ asks BigQuery every `poke_interval` seconds whether the table exists, through
 the `google_cloud_default` connection the compose file defines (§9). After
 `timeout` seconds without the table, the task fails.
 
-The table to wait for comes from a **Dag param**, `table`, with
-`labeled_projects` as its default, so a run can be pointed at another table
+The table to wait for comes from a **Dag param**, `table`. Its default is
+`config.LABELED_PROJECTS_TABLE`, which `config.py` sets to `labeled_projects`, so a run can be pointed at another table
 with `-c`, as you will do in Run it. `table_id` is a templated field (§6), so `{{ params.table }}` is
 rendered when the task runs.
 
@@ -182,6 +183,11 @@ by its first poke the table exists and the check only has to count. The
 result of `enough_rows()` goes in a variable, `rows`, because it is used
 twice: `wait_for_table >> rows` sets the order, and `proceed(rows)` passes the
 row count (§6).
+
+Both sensors check every 10 seconds and give up after five minutes. Those
+values are short so that each state in Run it shows up within seconds. A real
+wait for a table that lands once a day would check every few minutes and give
+up after hours: `poke_interval=60 * 5, timeout=60 * 60 * 6`, for example.
 
 > Deferrable sensors need the Triggerer (§3) running. Without it, they sit in
 > `deferred` indefinitely.
@@ -222,6 +228,10 @@ docker compose exec airflow-scheduler airflow dags unpause sensors_and_events
 docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r wait-demo -c '{"table": "labeled_projects_copy"}'   # pick a new id if you rerun
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events wait-demo -o plain
 ```
+
+`-r wait-demo` names the run (§7), so `states-for-dag-run` can find it by that
+name. A run id can be used only once per Dag, hence the comment. `-c` sets the
+`table` param to `labeled_projects_copy`, a table that does not exist yet.
 
 **Checkpoint.** After a few seconds, `wait_for_table` reads `deferred`: its
 first check found no table, its process has exited, and the Triggerer asks
@@ -275,7 +285,8 @@ The two sensors in `sensors_and_events` ask again and again whether
 something has happened.
 **Event-driven scheduling** turns that around: the outside service sends a
 message to a queue (such as Amazon SQS) when something happens, and Airflow
-reacts. It does not go in the file, because it needs a queue you do not have.
+reacts. This example is not added to `dags/05_sensors_and_events.py`, because
+it needs a real message queue and the tutorial stack has none.
 Attach a *watcher* (a trigger that watches the queue) to an asset, and each
 message that arrives updates the asset, which starts a run of every Dag
 scheduled on it (§8). No task waits, and no worker slot is used:

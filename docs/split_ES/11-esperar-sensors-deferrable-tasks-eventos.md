@@ -74,9 +74,10 @@ Cuando una comprobación puede ser deferrable o `reschedule`, deciden dos cosas:
 `poke` es para esperas de segundos: ocupa el slot todo el tiempo y, a cambio,
 la task no vuelve a arrancar entre pokes.
 
-`dags/05_sensors_and_events.py` encadena uno de cada. `wait_for_table` espera
-a que exista la tabla: el provider de Google tiene el trigger, y la espera
-puede ser larga, así que es deferrable. Después, `enough_rows` espera a que la
+`dags/05_sensors_and_events.py` encadena dos sensors. Las dos esperas pueden
+ser largas, así que ninguno usa `poke`; lo que los separa es el trigger.
+`wait_for_table` espera a que exista la tabla, y el provider de Google tiene el
+trigger para eso, así que es deferrable. Después, `enough_rows` espera a que la
 tabla tenga 500 filas: un umbral propio, sin trigger, así que es un
 `@task.sensor` en modo `reschedule`. Solo arranca cuando ya hay una tabla que
 contar. Aquí se ve dónde espera cada paso. Cada columna es un sistema, como en
@@ -149,8 +150,9 @@ pregunta a BigQuery cada `poke_interval` segundos si existe la tabla, a través
 de la connection `google_cloud_default` que define el archivo de compose
 (§9). Si pasan `timeout` segundos sin la tabla, la task falla.
 
-La tabla que hay que esperar la indica un **param del Dag**, `table`, con
-`labeled_projects` por defecto, así que se puede apuntar un run a otra tabla
+La tabla que hay que esperar la indica un **param del Dag**, `table`. Su valor
+por defecto es `config.LABELED_PROJECTS_TABLE`, que `config.py` define como
+`labeled_projects`, así que se puede apuntar un run a otra tabla
 con `-c`, como harás en Ejecútalo. `table_id` es un campo con template (§6), así
 que `{{ params.table }}` se renderiza cuando corre la task.
 
@@ -189,6 +191,12 @@ termina con éxito, así que en su primer poke la tabla ya existe y la
 comprobación solo tiene que contar. El resultado de `enough_rows()` se guarda
 en una variable, `rows`, porque se usa dos veces: `wait_for_table >> rows`
 fija el orden, y `proceed(rows)` pasa el recuento de filas (§6).
+
+Los dos sensors comprueban cada 10 segundos y se rinden a los cinco minutos.
+Son valores cortos para que cada estado de Ejecútalo aparezca en segundos. Una
+espera real de una tabla que llega una vez al día comprobaría cada pocos
+minutos y se rendiría tras horas: `poke_interval=60 * 5, timeout=60 * 60 * 6`,
+por ejemplo.
 
 > Los sensors deferrable necesitan el Triggerer (§3) corriendo. Sin él, se
 > quedan en `deferred` indefinidamente.
@@ -231,6 +239,11 @@ docker compose exec airflow-scheduler airflow dags unpause sensors_and_events
 docker compose exec airflow-scheduler airflow dags trigger sensors_and_events -r wait-demo -c '{"table": "labeled_projects_copy"}'   # pick a new id if you rerun
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run sensors_and_events wait-demo -o plain
 ```
+
+`-r wait-demo` le pone nombre al run (§7), así que `states-for-dag-run` puede
+encontrarlo por ese nombre. Un run id solo se puede usar una vez por Dag, de
+ahí el comentario. `-c` pone el param `table` a `labeled_projects_copy`, una
+tabla que todavía no existe.
 
 **Comprobación.** A los pocos segundos, `wait_for_table` aparece como
 `deferred`: su primera comprobación no encontró la tabla, su proceso ha
@@ -287,8 +300,9 @@ DROP TABLE `<your project id>.mlops_course.labeled_projects_copy`
 Los dos sensors de `sensors_and_events` preguntan una y otra vez si algo ha
 ocurrido. El **event-driven scheduling** le da la vuelta: el servicio externo
 envía un mensaje a una cola (como Amazon SQS) cuando algo ocurre, y Airflow
-reacciona. No va en el archivo, porque necesita una cola que no tienes. Asocia
-a un asset un *watcher* (un trigger que vigila la cola), y cada mensaje que
+reacciona. Este ejemplo no se añade a `dags/05_sensors_and_events.py`, porque
+necesita una cola de mensajes real y el stack del tutorial no tiene ninguna.
+Asocia a un asset un *watcher* (un trigger que vigila la cola), y cada mensaje que
 llega actualiza el asset, lo que arranca un run de cada Dag programado sobre
 él (§8). Ninguna task espera, y no se usa ningún worker slot:
 

@@ -100,9 +100,10 @@ este tutorial lo necesita; está aquí para el día en que algo se atasque y
 > **Una sola shell para el resto.** Todos los comandos a partir de aquí están
 > escritos para bash: Linux, macOS, WSL2 o Git Bash en Windows. Los dos scripts
 > `.ps1` existen para que PowerShell pueda levantar y resetear el stack, pero
-> los comandos del tutorial usan continuaciones de línea con `\`, `grep` y JSON
-> entre comillas simples, y PowerShell lee todo eso de otra manera. En Windows,
-> abre Git Bash para todo lo que sigue.
+> los comandos del tutorial usan continuaciones de línea con `\`, `grep`,
+> comentarios con `#` y JSON entre comillas simples, y PowerShell y el Símbolo
+> del sistema (`cmd`) leen todo eso de otra manera. En Windows, abre Git Bash
+> para todo lo que sigue.
 >
 > En **Git Bash**, unos pocos comandos de más adelante pasan una ruta `/opt/...`
 > a un contenedor, y cada uno lleva el prefijo `MSYS_NO_PATHCONV=1`. Sin él,
