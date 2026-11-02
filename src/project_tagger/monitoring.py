@@ -88,9 +88,12 @@ def prepare_windows(run_key: str, df: pd.DataFrame | None = None) -> dict[str, A
 def production_performance(current_fp: str | None) -> dict[str, Any] | None:
     """Score the champion, and the version a rollback would go back to, on the current window.
 
-    None if there is no window to score on. `f1_previous` is None when there is
-    no previous champion. Both models have never seen these rows: the champion
-    was trained on everything the warehouse had then, the previous one on less.
+    None if there is no window to score on. `f1_now` is the champion's on the
+    whole window; `f1_recent` on its last `config.RECENT_DAYS` alone, or None
+    when those hold fewer than `config.MIN_MONITOR_ROWS` rows. `f1_previous`
+    is the previous champion's on the whole window, None when there is none.
+    Both models have never seen these rows: the champion was trained on
+    everything the warehouse had then, the previous one on less.
     """
     champion = registry.get_production()
     if champion is None or current_fp is None:
@@ -99,7 +102,12 @@ def production_performance(current_fp: str | None) -> dict[str, Any] | None:
     # learned counts as `other`, as it did at training time.
     current = pd.read_parquet(current_fp)
     current["tag"] = current["tag"].where(current["tag"].isin(config.ACCEPTED_TAGS), config.OTHER_TAG)
-    metrics = evaluate_module.evaluate(registry.load_model(), current)
+    model = registry.load_model()
+    metrics = evaluate_module.evaluate(model, current)
+    recent = current[current["created_on"] > current["created_on"].max() - pd.Timedelta(days=config.RECENT_DAYS)]
+    f1_recent = None
+    if len(recent) >= config.MIN_MONITOR_ROWS:
+        f1_recent = evaluate_module.evaluate(model, recent)["f1"]
     previous = registry.get_previous()
     f1_previous = None
     if previous is not None:
@@ -109,6 +117,9 @@ def production_performance(current_fp: str | None) -> dict[str, Any] | None:
         "version": champion["version"],
         "f1_at_promotion": champion["metrics"]["f1"],
         "f1_now": metrics["f1"],
+        "f1_recent": f1_recent,
+        "recent_rows": len(recent),
+        "per_class": metrics["per_class"],
         "slices": metrics["slices"],
         "previous_version": previous["version"] if previous else None,
         "f1_previous": f1_previous,

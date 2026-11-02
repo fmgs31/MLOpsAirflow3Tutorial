@@ -364,6 +364,12 @@ MANUAL INSPECTION NEEDED
   new labels: ['other']
   current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
   f1 at promotion=… now=…
+  computer-vision: 71 rows, f1 …
+  mlops: 16 rows, f1 …
+  natural-language-processing: 78 rows, f1 …
+  other: 26 rows, f1 …
+  short_text: 11 rows, f1 …
+  mentions_transformer: 28 rows, f1 …
 ```
 
 e `inspect` falla con `manual inspection needed - nothing was retrained or
@@ -398,8 +404,7 @@ other                   26  2026-09-11  2026-10-13
 Los tres tags se acaban donde empieza `other`. Desde el 11 de septiembre de
 2026, el origen los escribe como `other`, que es la misma fusión que ya hace el
 modelo: aprende cuatro clases, y todo otro tag pasa a `other` (§10). La línea
-`f1 at promotion=… now=…`, registrada antes de `decide`, coincide: no hay
-caída, así que el modelo funciona igual de bien con los proyectos nuevos que
+`f1 at promotion=… now=…` coincide: no hay caída, así que el modelo funciona igual de bien con los proyectos nuevos que
 con su split de test. Reentrenar no arreglaría esto. El arreglo es darles a las
 filas viejas el vocabulario nuevo, en el transform, para que el historial y
 los datos nuevos usen las mismas etiquetas. En `labeled_projects.sql`,
@@ -433,8 +438,9 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
 **Comprobación.** `new_labels=[]`, así que `decide` ya no se para en
-`inspect`. El label drift queda ahora cerca de `0.006`, el length drift sigue
-cerca de `5e-19`, y `decide` toma `trigger_retraining`, como en la §12, y deja
+`inspect`. El label drift queda ahora cerca de `0.006` con un shift de 0.10, el
+length drift sigue cerca de `5e-19` con 0.35, los dos shifts por encima de
+`min_drift_shift`, y `decide` toma `trigger_retraining`, como en la §12, y deja
 en cola un run de `mlops`, que sigue en cola mientras `mlops` esté en pausa.
 
 Los dos tests siguen informando de drift, y los dos tienen razón. Estos 191

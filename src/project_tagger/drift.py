@@ -9,6 +9,12 @@ p-value below the threshold means drift.
     ChiSquareDrift  on the tag            target drift: has the label mix moved?
     KSDrift         on the text length    data drift: do the inputs look different?
 
+A p-value says how sure the test is that something moved, not how much: with
+enough rows, a tiny change is significant. So each result also has a `shift`,
+from 0 to 1: for the tags, the share of rows whose tag would have to change
+for the two mixes to match (total variation distance); for the length, the
+largest gap between the two cumulative distributions (the KS distance).
+
 alibi-detect pins numpy<2, which Airflow 3.3.1 cannot accept, so this module
 runs in its own virtualenv (/opt/venvs/alibi, see Dockerfile) through
 `@task.external_python`. That is why it imports only numpy, pandas (with
@@ -44,7 +50,10 @@ def label_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict[
     x_ref = reference.map(codes).to_numpy().reshape(-1, 1)
     x_cur = current.map(codes).to_numpy().reshape(-1, 1)
     detector = ChiSquareDrift(x_ref, p_val=p_val, categories_per_feature={0: len(categories)})
-    return _summary(detector.predict(x_cur))
+    # alibi-detect's `distance` here is the chi-squared statistic, which grows
+    # with the row count; the shift is the size of the change itself.
+    shares = reference.value_counts(normalize=True).sub(current.value_counts(normalize=True), fill_value=0)
+    return {**_summary(detector.predict(x_cur)), "shift": float(shares.abs().sum() / 2)}
 
 
 def length_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict[str, Any]:
@@ -53,7 +62,8 @@ def length_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict
     x_ref = reference.str.split().str.len().to_numpy(dtype="float32").reshape(-1, 1)
     x_cur = current.str.split().str.len().to_numpy(dtype="float32").reshape(-1, 1)
     detector = KSDrift(x_ref, p_val=p_val)
-    return _summary(detector.predict(x_cur))
+    summary = _summary(detector.predict(x_cur))
+    return {**summary, "shift": summary["distance"]}
 
 
 def distribution(tags: pd.Series) -> dict[str, float]:

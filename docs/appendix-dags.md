@@ -987,7 +987,10 @@ POLICY_PARAMS = {
     "drift_p_val": Param(
         0.05, type="number", description="A drift test with a p-value below this reports drift."
     ),
-    "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
+    "min_drift_shift": Param(
+        0.05, type="number", description="...and only if at least this much of the distribution moved (0-1)."
+    ),
+    "max_f1_drop": Param(0.15, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
 }
 
@@ -1023,21 +1026,20 @@ def monitoring_dag():
     def detect_drift(windows: dict, p_val: str) -> dict | None:
         from project_tagger import drift
 
-        # label_drift and length_drift (each with is_drift, p_val, distance), new_labels
-        # and both tag distributions; None when there are no files.
+        # label_drift and length_drift (each with is_drift, p_val, distance, shift),
+        # new_labels and both tag distributions; None when there are no files.
         return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
-        # The champion's f1_at_promotion, its f1_now on the current window, and
-        # f1_previous, the previous champion's on the same rows (None if there
-        # is no previous champion); None when there is no window.
+        # The champion's f1_at_promotion; its f1_now on the current window and
+        # f1_recent on the newest rows of it; f1_previous, the previous
+        # champion's on the window; per_class and slices. None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
-            print(
-                f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f} "
-                f"previous champion={performance['f1_previous']}"
-            )
+            f1s = {k: performance[k] for k in ("f1_at_promotion", "f1_now", "f1_recent", "f1_previous")}
+            print({k: None if f1 is None else round(f1, 4) for k, f1 in f1s.items()})
+            print(f"recent: the last {config.RECENT_DAYS} days, {performance['recent_rows']} rows")
         return performance
 
     def retrain_or_wait(windows: dict[str, Any], ti) -> str:
@@ -1074,11 +1076,18 @@ def monitoring_dag():
 
         label, length = drift["label_drift"], drift["length_drift"]
         print(
-            f"label drift p={label['p_val']:.4g} length drift p={length['p_val']:.4g} "
+            f"label drift p={label['p_val']:.4g} shift={label['shift']:.3f} "
+            f"length drift p={length['p_val']:.4g} shift={length['shift']:.3f} "
             f"new_labels={drift['new_labels']} policy={dict(params)}"
         )
-        f1_drop = performance["f1_at_promotion"] - performance["f1_now"]
+        # The larger drop of the two windows: a cumulative f1 can hide a recent fall.
+        f1_worst = min(f1 for f1 in (performance["f1_now"], performance["f1_recent"]) if f1 is not None)
+        f1_drop = performance["f1_at_promotion"] - f1_worst
         print(f"f1_drop={f1_drop:.4f}")
+
+        def drifted(test: dict[str, Any]) -> bool:
+            # Sure that something moved, and enough of it to be worth a training run.
+            return test["p_val"] < params["drift_p_val"] and test["shift"] >= params["min_drift_shift"]
 
         if f1_drop >= params["critical_f1_drop"]:
             # Roll back only to a model that does better on the same rows. If
@@ -1092,9 +1101,9 @@ def monitoring_dag():
             # data you do not understand yet is how you ship a worse model.
             return "inspect"
         if (
-            f1_drop >= params["max_f1_drop"]                    # concept drift
-            or label["p_val"] < params["drift_p_val"]           # target drift
-            or length["p_val"] < params["drift_p_val"]          # data drift
+            f1_drop >= params["max_f1_drop"]    # concept drift
+            or drifted(label)                   # target drift
+            or drifted(length)                  # data drift
         ):
             return retrain_or_wait(windows, ti)
         return "continue_serving"
@@ -1109,6 +1118,9 @@ def monitoring_dag():
         print(f"  new labels: {drift['new_labels']}")
         print(f"  current distribution: {drift['current_distribution']}")
         print(f"  f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        # Where it fails: per tag, and on the evaluation slices of §10.
+        for name, m in {**performance["per_class"], **performance["slices"]}.items():
+            print(f"  {name}: {m['support']} rows, f1 {m['f1']:.4f}")
         raise AirflowFailException("manual inspection needed - nothing was retrained or rolled back")
 
     # Moving `champion` changes the production model as much as a promotion

@@ -350,6 +350,12 @@ MANUAL INSPECTION NEEDED
   new labels: ['other']
   current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
   f1 at promotion=… now=…
+  computer-vision: 71 rows, f1 …
+  mlops: 16 rows, f1 …
+  natural-language-processing: 78 rows, f1 …
+  other: 26 rows, f1 …
+  short_text: 11 rows, f1 …
+  mentions_transformer: 28 rows, f1 …
 ```
 
 and `inspect` fails with `manual inspection needed - nothing was retrained
@@ -383,8 +389,8 @@ other                   26  2026-09-11  2026-10-13
 The three tags stop where `other` starts. From 11 September 2026 on, the
 source writes them as `other`, which is the same merge the model already
 makes: it learns four classes, and every other tag becomes `other` (§10). The
-`f1 at promotion=… now=…` line, logged before `decide`, agrees: no drop, so
-the model is as good on the new projects as on its test split. Retraining
+`f1 at promotion=… now=…` line agrees: no drop, so the model is as good on
+the new projects as on its test split. Retraining
 would not fix this. The fix is to give the old rows the new vocabulary, in the
 transform, so the history and the new data use the same labels. In
 `labeled_projects.sql`, replace the last column, `t.tag`, so that the model
@@ -417,8 +423,8 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
 **Checkpoint.** `new_labels=[]`, so `decide` no longer stops at `inspect`.
-Label drift is now around `0.006`, length drift still around `5e-19`, and
-`decide` takes `trigger_retraining`, as in §12, and queues a run of `mlops`,
+Label drift is now around `0.006` with a shift of 0.10, length drift still
+around `5e-19` with 0.35, both shifts over `min_drift_shift`, and `decide` takes `trigger_retraining`, as in §12, and queues a run of `mlops`,
 which stays queued while `mlops` is paused.
 
 Both tests still report drift, and both are right. These 191 are Made With ML

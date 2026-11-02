@@ -24,6 +24,15 @@ reports drift. The Kolmogorov–Smirnov (KS) test compares how a numeric value,
 here words per text, is spread in the two windows; the chi-squared test
 compares two sets of category counts.
 
+A p-value says how sure the test is that something moved, not how much. With
+enough rows, a change too small to matter is still significant, and a monitor
+that retrains on every such change starts training runs nobody needs. So
+each test also reports a **shift**, from 0 to 1: for the tags, the share of
+rows whose tag would have to change for the two mixes to match (the *total
+variation distance*); for the length, the largest gap between the two
+cumulative distributions (the *KS distance*). The policy counts drift only
+when the p-value is small *and* the shift is at least `min_drift_shift`.
+
 Both windows come from the production model's own training run. In §10,
 `train_best` logged `split_ids.json` with the run: the project ids in each of
 its splits. **Reference** is every row of `labeled_projects` whose id was in
@@ -32,6 +41,12 @@ none of its splits. Its test rows are in neither window: it never learned
 from them, but it was chosen on them. With fewer than 50 current rows
 (`config.MIN_MONITOR_ROWS`) there is nothing to measure yet, and the Dag keeps
 serving and looks again on its next run.
+
+The f1 is measured twice on the current window: on all of it, and on its
+newest rows alone, those created in its last 90 days (`config.RECENT_DAYS`),
+when they are at least 50. An f1 over everything the model has not seen can
+hide a recent fall: a good year averages out a bad month. The policy takes
+the larger of the two drops.
 
 Every monitoring run ends in one of four actions. In
 `dags/06_monitoring_and_retraining.py`, the `decide` task, a `@task.branch`
@@ -154,7 +169,10 @@ POLICY_PARAMS = {
     "drift_p_val": Param(
         0.05, type="number", description="A drift test with a p-value below this reports drift."
     ),
-    "max_f1_drop": Param(0.10, type="number", description="f1 drop that triggers retraining."),
+    "min_drift_shift": Param(
+        0.05, type="number", description="...and only if at least this much of the distribution moved (0-1)."
+    ),
+    "max_f1_drop": Param(0.15, type="number", description="f1 drop that triggers retraining."),
     "critical_f1_drop": Param(0.25, type="number", description="f1 drop that triggers rollback."),
 }
 
@@ -215,21 +233,20 @@ performance check both read them:
     def detect_drift(windows: dict, p_val: str) -> dict | None:
         from project_tagger import drift
 
-        # label_drift and length_drift (each with is_drift, p_val, distance), new_labels
-        # and both tag distributions; None when there are no files.
+        # label_drift and length_drift (each with is_drift, p_val, distance, shift),
+        # new_labels and both tag distributions; None when there are no files.
         return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
-        # The champion's f1_at_promotion, its f1_now on the current window, and
-        # f1_previous, the previous champion's on the same rows (None if there
-        # is no previous champion); None when there is no window.
+        # The champion's f1_at_promotion; its f1_now on the current window and
+        # f1_recent on the newest rows of it; f1_previous, the previous
+        # champion's on the window; per_class and slices. None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
-            print(
-                f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f} "
-                f"previous champion={performance['f1_previous']}"
-            )
+            f1s = {k: performance[k] for k in ("f1_at_promotion", "f1_now", "f1_recent", "f1_previous")}
+            print({k: None if f1 is None else round(f1, 4) for k, f1 in f1s.items()})
+            print(f"recent: the last {config.RECENT_DAYS} days, {performance['recent_rows']} rows")
         return performance
 ```
 
@@ -266,11 +283,16 @@ Then decide:
 
         label, length = drift["label_drift"], drift["length_drift"]
         print(
-            f"label drift p={label['p_val']:.4g} length drift p={length['p_val']:.4g} "
+            f"label drift p={label['p_val']:.4g} shift={label['shift']:.3f} "
+            f"length drift p={length['p_val']:.4g} shift={length['shift']:.3f} "
             f"new_labels={drift['new_labels']} policy={dict(params)}"
         )
-        f1_drop = performance["f1_at_promotion"] - performance["f1_now"]
+        f1_worst = min(f1 for f1 in (performance["f1_now"], performance["f1_recent"]) if f1 is not None)
+        f1_drop = performance["f1_at_promotion"] - f1_worst
         print(f"f1_drop={f1_drop:.4f}")
+
+        def drifted(test: dict[str, Any]) -> bool:
+            return test["p_val"] < params["drift_p_val"] and test["shift"] >= params["min_drift_shift"]
 
         if f1_drop >= params["critical_f1_drop"]:
             f1_previous = performance["f1_previous"]
@@ -280,9 +302,9 @@ Then decide:
         if drift["new_labels"]:
             return "inspect"
         if (
-            f1_drop >= params["max_f1_drop"]                    # concept drift
-            or label["p_val"] < params["drift_p_val"]           # target drift
-            or length["p_val"] < params["drift_p_val"]          # data drift
+            f1_drop >= params["max_f1_drop"]    # concept drift
+            or drifted(label)                   # target drift
+            or drifted(length)                  # data drift
         ):
             return retrain_or_wait(windows, ti)
         return "continue_serving"
@@ -291,8 +313,10 @@ Then decide:
 `params` is the policy — the defaults in `POLICY_PARAMS`, or whatever this run
 was given. The first two checks come before any policy: no production model
 means there is one to train, and no current window means there is nothing to
-judge yet. After them, each retraining condition watches one of the three
-kinds of drift in the table. Note the ordering: **a new label routes to
+judge yet. After them, `f1_drop` is the larger drop of the two f1 windows,
+`drifted` asks a test for both a small p-value and a large enough shift, and
+each retraining condition watches one of the three kinds of drift in the
+table. Note the ordering: **a new label routes to
 `inspect`, not to `trigger_retraining`.** Retraining on data whose label space
 you have not understood yet is how you ship a worse model with full
 confidence.
@@ -332,6 +356,8 @@ another Dag:
         print(f"  new labels: {drift['new_labels']}")
         print(f"  current distribution: {drift['current_distribution']}")
         print(f"  f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        for name, m in {**performance["per_class"], **performance["slices"]}.items():
+            print(f"  {name}: {m['support']} rows, f1 {m['f1']:.4f}")
         raise AirflowFailException("manual inspection needed - nothing was retrained or rolled back")
 
     @task(outlets=[PRODUCTION_MODEL])
@@ -359,7 +385,8 @@ another Dag:
     )
 ```
 
-`inspect` prints what a person needs to start looking, then fails on purpose,
+`inspect` prints what a person needs to start looking: what moved, and where
+the model fails, per tag and on each evaluation slice of §10. Then it fails on purpose,
 with `AirflowFailException` (§9). A run that needs a person must not end
 green: a success is read as "all fine", and a failure is what alerting is
 wired to (§16).
@@ -411,19 +438,21 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 
 **Checkpoint.** `prepare_windows` logs `'num_current': 800`, with `version`
 the champion's: the 800 papers are the rows it has never seen.
-`check_performance` logs its f1 at promotion and now, around 0.89 and 0.82: a
-drop of 0.05 to 0.10, depending on the search, under `max_f1_drop`. It also
-logs `previous champion=None`: this is the first model ever promoted, so
-there is nothing to compare it with. `decide` logs the two
-p-values: label drift around `1e-22`, length drift `0`. Both are far below
-0.05, and they say different things:
+`check_performance` logs its f1 at promotion and now, around 0.89 and 0.80: a
+drop of 0.05 to 0.11, depending on the search, under `max_f1_drop` (0.15).
+`f1_recent`, on the 122 papers of the last 90 days, is higher than `f1_now`:
+the newest papers are not the ones it gets wrong, so the whole window gives
+the larger drop. `f1_previous` is `None`: this is the first model ever
+promoted, so there is nothing to compare it with. `decide` logs the two
+p-values, label drift around `1e-22` and length drift `0`, both far below
+0.05, and both shifts well above 0.05. They say different things:
 
-- **Target drift.** `computer-vision` is 38% of the rows the model learned
-  from and 57% of the new ones; `mlops`, 8% of what it learned from, does not
-  appear at all.
-- **Data drift.** A text has 16 words at the median in the rows the model
-  learned from, and 27 in the new ones: a p-value too small to print as
-  anything but `0`.
+- **Target drift**, shift 0.19. `computer-vision` is 38% of the rows the
+  model learned from and 57% of the new ones; `mlops`, 8% of what it learned
+  from, does not appear at all.
+- **Data drift**, shift 0.63. A text has 16 words at the median in the rows
+  the model learned from, and 27 in the new ones: a p-value too small to
+  print as anything but `0`.
 - **Performance.** The f1 fell, but by less than `max_f1_drop`, so the
   concept-drift check alone would not have fired.
 
@@ -495,6 +524,24 @@ so every row is in one of its splits. The next delivery, in §14, gives the
 monitor something to measure again.
 
 Reference: [`solutions/06_monitoring_and_retraining.py`](../../solutions/06_monitoring_and_retraining.py).
+
+### What the monitor does not see
+
+The performance check needs the true tag of every current row, and here each
+row arrives with its tag, chosen by whoever submitted the project. In most
+systems the truth arrives late, or never: a loan defaults months after the
+decision, and nobody reports back on most recommendations. Until it arrives
+there are three ways round it: a **proxy** for the label, a signal that comes
+sooner; **labelling a small sample** of the new rows by hand; or
+**importance weighting**, which estimates the production f1 from rows that do
+have labels, each slice of them weighted by how common it is in production
+now. The drift tests
+need no labels, which is why they are worth running even where the f1 cannot
+be measured yet.
+
+Nor does it watch the system itself: latency, throughput, error rates, CPU
+and memory. Those belong to the serving layer, the service that answers
+prediction requests, which this project does not have.
 
 ### What "retrain" leaves out
 

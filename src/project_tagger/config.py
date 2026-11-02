@@ -102,6 +102,10 @@ ALIBI_PYTHON = os.getenv("PROJECT_TAGGER_ALIBI_PYTHON", "/opt/venvs/alibi/bin/py
 # to measure yet: the monitoring Dag keeps serving and checks again next run.
 MIN_MONITOR_ROWS = int(os.getenv("PROJECT_TAGGER_MIN_MONITOR_ROWS", "50"))
 
+# The production f1 is also measured on the newest rows alone, those created in
+# the last RECENT_DAYS of the current window: a cumulative f1 can hide a recent fall.
+RECENT_DAYS = int(os.getenv("PROJECT_TAGGER_RECENT_DAYS", "90"))
+
 
 def table_id(table: str) -> str:
     """Fully qualified BigQuery table id: `project.dataset.table`."""
