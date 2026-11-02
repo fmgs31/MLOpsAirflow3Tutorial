@@ -31,10 +31,9 @@ import, and MLflow is a service in the compose stack.
 (here: maximise f1). A **trial** is one attempt: Optuna picks a value for each
 hyperparameter, the code trains and scores a model with them, and the score
 goes back to the study. Optuna does not try every combination: it uses the
-scores so far to choose the next values. The study is stored in a database,
-here the `optuna` database on the stack's Postgres, so several processes can
-add trials to the same study at the same time, which is what lets Airflow
-spread the search over several tasks.
+scores so far to choose the next values. The study lives in the `optuna`
+database on the stack's Postgres, so several processes can add trials to it at
+once: that is what lets Airflow spread the search over several tasks.
 
 **MLflow** records experiments. Each training is a **run**, with its
 **parameters** (the hyperparameters used), its **metrics** (f1, precision...)
@@ -53,15 +52,15 @@ Promoting a model means moving `champion`; rolling back means moving it back.
 No file is copied: consumers ask for `models:/project_tagger@champion` and get
 whatever version the alias points at.
 
-The MLflow server is the `mlflow` service in the compose file. It stores runs
-and the registry in a SQLite file and the model files in a folder of its own,
-on a Docker volume, and the tasks reach it at `http://mlflow:5000`
-(`MLFLOW_TRACKING_URI`). Open its UI:
+The MLflow server is the `mlflow` compose service. It keeps runs and the
+registry in a SQLite file and the model files in a folder, both on a Docker
+volume; tasks reach it at `http://mlflow:5000` (`MLFLOW_TRACKING_URI`). Open
+its UI:
 
 **Checkpoint.** <http://localhost:5000> shows MLflow with one experiment,
-`Default`, and no runs. The `project_tagger` experiment doesn't exist yet: the
-`mlops` Dag's code creates it (`mlflow.set_experiment` in
-`src/project_tagger/train.py`) the first time it logs a run.
+`Default`, and no runs. `project_tagger` doesn't exist yet:
+`mlflow.set_experiment` in `src/project_tagger/train.py` creates it the first
+time the `mlops` Dag logs a run.
 
 ### How the pieces talk to each other
 
@@ -103,9 +102,9 @@ Each column is one system, as in the §9 diagram:
 ```
 
 BigQuery is read once, in step 1; every later task reads the snapshot files,
-so the whole run works on the same data. MLflow ends up with one run for the
-study, with the trials as child runs under it, plus the final run; the model
-file is uploaded only with the final run.
+so the whole run works on the same data. MLflow ends up with the study's run,
+the trials as its child runs, and the final run, the only one with the model
+file.
 
 ### Build it
 
@@ -158,14 +157,14 @@ def run_key(run_id: str) -> str:
 def mlops():
 ```
 
-`schedule=[LABELED_PROJECTS]` is the key line: a list of assets, and the Dag
-runs when they update. Several assets in the list mean *all* of them,
-as `AssetAll(a, b)` does; `AssetAny(a, b)` means either.
+`schedule=[LABELED_PROJECTS]` is the key line: the Dag runs when the listed
+assets update. Several assets in the list mean *all* of them, like
+`AssetAll(a, b)`; `AssetAny(a, b)` means either.
 
 `params` declares the search budget as two Dag params (§4): 20 trials in
-total, spread over 4 tasks. They set how much searching happens, not what is
-searched. The hyperparameters Optuna tunes, and their ranges, are fixed in
-`objective()` in `src/project_tagger/train.py`:
+total, spread over 4 tasks. They set how much is searched, not what: the
+hyperparameters Optuna tunes, and their ranges, are fixed in `objective()` in
+`src/project_tagger/train.py`:
 
 | Hyperparameter | Range | What it controls |
 |---|---|---|
@@ -173,9 +172,8 @@ searched. The hyperparameters Optuna tunes, and their ranges, are fixed in
 | `min_df` | 1 to 3 | terms found in fewer projects than this are dropped |
 | `alpha` | 1e-6 to 1e-2, on a log scale | strength of the SGD classifier's regularisation: higher gives a simpler model |
 
-`run_key` turns a run id such as
-`manual__2026-02-01T03:00:00+00:00` into something safe in a file name and a
-study name.
+`run_key` makes a run id such as `manual__2026-02-01T03:00:00+00:00` safe to
+use in file and study names.
 
 **Snapshot the data.** Add the first task:
 
@@ -198,48 +196,45 @@ study name.
 `Asset` imports); on a run you start by hand it is empty. `run_id` is another
 context key (§4), received by name.
 
-`prepare_data` reads the warehouse table once and writes it to a **snapshot**:
-files in a folder named after the run, which every later task reads. The table
-can change while a run is in flight (a `dataops` run can finish in the
-middle), and the snapshot keeps every task of this run on the same rows,
-including a task that is retried an hour later. The files are Parquet, not
-CSV: a Parquet file stores each column's type, so every column comes back as
-it was written, `created_on` as a timestamp and not a string. A CSV is only
-text, and the types are guessed again on every read. The task returns the
-files' paths, a small dict: XComs carry a pointer to the data, not the data
-itself (§6).
+`prepare_data` reads the warehouse table once and writes a **snapshot**: files
+in a folder named after the run, which every later task reads. The table can
+change mid-run (a `dataops` run can finish in the middle); the snapshot keeps
+every task of this run on the same rows, even one retried an hour later. The
+files are Parquet, not CSV: Parquet stores each column's type, so `created_on`
+comes back as a timestamp, not a string; a CSV is only text, and the types are
+guessed again on every read. The task returns the paths, a small dict: XComs
+carry a pointer to the data, not the data itself (§6).
 
 `data.save_snapshot` writes four files: the table as read
 (`labeled_projects.parquet`), which the §9 suite checks, and the model's input
-split three ways: `train.parquet`, `val.parquet` and `test.parquet`. The
-model's input is what `data.preprocess` makes of the table: it drops rows with
-no title or no tag, joins title and description into one cleaned `text`
-column, and turns every tag outside the four classes the model learns
-(`config.ACCEPTED_TAGS`) into `other`. The search fits on train and scores each trial on validation; the final model is
+split three ways (`train.parquet`, `val.parquet`, `test.parquet`). That input
+comes from `data.preprocess`, which drops rows with no title or no tag, joins
+title and description into one cleaned `text` column, and turns every tag
+outside the model's four classes (`config.ACCEPTED_TAGS`) into `other`. The
+search fits on train and scores each trial on validation; the final model is
 fitted on both and scored on test, which nothing has seen before.
 
-The split is **written once**. If each task recomputed it, every task would
-depend on the code, the libraries and the seed being identical wherever it
-runs: a task retried after a deployment could train on some rows and test on
-others, with no warning. Written once, every task reads the same rows, and the
-rows each model was built on are kept.
+The split is **written once**. Recomputed in each task, it would depend on the
+code, the libraries and the seed being identical wherever each task runs: a
+task retried after a deployment could silently train on some rows and test on
+others. Written once, every task reads the same rows, and the rows each model
+was built on are kept.
 
 Each row's split is **decided by its id**. `data.assign_split` hashes each
 project's id into a number from 0 to 99: below 20 is test, 20 to 35
 validation, the rest train (`config.TEST_PCT` and `config.VAL_PCT`). So a
-project lands in the same split in every run, and no model trains on a row
-that is test data for another. That lets `promotion_gate`, later in this
-section, score the new model and the production model on the same test rows,
-and lets monitoring (§12) tell which rows the production model has never seen.
-The cost: the split is no longer stratified (the same share of each tag in
-every split). With hundreds of rows the shares come out close, and the split
-check catches a class that ends up missing or scarce.
+project lands in the same split in every run, and no model trains on another
+model's test rows. That lets `compare_with_champion`, later in this section,
+score the new model and the production model on the same test rows, and lets
+monitoring (§12) tell which rows the production model has never seen. The
+cost: the split is no longer stratified (the same share of each tag in every
+split). With hundreds of rows the shares come out close, and the split check
+catches a class that ends up missing or scarce.
 
 **Validate before you train.** `dataops` validated `labeled_projects` when it
-built it, and this Dag validates it again before training on it. That is not
-redundant: it was a different Dag run, possibly hours ago, this run may have
-been triggered by hand, and the model is fitted on the data as it is *now*.
-Add the second task:
+built it; this Dag validates it again before training. Not redundant: that was
+another Dag run, possibly hours ago, this run may have been triggered by hand,
+and the model is fitted on the data as it is *now*. Add the second task:
 
 ```python dags/04_mlops.py
     @task
@@ -271,14 +266,12 @@ A table-level suite cannot do the split check:
 ("fractions_near_target",       ...,  non-critical)
 ```
 
-Each problem in those comments — a class missing from test, three rows of a
-class, the same project in two splits — passes a column-level suite without a
-warning, yet makes the test f1 meaningless, and that f1 is what
-`promotion_gate` compares against the production model. The minimum rows per
-class counts train and validation together, because the final model learns
-from both. These checks span three dataframes and a GX suite validates one
-batch at a time, so they are plain Python returning the same result shape as
-the suite.
+Each problem in those comments passes a column-level suite without a warning,
+yet makes the test f1 meaningless, and that f1 is what `promotion_gate`
+compares against the production model. The minimum rows per class counts train
+and validation together, because the final model learns from both. These
+checks span three dataframes, and a GX suite validates one batch at a time, so
+they are plain Python returning the same result shape as the suite.
 
 **Distributed tuning.** One Optuna study for the run, then **dynamic task
 mapping**: while the Dag runs, Airflow creates one task instance per item of a
@@ -295,22 +288,22 @@ list, and each adds trials to the same study. First the study, and the list:
         return [base + (1 if i < extra else 0) for i in range(params["n_workers"]) if base or i < extra]
 ```
 
-`create_study` creates the study with `load_if_exists=True` (in `train.py`),
-so a retried task loads the study instead of failing on it. It also opens the
-study's run in MLflow, the **parent run** of every trial, and keeps that run's
-id on the study itself, as a *user attribute* (a value Optuna stores with the
-study). A retry finds the id there and opens no second run.
+`create_study` uses `load_if_exists=True` (in `train.py`), so a retry loads the
+study instead of failing on it. It also opens the study's run in MLflow, the
+**parent run** of every trial, and stores that run's id on the study as a
+*user attribute* (a value Optuna keeps with the study), so a retry finds the id
+there and opens no second run.
 
 `trial_budget` reads the Dag params through the `params` context key and splits
-the trials over `n_workers` tasks: 20 over 4 gives `[5, 5, 5, 5]`. That list
-is what the next task is mapped over.
+the trials over `n_workers` tasks: 20 over 4 gives `[5, 5, 5, 5]`, the list the
+next task is mapped over.
 
 > **`params` is reserved.** A `@task` receives context keys by parameter name
 > (§4), and `params` is one of them: `trial_budget` gets the Dag's params
-> because its argument is called `params`. Name a data argument `params` by
-> mistake and it receives the Dag's params instead of your data.
+> because its argument is called `params`. A data argument named `params` gets
+> them too, instead of your data.
 
-Now the task that is mapped:
+Now the mapped task:
 
 ```python dags/04_mlops.py
     @task(max_active_tis_per_dag=2)
@@ -321,9 +314,9 @@ Now the task that is mapped:
         return results
 ```
 
-Nothing in it mentions mapping. `run_trials` is written for one instance: its
-`n_trials` is one number, not the list. The mapping is in how the wiring at
-the end of the file calls it:
+Nothing in it mentions mapping: `run_trials` is written for one instance, and
+its `n_trials` is one number, not the list. The mapping is in the wiring at the
+end of the file:
 
 ```python
 run_trials.partial(study_name=study, paths=paths).expand(n_trials=trial_budget())
@@ -349,30 +342,27 @@ is decided when the Dag runs, not when it is parsed: set `n_workers` to 2 in a
 run's params and that run has two. Each instance is retried, logged and
 inspected on its own; a retried instance reruns only its own trials.
 
-Each instance fits its trials on the training split, scores them on the
-validation split, and logs every trial to MLflow as a **child run**: a run with
-a parent, which the MLflow UI folds under it. The test split is never seen
-during the search, so the final model's test score is still an honest
-estimate.
+Each instance fits its trials on train, scores them on validation, and logs
+each trial to MLflow as a **child run**: a run with a parent, which the MLflow
+UI folds under it. The search never sees test, so the final model's test score
+stays an honest estimate.
 
 A child run is usually opened with `mlflow.start_run(nested=True)` inside the
-parent's `with mlflow.start_run():` block. That only works in the process that
-opened the parent, and here the parent was opened by `create_study` and each
-trial runs in one of the `run_trials` instances. So `train.py` names the parent
-explicitly, `mlflow.start_run(parent_run_id=...)`, with the id read from the
-study.
+parent's `with mlflow.start_run():` block, which only works in the process
+that opened the parent. Here `create_study` opened it and the trials run in
+the `run_trials` instances, so `train.py` names the parent explicitly:
+`mlflow.start_run(parent_run_id=...)`, with the id read from the study.
 
-**How many `run_trials` instances run at once is a choice, written in
-`run_trials`' decorator.** Nothing about `.expand()` says "in parallel"; it
-says "these are four separate task instances". Whether they overlap is the
-Executor's business, bounded by the narrowest of the limits from §3, and
-`max_active_tis_per_dag=2` on that task is deliberately the narrowest one here.
-So the fan-out runs **two at a time, in two waves**. Raise the cap and all four overlap; remove it and `[core]
-max_active_tasks_per_dag` (16) is the next limit up. A cap on a training task
-is not a toy setting: four instances at once is four copies of the data in
-memory. When the limited resource is shared — say, a database that accepts only
-a few connections — a `pool` (§3) sets the same kind of cap across every task
-and Dag that uses it.
+**How many `run_trials` instances run at once is set in its decorator.**
+`.expand()` does not say "in parallel", only "four separate task instances".
+Whether they overlap is up to the Executor, bounded by the narrowest of the
+§3 limits, and here that is deliberately `max_active_tis_per_dag=2`. So the
+fan-out runs **two at a time, in two waves**. Raise the cap and all four
+overlap; remove it and `[core] max_active_tasks_per_dag` (16) is the next
+limit up. Capping a training task is not a toy setting: four instances at once
+means four copies of the data in memory. When the limited resource is shared,
+say a database that accepts only a few connections, a `pool` (§3) sets the
+same kind of cap across every task and Dag that uses it.
 
 Last, the task that reads the search's result:
 
@@ -414,29 +404,27 @@ Now the final model. Add `train_best`:
         }
 ```
 
-`train_best` fits the final model with the best trial's hyperparameters on the
-training and validation splits together (the validation split has done its
-job, choosing those hyperparameters, and more rows make a better model),
-scores it on the test split, and logs it to MLflow, model file included, as a
-run of its own, outside the study: it is not one more attempt of the search.
-Its tags link it to the Airflow run that made it, the trial its
-hyperparameters came from, and the snapshot it was trained on
+`train_best` fits the final model with the best trial's hyperparameters on
+train and validation together (validation has done its job, choosing those
+hyperparameters, and more rows make a better model), scores it on test, and
+logs it to MLflow, model file included, as a run of its own outside the study:
+it is not one more attempt of the search. Its tags link it to the Airflow run
+that made it, the trial its hyperparameters came from, and its snapshot
 (`snapshot_path`). The run also gets `split_ids.json`, the project ids in each
-split: what the model was built on stays with it in MLflow after the snapshot
-folder is gone, and §12 reads it. Then the task **registers** the model: every
+split, so what the model was built on stays in MLflow after the snapshot
+folder is gone; §12 reads it. Then the task **registers** the model: every
 final model becomes a new version of `project_tagger`, promoted or not, so a
-rejected candidate is still there to inspect. The task returns a run id, a
-version number, the f1 and the slice metrics, small and JSON-serialisable. The
+rejected candidate is still there to inspect. The task returns only small,
+JSON-serialisable values (run id, version number, f1, slice metrics); the
 model itself stays in MLflow.
 
 The slice metrics are the f1 on each **evaluation slice**: a subgroup of the
-test set picked out by a rule in `evaluate.py` (short texts, and texts that
-mention transformers, BERT or LLMs). These are not the time slices of §7; they
-show a model whose overall f1 looks fine while one kind of input fails. They
-are small: of the 157 test rows in this section, 4 are short texts and 23
-mention transformers, so a single prediction moves a slice's f1 a lot. Too
-noisy for a fixed rule to decide on; a person can weigh them, which is what
-`approve_promotion` is for.
+test set picked by a rule in `evaluate.py` (short texts; texts that mention
+transformers, BERT or LLMs). These are not the time slices of §7: they catch a
+model whose overall f1 looks fine while one kind of input fails. They are
+small: of this section's 157 test rows, 4 are short texts and 23 mention
+transformers, so one prediction moves a slice's f1 a lot. Too noisy for a
+fixed rule; a person can weigh them, which is what `approve_promotion` is for.
 
 Then the comparison with the production model. Add `compare_with_champion`:
 
@@ -463,12 +451,11 @@ Then the comparison with the production model. Add `compare_with_champion`:
         return comparison
 ```
 
-`compare_with_champion` loads the production model and the version
-`train_best` just registered, and scores both on this run's test split. The
-champion also has the f1 it logged when it was trained, but that was measured
-on another run's test split, on other rows; comparing it with the new model's
-f1 would compare two exams, not two models. On the same rows the comparison
-is fair, and the hash split makes those rows honest for both: no test row has
+`compare_with_champion` scores the production model and the version
+`train_best` just registered on this run's test split. The f1 the champion
+logged when it was trained was measured on another run's test rows; comparing
+it with the new model's would compare two exams, not two models. On the same
+rows the comparison is fair, and the hash split makes those rows honest for both: no test row has
 ever been in any model's training data, the champion's included.
 
 `evaluate.compare` also splits the test rows by the champion's
@@ -480,21 +467,21 @@ ever been in any model's training data, the champion's included.
 | `old` | the champion's own test rows | whether the new model kept what the champion could do |
 | `all` | both | the whole split |
 
-A retrain exists to do better on the new data, so the `new` rows decide: the
-new model's f1 on them must not be below the champion's. With fewer than 30
-new rows (`config.MIN_NEW_TEST_ROWS`) there is too little new data to decide
-on, and the whole split decides instead. That is the case in this section,
-where every run sees the same 764 rows; in §12 new rows arrive. The `old`
-part is in the log for you to read; §12 comes back to it.
+A retrain exists to do better on new data, so the `new` rows decide: the new
+model's f1 on them must not be below the champion's. With fewer than 30 new
+rows (`config.MIN_NEW_TEST_ROWS`), too few to decide on, the whole split
+decides instead. That is the case in this section, where every run sees the
+same 764 rows; new rows arrive in §12. The `old` part is only logged; §12
+comes back to it.
 
 `compare_with_champion` is a task of its own so that the Graph shows it and
 its log names the version it compared with, part by part. It takes
 `train_best`'s output, which carries the new version, so it runs after it.
 
-Next, the **promotion gate**, which decides whether the new model goes
-to production. Unlike the gates in §9, the gate does not fail the task when the
-answer is no: it is a *branch task*, a task that picks which of the Dag's two
-**branches** continues. Add `summarize_candidate` and `promotion_gate`:
+Next, the **promotion gate**, which decides whether the new model goes to
+production. Unlike the §9 gates, it does not fail when the answer is no: it is
+a *branch task*, which picks which of the Dag's two **branches** continues.
+Add `summarize_candidate` and `promotion_gate`:
 
 ```python dags/04_mlops.py
     @task
@@ -517,17 +504,17 @@ answer is no: it is a *branch task*, a task that picks which of the Dag's two
 
 `summarize_candidate` writes up, with `evaluate.summarize`, what a person needs
 to judge the new model: its f1, both models' f1 on each part of the test split,
-and the f1 on each slice next to its row count. The text is Markdown, and the
-task returns it, so it goes to XCom for `approve_promotion` to show.
+and the f1 on each slice next to its row count. The task returns that Markdown
+text, so it goes to XCom for `approve_promotion` to show.
 
 `promotion_gate` applies the rule in `evaluate.should_promote`: the new
 model's f1 must clear the threshold, `config.MIN_F1_TO_PROMOTE` (0.65, or the
-value of the environment variable `PROJECT_TAGGER_MIN_F1` if set), and, against
-a champion, must not be
-below it on the new rows, or on the whole split when there are too few. A
-`@task.branch` returns the `task_id` to run; the other branch is **skipped**,
-not failed. A candidate that misses the threshold, or loses to the champion,
-is a normal outcome: the run succeeds and production is left alone.
+environment variable `PROJECT_TAGGER_MIN_F1` if set), and, if there is a
+champion, must not fall below it on the new rows, or on the whole split when
+there are too few. A `@task.branch` returns the `task_id` to run; the other
+branch is **skipped**, not failed. A candidate that misses the threshold or
+loses to the champion is a normal outcome: the run succeeds and production is
+left alone.
 
 Then the gate's two branches and the task that joins them. Add
 `approve_promotion`, `promote_model` and two `EmptyOperator`s,
@@ -563,35 +550,33 @@ Then the gate's two branches and the task that joins them. Add
     done = EmptyOperator(task_id="done", trigger_rule="none_failed_min_one_success")
 ```
 
-A model the gate lets through still waits for a person. `approve_promotion`
-is a **human-in-the-loop** task, one that waits for a person to answer.
-`ApprovalOperator` parks it in `awaiting_input` and shows a prompt in the UI,
-on the task instance's **Required Actions** tab and under Browse → **Required
-Actions** (§5). On **Approve**, `promote_model` runs; on **Reject**, it is
-skipped and production is left alone. `defaults` is the answer applied if
-nobody responds within `response_timeout`: sixty seconds here so the lesson's
-runs finish; give it hours in production. `body` is the text of the prompt,
-in Markdown, and it is a template field (§6): `ti.xcom_pull` puts
+A model the gate lets through still waits for a person: `approve_promotion` is
+a **human-in-the-loop** task. `ApprovalOperator` parks it in `awaiting_input`
+and shows a prompt on the task instance's **Required Actions** tab and under
+Browse → **Required Actions** (§5). On **Approve**, `promote_model` runs; on
+**Reject**, it is skipped and production is left alone. `defaults` is the
+answer applied if nobody responds within `response_timeout`: sixty seconds
+here so this section's runs finish; give it hours in production. `body`, the
+prompt's Markdown text, is a template field (§6): `ti.xcom_pull` puts
 `summarize_candidate`'s text in it when the task runs. The gate checks the
 numbers it has a rule for; the person checks what the rules miss, such as a
 slice that fell, with that summary and the new version in MLflow in front of
-them. Airflow records the answer: the
-choice, when, and *by whom*. A run that timed out and fell back to its
-`defaults` stores the choice with the "who" left empty, which is how you tell
+them. Airflow records the choice, when, and *by whom*. A run that timed out
+and fell back to its `defaults` leaves the "who" empty: that is how you tell
 "a person approved this" from "nobody was looking".
 
 `promote_model` moves the `champion` alias and emits `mlops`'s own asset,
 `production_model`, which nothing consumes yet; point a Dag's `schedule` at it
 and the edge appears in the Assets graph.
 
-**Trigger rules** are how a task states what its upstream tasks must have done
-before it runs, and branching is where you first need one. The join, `done`,
-needs `none_failed_min_one_success`, because the default `all_success` would
-skip it as soon as either branch is skipped. The useful ones: `all_success` (default),
+A **trigger rule** states what a task's upstream tasks must have done before
+it runs; branching is where you first need one. The join, `done`, needs
+`none_failed_min_one_success`, because the default `all_success` would skip it
+as soon as either branch is skipped. The useful ones: `all_success` (default),
 `all_done` (run whatever happened upstream — cleanup tasks),
-`none_failed_min_one_success` (joins after a branch), `none_failed` (allows skips
-but not failures), `one_success`, `one_failed` (alerting paths), `all_skipped`,
-and `always`.
+`none_failed_min_one_success` (joins after a branch), `none_failed` (allows
+skips but not failures), `one_success`, `one_failed` (alerting paths),
+`all_skipped`, and `always`.
 
 Finish the file with the wiring:
 
@@ -616,24 +601,24 @@ Finish the file with the wiring:
 mlops()
 ```
 
-`approved_data_gate >> results` wires `validate_training_data` upstream of
-*every* mapped instance of `run_trials`, carrying no data, only the order: no
+`approved_data_gate >> results` puts `validate_training_data` upstream of
+*every* mapped instance of `run_trials`, carrying only the order, no data: no
 trial starts on data that failed its checks. `promotion_gate` takes the results
-of `train_best` and `compare_with_champion`, which itself waits for
-`train_best`, so the three run in that order; `summarize_candidate` takes the
+of `train_best` and `compare_with_champion` (which itself waits for
+`train_best`), so the three run in that order; `summarize_candidate` takes the
 same two, so it runs alongside `promotion_gate`.
 `[summary, decision] >> approve_promotion` is a fan-in (§9):
-`approve_promotion` waits for both. The edge from `summary` is the same kind as
+`approve_promotion` waits for both. The edge from `summary` is order-only, like
 `approved_data_gate >> results`: `approve_promotion` reads the summary through
-a template, not through an argument, so Airflow sees no dependency on its own,
-and without this edge the prompt could be built before the summary exists. The
-edge from `decision`, on to `promote_model` and `done`, is `promotion_gate`'s
-first branch; the last line is its second, and `done` joins them.
+a template, not an argument, so Airflow sees no dependency on its own, and
+without the edge the prompt could be built before the summary exists. The edge
+from `decision`, on to `promote_model` and `done`, is `promotion_gate`'s first
+branch; the last line is its second, and `done` joins them.
 
 ### See the wiring
 
-Save it. You have now written both Dags of the pipeline, `dataops` and
-`mlops`. Airflow links them as soon as it parses the two files, without running
+Save it. Both Dags of the pipeline, `dataops` and `mlops`, are now written.
+Airflow links them as soon as it parses the two files, without running
 either: it records which task produces `labeled_projects` and which Dag waits
 for it. Ask for that asset's details:
 
@@ -676,14 +661,14 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
 Nothing happens on the first line: `mlops`'s schedule is an asset, and no
-event has arrived. The second line starts everything without a trigger, by the
-§7 rule: `dataops` has a cron and a 2025 `start_date`, so the moment it is
-un-paused the Scheduler creates the run for the most recent 03:00 UTC it
-missed, and starts it. Give it a few minutes. Near the end, the `mlops` run
-stops at `approve_promotion`: open the run in the UI, click
-`approve_promotion`, and answer the prompt on its **Required Actions** tab,
-under `summarize_candidate`'s numbers, or leave it and the default approves it
-after 60 seconds. Then:
+event has arrived. The second starts everything without a trigger, by the §7
+rule: `dataops` has a cron and a 2025 `start_date`, so once it is un-paused
+the Scheduler creates and starts the run for the most recent 03:00 UTC it
+missed. Give it a few minutes. Near the end, the `mlops` run stops at
+`approve_promotion`: open the run in the UI, click `approve_promotion`, and
+answer the prompt on its **Required Actions** tab, under
+`summarize_candidate`'s numbers, or let the default approve it after 60
+seconds. Then:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-runs dataops -o plain
@@ -700,10 +685,9 @@ quick, `success` once its trials and the final model are done, with an **empty**
 triggered from the CLI without one (§7). In the UI, **Assets** shows the edge
 that caused it.
 
-Know where the wait comes from. Almost all of it is the tools: the two Airbyte
-syncs in `dataops`, then twenty trials and a final fit in `mlops`, and up to a
-minute at `approve_promotion`. The Airflow
-part is small: one Scheduler loop to create the `dataops` run after the
+Almost all the wait is the tools: the two Airbyte syncs in `dataops`, twenty
+trials and a final fit in `mlops`, and up to a minute at `approve_promotion`.
+Airflow adds little: one Scheduler loop to create the `dataops` run after the
 un-pause, and one more to create the `mlops` run once the asset event is
 recorded (§3, §8). If nothing has appeared after a few minutes, check that both
 Dags are un-paused and that the `dataops` run succeeded — a failed
@@ -712,12 +696,11 @@ Dags are un-paused and that the `dataops` run succeeded — a failed
 Now the two waves of `run_trials`. Open that `mlops` run in the UI, click
 `run_trials`, and read its **Task Instances** tab: four rows, map index 0 to 3,
 each with its own start and end time. Two start together; each of the other
-two starts only when one of the first pair has finished. The *Show Gantt* view
-(§5), available now that a run is selected, draws the same thing as two waves
-of bars. On the **Graph**, try the **Min. map index** filter (§5): set it to 3
-and `run_trials` stays as it is while every other node dims, because it is the only
-mapped task and it has an instance at map index 3; set it to 4 and it dims too.
-Or read it off the CLI:
+two starts when one of the first pair finishes. *Show Gantt* (§5), available
+now that a run is selected, draws them as two waves of bars. On the **Graph**,
+try the **Min. map index** filter (§5): at 3, every node dims except
+`run_trials`, the only mapped task, which has an instance at map index 3; at 4
+it dims too. Or read it off the CLI:
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain
@@ -728,16 +711,15 @@ Four `run_trials` rows with `map_index` 0–3; 2 and 3 each start after one of
 `approve_promotion` and `promote_model` are `success`: `promotion_gate` took
 the `approve_promotion` branch, because the final model's f1 cleared the
 threshold and there was no production model to beat (`compare_with_champion`
-logged `no champion yet`), and the approval came from you or from the
-default.
+logged `no champion yet`), and the approval came from you or the default.
 
 Then look at what the run left in MLflow, at <http://localhost:5000>:
 
 **Checkpoint.** The `project_tagger` experiment shows two runs:
 `project_tagger-asset_triggered__…`, the study's run, and
 `final-asset_triggered__…`, the final run.
-Expand the study's run to see its twenty children, `…-trial-0` to `-trial-19`,
-and sort by the `f1` column to see the search at work. Open the study's run:
+Expand the study's run for its twenty children, `…-trial-0` to `-trial-19`,
+and sort by `f1` to see the search at work. Open the study's run:
 `best_f1` is the best trial's score, and the tag `best_trial_run_id` names it.
 Open the final run: its parameters are the best trial's, its metrics include
 the per-tag and per-slice f1, its tags include `snapshot_path`, and under
@@ -752,34 +734,33 @@ them: MLflow stores it as a logged model of its own, listed on the run's
 > docker compose exec airflow-scheduler airflow dags trigger dataops
 > ```
 >
-> A `manual__` run this time. When it succeeds, one more event, one more
-> `asset_triggered__` run of `mlops`, and one more model version in MLflow.
-> Every success of the producer emits an event, whichever way the producer
-> was started — and the consumer runs on it (events that arrive while `mlops`
-> is busy share its next run, §8). Whether version 2 becomes `champion`
-> depends on its f1 against version 1's, both on this run's test split. Same
-> data, so the same split (the `test.parquet` files of the two runs hold the
-> same ids), and no new rows: `compare_with_champion` logs `all test rows` and
-> `old test rows`, the same rows, and `promotion_gate` decides on the whole
-> split, `… on the same … test rows`. A different search, so it can go either
-> way. If the gate lets it through, `approve_promotion` waits for you again.
+> A `manual__` run this time. When it succeeds: one more event, one more
+> `asset_triggered__` run of `mlops`, one more model version in MLflow. Every
+> success of the producer emits an event, however the producer was started,
+> and the consumer runs on it (events that arrive while `mlops` is busy share
+> its next run, §8). Whether version 2 becomes `champion` depends on its f1
+> against version 1's on this run's test split. Same data means the same split
+> (both runs' `test.parquet` hold the same ids) and no new rows:
+> `compare_with_champion` logs `all test rows` and `old test rows`, the same
+> rows, and `promotion_gate` decides on the whole split,
+> `… on the same … test rows`. The search differs, so it can go either way. If
+> the gate lets it through, `approve_promotion` waits for you again.
 
 > **Try it, the other branch.** Set the bar impossibly high and watch
 > `promotion_gate` take the `keep_current_model` branch. The threshold is read
-> from an environment variable inside the task's own process, and
-> `airflow dags test` runs the tasks in its own process, so pass the variable
-> to that command with `-e`:
+> from an environment variable in the process that runs the task, and
+> `airflow dags test` runs tasks in its own process, so pass the variable to
+> that command with `-e`:
 >
 > ```bash
 > docker compose exec -e PROJECT_TAGGER_MIN_F1=0.99 airflow-scheduler airflow dags test mlops
 > ```
 >
-> `promotion_gate` logs `below threshold 0.99 - not promoting`,
-> `approve_promotion` and `promote_model` are skipped, so nobody is asked,
-> `keep_current_model` runs, and the Dag run still succeeds. In
-> MLflow the new version is registered, and `champion` has not moved. (There is
-> nothing to revert: `-e` sets the variable for that one command only, so the
-> next run is back on 0.65.)
+> `promotion_gate` logs `below threshold 0.99 - not promoting`;
+> `approve_promotion` and `promote_model` are skipped, so nobody is asked;
+> `keep_current_model` runs, and the Dag run still succeeds. In MLflow the new
+> version is registered and `champion` has not moved. Nothing to revert: `-e`
+> sets the variable for that one command only, so the next run is back on 0.65.
 
 Stuck anywhere? [`solutions/04_mlops.py`](../../solutions/04_mlops.py).
 

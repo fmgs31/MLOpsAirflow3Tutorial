@@ -1,20 +1,20 @@
 ## 4. Your first Dag
 
-What a Dag author needs to define Dags, tasks and assets is in `airflow.sdk`,
-the Task SDK (operators come from the providers, §6):
+Everything you need to define Dags, tasks and assets is in `airflow.sdk`, the
+Task SDK (operators come from the providers, §6):
 
 ```python
 from airflow.sdk import dag, task, DAG, Param, Asset, chain, Label
 ```
 
 You are going to write `dags/01_hello_airflow3.py`: four tasks that build a
-greeting, shout it, count its words and print the result. Small enough to hold
-in your head, and every idea in it comes back in every later Dag.
+greeting, shout it, count its words and print the result. It is small, and
+every idea in it comes back in every later Dag.
 
 ### Build it
 
-Create the file `dags/01_hello_airflow3.py` and start it with a docstring, the
-imports, and a dictionary of defaults:
+Create `dags/01_hello_airflow3.py` with a docstring, the imports, and a
+dictionary of defaults:
 
 ```python dags/01_hello_airflow3.py
 """Lesson 1 - a Dag, tasks, and dependencies."""
@@ -33,44 +33,42 @@ DEFAULT_ARGS = {
 }
 ```
 
-In a moment you pass the docstring to the Dag as its documentation in the UI.
-`pendulum` is the timezone-aware datetime library Airflow
-uses everywhere. A plain `datetime` with no timezone attached (a "naive" one) is
-read in Airflow's default timezone, which may not be the one you meant — and
-then your runs start at hours you did not expect.
+The docstring will become the Dag's documentation in the UI (`doc_md`).
+`pendulum` is the timezone-aware datetime library Airflow uses everywhere. A
+`datetime` with no timezone (a "naive" one) is read in Airflow's default
+timezone, which may not be yours, and your runs start at hours you did not
+expect.
 
 **`default_args` is a dictionary applied to every task in the Dag.** Anything a
-task accepts can go in it. The values are only defaults: if a task passes the
-same argument itself, the task's value replaces the default for that task
-alone. With `"retries": 2` here, a task declared with `@task(retries=5)` retries
-five times, and every other task still retries twice. It exists so you do not
-repeat `owner=` and `retries=` on twenty tasks.
+task accepts can go in it. Its values are only defaults: a task that passes the
+same argument overrides it for itself alone. With `"retries": 2` here, a task
+declared with `@task(retries=5)` retries five times, and every other task
+twice. It saves repeating `owner=` and `retries=` on twenty tasks.
 
 `owner` is a label: it shows in the Dags list, you can filter on it, and it
 says who to ask when the Dag breaks. This repo's integrity tests (§15) reject
-the default, `airflow`, because an owner that is nobody means nobody gets paged.
+the default, `airflow`: an owner that is nobody means nobody gets paged.
 
 The other two decide what happens when a task fails:
 
-- **`retries=2`** — if the task raises, Airflow will run it up to two more
-  times. The task instance goes to `up_for_retry`, waits, and is scheduled
-  again. It is the *same* task instance throughout: its `try_number` increases,
-  each attempt keeps its own log, and only the last attempt's outcome decides
-  whether downstream tasks run.
-- **`retry_delay`** — how long it waits before the next attempt. Thirty seconds
-  is generous for a demo and short for real work; a flaky API usually wants
+- **`retries=2`** — if the task raises, Airflow runs it up to two more times.
+  The task instance goes to `up_for_retry`, waits, and is scheduled again. It
+  stays the *same* task instance: its `try_number` increases, each attempt
+  keeps its own log, and only the last attempt's outcome decides whether
+  downstream tasks run.
+- **`retry_delay`** — the wait before the next attempt. Thirty seconds is
+  generous for a demo and short for real work; a flaky API usually wants
   minutes, and `retry_exponential_backoff=2.0` doubles the wait after each
-  attempt instead.
+  attempt.
 
-**The default is `retries=0`** (`[core] default_task_retries`), so a task hit
-by a brief network glitch fails and takes the run with it. Retrying is opt-in,
-which is why this repo's integrity tests (§15) insist every
-non-demo Dag sets it.
+**The default is `retries=0`** (`[core] default_task_retries`), so a brief
+network glitch fails the task and the run with it. Retrying is opt-in, which is
+why this repo's integrity tests (§15) require every non-demo Dag to set it.
 
-Retries only help with failures that might not happen again — a timeout, a
-throttled API, a node that died. For a failure that *will* happen again, raising
-`AirflowFailException` (§9) skips the remaining attempts and fails immediately:
-bad data does not become good on the third read.
+Retries only help with failures that might not recur — a timeout, a throttled
+API, a dead node. For one that *will* recur, raise `AirflowFailException` (§9):
+it skips the remaining attempts and fails immediately. Bad data does not become
+good on the third read.
 
 Now the Dag itself. Add the decorator and the function it decorates:
 
@@ -93,31 +91,28 @@ Line by line:
 
 - **`@dag` turns a function into a Dag.** This decorator style is called
   **TaskFlow**.
-- **`schedule=None`** — this Dag runs only when someone triggers it: you,
-  through the UI or the CLI, or a program through the API. §7 has the other
-  values a schedule can take.
+- **`schedule=None`** — the Dag runs only when triggered: by you, from the UI
+  or the CLI, or by a program through the API. §7 covers the other values.
 - **`start_date`** — the earliest moment the Scheduler creates runs for on its
-  own; it never schedules one before it. It does not stop you starting a run
-  yourself — a manual trigger works even with a `start_date` in the future — so
-  on this `schedule=None` Dag it changes nothing yet; it is set so the Dag is
-  ready the day it gets a schedule. It is optional; §7 explains when a
+  own. Manual triggers ignore it — they work even with a future `start_date` —
+  so on this `schedule=None` Dag it changes nothing yet; it is set so the Dag
+  is ready once it gets a schedule. It is optional; §7 explains when a
   scheduled Dag without one starts.
-- **`catchup=False`** — decides what happens when you un-pause a scheduled Dag
-  whose `start_date` is in the past. With `False`, the default, the Scheduler
-  ignores the missed past and creates a single run, for the most recent time
-  the schedule should have fired. With `True`, it creates one run for *every*
-  time the schedule would have fired since `start_date` — months of runs, all
-  at once. It is written out even though it is the default, so you never have
-  to guess which one is in effect (§7).
+- **`catchup=False`** — what happens when you un-pause a scheduled Dag whose
+  `start_date` is in the past. With `False`, the default, the Scheduler ignores
+  the missed past and creates one run, for the most recent time the schedule
+  should have fired. With `True`, it creates one run for *every* time the
+  schedule would have fired since `start_date` — months of runs at once. It is
+  written out despite being the default, so you never guess which one is in
+  effect (§7).
 - **`tags`** — free-form labels; the Dags list filters on them.
-- **`doc_md=__doc__`** — the module docstring you just wrote, rendered as
-  markdown on the Dag's page in the UI. `description=` is the short version,
-  one line shown next to the Dag in the Dags list.
+- **`doc_md=__doc__`** — the module docstring, rendered as markdown on the
+  Dag's page. `description=` is the short version: one line next to the Dag in
+  the Dags list.
 - **`params`** — declared inputs, with types. The UI turns these into a form
   when you trigger the Dag (§5), and a run records the values it used.
 
-Inside the function, the tasks. Indent them — they are the body of
-`hello_airflow3()`:
+Inside the function go the tasks, indented as the body of `hello_airflow3()`:
 
 ```python dags/01_hello_airflow3.py
     @task
@@ -140,21 +135,21 @@ Inside the function, the tasks. Indent them — they are the body of
 ```
 
 **`@task` turns a function into a task.** Calling it does *not* run it: it
-returns an `XComArg`, a lazy reference to that task's future output. Whatever
-the function returns becomes the task's XCom (§6), and whatever it prints goes
-to the task log, viewable in the UI.
+returns an `XComArg`, a lazy reference to the task's future output. The return
+value becomes the task's XCom (§6); anything printed goes to the task log,
+viewable in the UI.
 
-`**context` is how a task sees the run it belongs to: `run_id`, `params`, `ti`
-(the task instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`,
-`conn`, `macros`. They are objects of different types, hence `**context: Any`;
-Airflow fills the context in by name and does not read the annotation.
+`**context` is how a task sees its run: `run_id`, `params`, `ti` (the task
+instance), `dag_run`, `ds`, `data_interval_start`/`end`, `var`, `conn`,
+`macros`. They have different types, hence `**context: Any`; Airflow fills the
+context in by name and ignores the annotation.
 
-Read `logical_date`, the date that names a run ("the run of 10 September",
-§7), with `.get()`, never `context["logical_date"]`. An asset-triggered run,
-or one triggered from the CLI without a logical date, has none, and the key is
-then missing from the context: indexing it raises `KeyError` at runtime, while
-`airflow dags test`, which always supplies one, stays green. §7 explains why.
-`run_id` is always there; prefer it for naming things.
+Read `logical_date`, the date that names a run ("the run of 10 September", §7),
+with `.get()`, never `context["logical_date"]`. Asset-triggered runs, and CLI
+triggers without a logical date, have none, and the key is missing: indexing it
+raises `KeyError` at runtime, while `airflow dags test`, which always supplies
+one, stays green. §7 explains why. `run_id` is always there; prefer it for
+naming things.
 
 Finish the file by wiring the tasks together and registering the Dag:
 
@@ -166,32 +161,31 @@ Finish the file by wiring the tasks together and registering the Dag:
 hello_airflow3()
 ```
 
-**Passing one task's output to another draws the edge.** `shout(message)` is
-what makes `shout` run after `make_greeting`. The graph is built when the file
-is parsed; the code runs later, possibly on another machine. Nothing makes
-`shout` and `count_words` wait for each other, so a scheduler-driven run is
-free to execute them at the same time (§3 says what decides that):
+**Passing one task's output to another draws the edge.** `shout(message)` makes
+`shout` run after `make_greeting`. The graph is built when the file is parsed;
+the code runs later, possibly on another machine. Nothing orders `shout` and
+`count_words` relative to each other, so a scheduler-driven run may execute them
+at the same time (§3 says what decides that):
 
 ```
 make_greeting ─┬─► shout ──────┬─► report
                └─► count_words ┘
 ```
 
-And the last line: **the decorator only defines the Dag; calling the function
-registers it.** A file that defines a Dag and never calls it imports cleanly
-and appears nowhere. It is the most common first mistake and the hardest to
+The last line matters: **the decorator only defines the Dag; calling the
+function registers it.** A file that defines a Dag without calling it imports
+cleanly and appears nowhere — the most common first mistake, and the hardest to
 spot, because there is no error to read.
 
 Save the file. If you want, compare it with
 [`solutions/01_hello_airflow3.py`](../../solutions/01_hello_airflow3.py): the
-same code with the comments left in.
+same code, with comments.
 
 ### See it parse
 
 The Dag processor (§3) scans `dags/` every five seconds on this stack, imports
 each `.py` file that looks like a Dag file (what that means comes further down),
-and writes what it parsed into the Metadata database.
-Within a few seconds of saving:
+and writes the result to the Metadata database. Within a few seconds of saving:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list -o plain
@@ -201,19 +195,18 @@ docker compose exec airflow-scheduler airflow dags list -o plain
 `is_paused True`, `bundle_name dags-folder`. Reload the UI and the Dag is on
 the **Dags** page, paused. (Every Dag starts paused — §7.)
 
-If the row is not there after those few seconds, three things can be wrong,
-and in `airflow dags list` they look identical. The first is a file that raises
-on import: a typo, a missing package, a `@dag` function that throws. That is
-not a broken Dag in the list but **no Dag at all**, absent from the UI and
-from `airflow dags list`. It surfaces as an import error on the Home and Dags pages (§5) and in
-this command:
+If the row is still missing, there are three causes, and in `airflow dags list`
+they look identical. The first is a file that raises on import: a typo, a
+missing package, a `@dag` function that throws. The result is not a broken Dag
+in the list but **no Dag at all**, absent from the UI and from the list. It
+surfaces as an import error on the Home and Dags pages (§5) and in this command:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags list-import-errors -o plain
 ```
 
-**Checkpoint.** `No data found` — your file imports. See what the other case
-looks like by making one: save this as `dags/zz_broken_on_purpose.py`,
+**Checkpoint.** `No data found` — your file imports. To see the other case,
+make one: save this as `dags/zz_broken_on_purpose.py`,
 
 ```python
 # An airflow dag file that does not import
@@ -234,33 +227,32 @@ dags-folder    zz_broken_on_purpose.py  Traceback (most recent call last):
 The file, the line and the full traceback. Delete the file and the row clears
 by itself on the next scan.
 
-The broken file's comment line matters. The Dag processor does not import
-every `.py` it finds: with `[core] dag_discovery_safe_mode` on, the default, it
-first reads the file as text and skips it unless the lowercased contents
-contain `airflow` *and* either `dag` or `asset`. Leave the comment out of
-`zz_broken_on_purpose.py` and it is never parsed, listed or reported: silence,
-not an error. A real Dag file always passes this test, since
-`from airflow.sdk import dag` alone contains both words. The files that get
-skipped are the ones missing a word: a helper module with no Dag in it, which
-is right, or a throwaway experiment like `zz_broken_on_purpose.py`. So when a
-file is not there, this is the second thing to check.
+The comment line matters. The Dag processor does not import every `.py` it
+finds: with `[core] dag_discovery_safe_mode` on (the default), it first reads
+the file as text and skips it unless the lowercased contents contain `airflow`
+*and* either `dag` or `asset`. Without the comment, `zz_broken_on_purpose.py`
+is never parsed, listed or reported: silence, not an error. A real Dag file
+always passes, since `from airflow.sdk import dag` alone contains both words.
+The skipped files are the ones missing a word: a helper module with no Dag,
+which is right, or a throwaway experiment like `zz_broken_on_purpose.py`. So
+when a file is missing, this is the second thing to check.
 
-The third way to get nothing is the beginner mistake from "Build it": a file
-that defines a Dag and never calls it. It imports cleanly, so
-`list-import-errors` is empty too, and the only symptom is a Dag that is not
-there. Check `list-import-errors` first, then the bottom of the file.
+The third cause is the beginner mistake from "Build it": a Dag defined but
+never called. It imports cleanly, so `list-import-errors` is empty too; the only
+symptom is a missing Dag. Check `list-import-errors` first, then the bottom of
+the file.
 
 ### Run it
 
-This executes a complete Dag run in your terminal, no Scheduler involved:
+This executes a complete Dag run in your terminal, with no Scheduler:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test hello_airflow3
 ```
 
-**Checkpoint.** Scroll for the `report` task's line, which looks like this —
-seven words, because `make_greeting` appends the run id *and* the logical date,
-and the printed date has a space in the middle of it:
+**Checkpoint.** Find the `report` task's line. It has seven words, because
+`make_greeting` appends the run id *and* the logical date, and the printed date
+contains a space:
 
 ```
 HELLO FROM RUN MANUAL__2026-09-15T12:18:32.454459+00:00 AT 2026-09-15 12:18:33.500053+00:00  (7 words)
@@ -270,24 +262,23 @@ and, at the end, `DagRun Finished: ... state=success`: a full run with real
 logs and no UI, the fastest way to try a Dag while you write it. You will use
 it after every Dag.
 
-> **What `airflow dags test` is, and is not.** It runs the whole Dag inside this
-> one command, with no Scheduler, Executor or Triggerer. Three things behave
-> differently from a real run, and you will meet each of them later:
+> **What `airflow dags test` is, and is not.** It runs the whole Dag inside the
+> command, with no Scheduler, Executor or Triggerer. Three things differ from a
+> real run, and you will meet each of them later:
 >
-> - Tasks run **one at a time**, in an order the graph allows. In the output
->   of that run, one of `shout`/`count_words` finished before the other started;
->   which goes first varies from run to run.
-> - It **always supplies a logical date**. A trigger from the CLI does not (§7),
->   which is how a Dag can pass here and fail in production.
-> - A **deferrable** task (§11), when it has to wait, normally suspends itself
->   and leaves the waiting to another service, the Triggerer. Here there is no
->   Triggerer, so `airflow dags test` does the waiting itself, and the command
->   does not return until the wait is over.
+> - Tasks run **one at a time**, in an order the graph allows. In your run, one
+>   of `shout`/`count_words` finished before the other started; the order varies
+>   between runs.
+> - It **always supplies a logical date**. A CLI trigger does not (§7), so a Dag
+>   can pass here and fail in production.
+> - A **deferrable** task (§11) that has to wait normally suspends itself and
+>   hands the waiting to another service, the Triggerer. With no Triggerer
+>   here, `airflow dags test` waits itself and does not return until the wait is
+>   over.
 >
 > It is **not a dry run** (a rehearsal that reports what a command would do
 > without doing it), though: tasks write real files and real asset events
-> (§9). It is the fastest way to see a Dag work; §15 says when to stop trusting
-> it.
+> (§9). §15 says when to stop trusting it.
 
 > **Try it.** Change the greeting without touching the file:
 >
@@ -295,12 +286,12 @@ it after every Dag.
 > docker compose exec airflow-scheduler airflow dags test hello_airflow3 --conf '{"greeting": "hola"}'
 > ```
 >
-> The `report` line now starts with `HOLA`. That `--conf` reached the task through
-> `context["params"]` — the `Param` you declared, overridden for one run.
+> The `report` line now starts with `HOLA`: `--conf` reached the task through
+> `context["params"]`, overriding the `Param` you declared for one run.
 
-**Another way to declare a Dag** is the context manager, which is fully
-supported and reads better when the tasks are operators (§6) rather than
-functions. It is not for this file; it is here so you recognise it:
+**Another way to declare a Dag** is the context manager, fully supported and
+more readable when the tasks are operators (§6) rather than functions. It is
+not for this file; it is here so you recognise it:
 
 ```python
 from airflow.sdk import DAG

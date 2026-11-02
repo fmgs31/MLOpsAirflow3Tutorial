@@ -17,9 +17,8 @@ code several Dags share. Airflow's documentation on
 sets three rules for it:
 
 - The package gets a name of its own: here, `project_tagger_orchestration`.
-  Every folder on `sys.path` shares one set of top-level names, so a generic
-  name such as `common` or `utils` can clash with an installed module of the
-  same name.
+  All folders on `sys.path` share one set of top-level names, so a generic
+  name such as `common` or `utils` can clash with an installed module.
 - Dags import it by its full path,
   `from project_tagger_orchestration.assets import …`, never with a relative import.
 - It is listed in `.airflowignore`, so the Dag processor does not parse it
@@ -73,9 +72,8 @@ asset, not any one event.
 A URI is optional. `production_model`, the asset `mlops` emits when it
 promotes a model (§10), has only a name: the model lives in MLflow's registry,
 and Airflow knows no URI scheme (like `bigquery://` or `gs://`) that points
-there. When an asset's data does sit somewhere with a known scheme, give the
-asset a URI: the UI then shows where that data lives, and tools that read
-Airflow's lineage can trace it.
+there. When an asset's data does sit somewhere with a known scheme, give it a
+URI: the UI shows where the data lives, and lineage tools can trace it.
 
 Add `production_model` at the end of `assets.py`, with the two raw tables
 Airbyte loads, which `dataops` produces in §9:
@@ -101,63 +99,57 @@ PRODUCTION_MODEL = Asset(
 )
 ```
 
-That makes four assets, and Airflow knows none of them yet: an asset exists
-for Airflow only once a parsed Dag refers to it, as an outlet or a schedule,
-and `assets.py` is not a Dag. Right now `airflow assets list`
-prints `No data found`, and the Assets page is empty; §9 changes that as soon
-as the Dag processor parses the first file you save there.
+Airflow knows none of these four assets yet: an asset exists for Airflow only
+once a parsed Dag refers to it, as an outlet or a schedule, and `assets.py` is
+not a Dag. So `airflow assets list` prints `No data found` and the Assets page
+is empty until the Dag processor parses your first Dag file in §9.
 
 ### Producers and consumers
 
 In a Dag you refer to an asset by its object, imported from the package:
-`from project_tagger_orchestration.assets import LABELED_PROJECTS`. Using it
-takes two sides.
+`from project_tagger_orchestration.assets import LABELED_PROJECTS`.
 
-**Who produces the asset.** A task declares that it produces an asset by
-listing it in its decorator's `outlets=` argument:
+**Who produces the asset.** A task lists the assets it writes in its
+decorator's `outlets=` argument:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
 ```
 
-The assets in that list are the task's **outlets**: the data the task declares
-it writes. (The opposite, `inlets=`, declares what it reads; this tutorial does
-not use it.) The task is its outlets' **producer**. Each time the task
-succeeds, Airflow records an **asset event**: the record that the asset has
-just been updated.
+Those assets are the task's **outlets**, and the task is their **producer**.
+(The opposite, `inlets=`, declares what a task reads; this tutorial does not
+use it.) Each time the task succeeds, Airflow records an **asset event**: the
+record that the asset has just been updated.
 
-**Who consumes it.** A Dag declares that it consumes an asset by putting it in
-its `schedule=`:
+**Who consumes it.** A Dag consumes an asset by putting it in its `schedule=`:
 
 ```python
 @dag(schedule=[LABELED_PROJECTS])
 ```
 
 That Dag is the asset's **consumer**, and each new asset event starts a run of
-it. That replaces any "run 30 minutes after the other Dag, and hope" cron.
+it.
 
-The asset event itself is a row in the Metadata database: which asset, which
-Dag run produced it, when, and an optional `extra` dict the producing task can
-fill in. A task that fails writes no event, so a consumer cannot be started by
-a producer that did not finish.
+The asset event is a row in the Metadata database: which asset, which Dag run
+produced it, when, and an optional `extra` dict the producing task can fill
+in. A task that fails writes no event, so a producer that did not finish
+cannot start a consumer.
 
 In this tutorial the producer of `labeled_projects` is `validate_transformed`,
-the last step of `dataops` in §1's diagram, which you write in §9.
-The outlet goes on that **validation** task, not on `transform`, the task
-before it that builds the table: if the validation fails, the task writes no
-event, so `mlops` cannot be started by data that did not pass it. **The
+the last step of `dataops` in §1's diagram, which you write in §9. The outlet
+goes on that **validation** task, not on `transform`, the task before it that
+builds the table, so data that fails validation cannot start `mlops`. **The
 consumer is scheduled on "good data arrived", not on a cron that guesses when
 the producer's Dag will have finished.**
 
-While a task runs, its asset event does not exist yet: Airflow writes it once
-the task succeeds. **`outlet_events`** is how the task prepares that event
-beforehand. It works like a dict with one key per outlet of the task:
-`outlet_events[LABELED_PROJECTS]` stands for the event the task is about to
-emit for `labeled_projects`, and the dict you assign to its `.extra` is stored
-inside that event: here, how many rows the task validated and which tags it
-found. The task receives `outlet_events` by declaring a parameter with that
-name, the way it receives `ti` in §6; a task that never touches it still emits
-its events, with an empty `extra`:
+Airflow writes the event only once the task succeeds, so the task fills it in
+beforehand through **`outlet_events`**, which works like a dict with one key
+per outlet. `outlet_events[LABELED_PROJECTS]` is the event the task is about
+to emit for `labeled_projects`, and the dict you assign to its `.extra` is
+stored in that event: here, how many rows the task validated and which tags
+it found. The task receives `outlet_events` by declaring a parameter with that
+name, as it receives `ti` in §6; a task that never touches it still emits its
+events, with an empty `extra`:
 
 ```python
 @task(outlets=[LABELED_PROJECTS])
@@ -171,13 +163,11 @@ def validate_transformed(*, outlet_events: OutletEventAccessorsProtocol) -> dict
 ```
 
 The type of `outlet_events` is `OutletEventAccessorsProtocol`, from
-`airflow.sdk.types`. This `extra` is different on each event, unlike the
-asset's fixed one. `AirflowFailException` fails the task without retries; §9
-explains it.
+`airflow.sdk.types`. Unlike the asset's fixed `extra`, this one changes with
+each event. `AirflowFailException` fails the task without retries (§9).
 
-And the consumer, `mlops`, which you write in §10. There
-`triggering_asset_events` — also injected by name — holds the events that
-started the run:
+The consumer, `mlops` (§10), receives the events that started its run in
+`triggering_asset_events`, also injected by name:
 
 ```python
 @dag(schedule=[LABELED_PROJECTS], ...)
@@ -189,26 +179,23 @@ def mlops():
                 print(f"triggered by {asset} extra={event.extra}")
 ```
 
-`triggering_asset_events` is a read-only mapping from each asset in the
-`schedule` to the list of its events that started this run. It is a list
-because one run can pick up several events of the same asset: if `dataops`
-emits three times while `mlops` is busy, the next `mlops` run starts with all
-three ("When the consumer runs", at the end of this section, explains it).
-Airflow's public API has no type for those events, so the annotation says
-`Sequence[Any]`; the fields worth knowing are `extra`,
-`timestamp`, and `source_dag_id` and `source_run_id`, the Dag run that emitted
-the event. As with `ti`, these annotations are for you and your editor:
-Airflow injects the arguments by name and ignores their types.
+It is a read-only mapping from each asset in the `schedule` to a list of its
+events, because one run can pick up several events of the same asset ("When
+the consumer runs", at the end of this section). Airflow's public API has no
+type for those events, hence `Sequence[Any]`; the fields worth knowing are
+`extra`, `timestamp`, and `source_dag_id` and `source_run_id`, the Dag run
+that emitted the event. As with `ti`, these annotations are for you and your
+editor: Airflow injects the arguments by name and ignores their types.
 
 So far, one asset, one producer and one consumer. A bigger pipeline needs
-more pieces; two of them come up later in this tutorial:
+more pieces; two come up later in this tutorial:
 
 | If you need… | Use |
 |---|---|
 | `mlops` to wait for two assets, or to make do with either one | `AssetAll(a, b)` / `AssetAny(a, b)` in the `schedule` (§10) |
 | a Dag to start on a message from an outside system, with no producer in Airflow | `AssetWatcher` (§11) |
 
-There are more; §16 shows how to use four of them.
+§16 shows how to use four more.
 
 ### When the consumer runs
 
@@ -219,18 +206,16 @@ those entries into Dag runs.
 Events that arrive faster than the consumer can run are neither lost nor run
 one by one. `mlops` allows a single active run (`max_active_runs=1`), so if
 three `dataops` runs finish while it is busy, the *next* `mlops` run takes all
-three events, and `triggering_asset_events` in `prepare_data` lists every one
-of them. A consumer catches up in one run, not three.
+three events, and `triggering_asset_events` in `prepare_data` lists them all.
 
 > **A paused consumer does not queue, and does not catch up.** If `mlops` is
-> paused when `dataops` emits, the asset event is still written — you will see
-> it on the Assets page — but no run is queued for `mlops`, and **un-pausing
-> later does not replay it**. That is the opposite of §7, where a *manual*
-> trigger creates the run and the pause only holds it. The same goes for a
-> consumer that did not exist yet when the event was written: the `dataops`
-> run you make in §9 will emit an event that `mlops`, written in §10, never
-> sees. (Checked all three ways on this stack — see [what was actually
-> verified](../verified.md).)
+> paused when `dataops` emits, the asset event is still written (you will see
+> it on the Assets page), but no `mlops` run is queued, and **un-pausing later
+> does not replay it**: the opposite of §7, where a *manual* trigger creates
+> the run and the pause only holds it. The same goes for a consumer that did
+> not exist yet when the event was written: the `dataops` run you make in §9
+> emits an event that `mlops`, written in §10, never sees. (Checked all three
+> ways on this stack — see [what was actually verified](../verified.md).)
 
 ---
 

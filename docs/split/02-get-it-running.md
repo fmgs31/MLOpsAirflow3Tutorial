@@ -7,10 +7,6 @@ There are two ways to install, and the choice decides how far you can go:
 | **Docker** | the whole tutorial, §3 to §17 | Airflow, Postgres and MLflow, plus the dbt and alibi-detect virtualenvs, all from `docker-compose.yaml` |
 | **Native** | §3 to §8 only | Airflow alone, in a Python virtualenv on your machine |
 
-From §9 on, the pipeline needs more than Airflow: the MLflow server, Optuna's
-database and two extra virtualenvs, which only the Docker stack sets up. If you
-plan to do the whole tutorial, use Docker.
-
 ### Docker (recommended, and required from §9 on)
 
 Airflow has no native Windows support. On Windows use Docker Desktop, or run the
@@ -27,8 +23,8 @@ Then start the stack. On Linux, macOS, WSL2 or Git Bash on Windows:
 ./scripts/up.sh
 ```
 
-In Windows PowerShell. A default install refuses to run `.ps1` files, which is
-why the command needs `-ExecutionPolicy Bypass`:
+In Windows PowerShell (`-ExecutionPolicy Bypass` because a default install
+refuses to run `.ps1` files):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
@@ -36,47 +32,44 @@ powershell -ExecutionPolicy Bypass -File .\scripts\up.ps1
 
 **Checkpoint.** The script waits for the API server, then prints the service
 table. Open <http://localhost:8080> — there is no login. The Dags list is
-**empty**, and it should be: you have not written one yet. The Home page shows
-the Scheduler, Triggerer and Dag processor as healthy. If the page does not
-load, jump to [troubleshooting](../troubleshooting.md).
+**empty**: you have not written one yet. The Home page shows the Scheduler,
+Triggerer and Dag processor as healthy. If the page does not load, jump to
+[troubleshooting](../troubleshooting.md).
 
 ```bash
 docker compose ps
 docker compose exec airflow-scheduler airflow dags list
 ```
 
-The second prints `No data found`, the same empty list. Every command from
-here on has the shape of one of those two: `docker compose …` runs on your
-machine, and the `docker compose exec airflow-scheduler` prefix runs
-`airflow …` inside the Scheduler container. Any of the Airflow containers
-would do: they share the same image, settings and mounted folders, and differ
-only in which component they run (§3). The Scheduler is the fixed choice
-because it is always running. An `airflow …` command shown bare,
-in a transcript or in prose, means the same thing, prefix included.
+The second prints `No data found`, the same empty list. Every later command has
+one of those two shapes: `docker compose …` runs on your machine, and the
+`docker compose exec airflow-scheduler` prefix runs `airflow …` inside the
+Scheduler container. Any Airflow container would do, since they share image,
+settings and mounted folders and differ only in the component they run (§3);
+the Scheduler is used because it is always running. A bare `airflow …` in a
+transcript or in prose means the same thing, prefix included.
 
-The stack is deliberately smaller than the [official
-docker-compose.yaml](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
+To keep fewer moving parts while you learn, the stack is smaller than the
+[official docker-compose.yaml](https://airflow.apache.org/docs/apache-airflow/3.3.1/docker-compose.yaml):
 `LocalExecutor` instead of Celery + Redis (§3 explains what an Executor is), and
 the Simple auth manager instead of FAB — Flask-AppBuilder, the provider that
-gives Airflow users, roles and a login page. Fewer moving parts while you are
-learning.
+gives Airflow users, roles and a login page.
 
-Two services in the list are not Airflow. `mlflow` is MLflow (§1), whose UI
-is at <http://localhost:5000>; you use it in §10. `extra-databases` runs
-once at start-up, creates a database for Optuna (§10) on the same Postgres,
-and exits. The rest of the data stack, a Google
-Cloud project and Airbyte, you set up in §9; nothing before §9 needs either.
+Two services in the `docker compose ps` list are not Airflow. `mlflow` is
+MLflow (§1), with its UI at <http://localhost:5000>; you use it in §10.
+`extra-databases` runs once at start-up, creates a database for Optuna (§10)
+on the same Postgres, and exits. The rest of the data stack, a Google Cloud
+project and Airbyte, you set up in §9.
 
-> **Auth:** `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true` is set, so the
-> UI has no login, and port 8080 is published on `127.0.0.1` only — the loopback
-> address — so nothing outside your machine can reach it. Do not deploy this
-> configuration anywhere else.
+> **Auth:** `AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS=true` removes the UI
+> login, and port 8080 is published only on `127.0.0.1` (loopback), so nothing
+> outside your machine can reach it. Do not deploy this configuration anywhere
+> else.
 
-One more script, for later. Everything the stack accumulates — runs, task
-logs, the snapshots the Dags write, MLflow's runs and models — survives a
-restart of the containers, because it lives in Docker volumes and in the
-`data/` and `logs/` folders of this repo (§3 comes back to this). To
-throw all of it away and start over, on Linux, macOS, WSL2 or Git Bash:
+Everything the stack accumulates (runs, task logs, the snapshots the Dags
+write, MLflow's runs and models) survives a container restart: it lives in
+Docker volumes and in this repo's `data/` and `logs/` folders (more in §3). To
+throw it all away and start over, on Linux, macOS, WSL2 or Git Bash:
 
 ```bash
 ./scripts/reset.sh
@@ -88,26 +81,25 @@ or in Windows PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\reset.ps1
 ```
 
-It asks before deleting, and `up.sh` / `up.ps1` brings the stack back. It
-leaves `dags/` alone, so the files you write survive a reset, and anything
-outside this repo's stack: your BigQuery tables and Airbyte stay as they are. No step in this
-tutorial needs it; it is here for the day something is stuck and
-[troubleshooting](../troubleshooting.md) has not helped.
+It asks before deleting; `up.sh` / `up.ps1` brings the stack back. It leaves
+alone `dags/`, so your files survive, and everything outside this repo's stack,
+such as your BigQuery tables and Airbyte. No step in the tutorial needs it: it
+is for the day something is stuck and [troubleshooting](../troubleshooting.md)
+has not helped.
 
-> **One shell for the rest.** Every command after this point is written for
-> bash: Linux, macOS, WSL2, or Git Bash on Windows. The two `.ps1` scripts
-> exist so that PowerShell can start and reset the stack, but the tutorial's
-> commands use `\` line continuations, `grep`, `#` comments and single-quoted
-> JSON, all of which PowerShell and the Command Prompt (`cmd`) read
-> differently. On Windows, open Git Bash for everything below.
+> **One shell for the rest.** Every later command is bash: Linux, macOS, WSL2,
+> or Git Bash on Windows. The `.ps1` scripts only start and reset the stack;
+> the other commands use `\` line continuations, `grep`, `#` comments and
+> single-quoted JSON, which PowerShell and the Command Prompt (`cmd`) read
+> differently. On Windows, use Git Bash from here on.
 >
 > On **Git Bash**, a few later commands pass a `/opt/...` path into a
-> container, and each carries the prefix `MSYS_NO_PATHCONV=1`. Without it,
-> Git Bash rewrites the path into a Windows one before Docker sees it.
+> container and carry the prefix `MSYS_NO_PATHCONV=1`. Without it, Git Bash
+> rewrites the path into a Windows one before Docker sees it.
 
-> **Your editor.** You will be creating files in `dags/` from §4 on. Any editor
-> works; the container sees the folder through a bind mount, so a file saved on
-> your machine is a file inside Airflow a moment later.
+> **Your editor.** From §4 on you create files in `dags/`, with any editor: the
+> folder is bind-mounted into the containers, so a file saved on your machine
+> is inside Airflow a moment later.
 
 ### Native (Linux / macOS / WSL2; §3 to §8 only)
 
@@ -115,13 +107,12 @@ tutorial needs it; it is here for the day something is stuck and
 ./scripts/setup-native.sh
 ```
 
-> **The native install covers Airflow, and so §3 to §8.** From §9 on, the
-> pipeline also needs the services in the compose file (MLflow, Optuna's
-> Postgres database) and the two virtualenvs the image builds for dbt and
-> alibi-detect (§9, §12). Recreating those by hand is possible, and the paths
-> are settings in `config.py` (`PROJECT_TAGGER_DBT_BIN`,
+> **Why only §3 to §8.** From §9 on, the pipeline also needs the compose
+> services (MLflow, Optuna's Postgres database) and the two virtualenvs the
+> image builds for dbt and alibi-detect (§9, §12). You can recreate them by
+> hand and point `config.py` at them (`PROJECT_TAGGER_DBT_BIN`,
 > `PROJECT_TAGGER_ALIBI_PYTHON`, `MLFLOW_TRACKING_URI`, `OPTUNA_STORAGE`), but
-> this tutorial does not walk through it: for §9 onwards, use the Docker stack.
+> this tutorial does not cover it.
 
 What that script runs:
 
@@ -143,9 +134,9 @@ airflow db migrate                              # create the metadata database
 airflow connections add fs_default --conn-type fs --conn-extra '{"path": "/"}'
 ```
 
-Airflow 3.3.1 needs Python ≥ 3.10 (and not 3.15). Install it **with the
-constraint file** — Airflow has a large dependency tree and an unconstrained
-install will resolve to something that does not work.
+Airflow 3.3.1 needs Python ≥ 3.10 (and not 3.15). The **constraint file** is
+what makes the install work: Airflow's dependency tree is large, and an
+unconstrained install resolves to versions that do not work together.
 
 `airflow db migrate` populates `$AIRFLOW_HOME`:
 
@@ -156,16 +147,14 @@ logs/           task logs, one directory per dag_id / run_id / task_id
 ```
 
 > **SQLite is for development only.** The Airflow docs say it "should NEVER be
-> used for production". It is fine for working through this
-> tutorial — `LocalExecutor` runs tasks in parallel against it, and needs
-> SQLite ≥ 3.15 — but move to Postgres or MySQL for anything real. The Docker
-> stack in this repo already runs Postgres 16, which is why the Docker path is
-> the recommended one.
+> used for production". It is fine for this tutorial (`LocalExecutor` runs
+> tasks in parallel against it, and needs SQLite ≥ 3.15), but use Postgres or
+> MySQL for anything real. The Docker stack already runs Postgres 16.
 
-Any setting in `airflow.cfg` can also be given as an `AIRFLOW__SECTION__KEY`
-environment variable. `SECTION` is the `[header]` the setting sits under and
-`KEY` is the setting's own name, both uppercased and joined by **double**
-underscores — an underscore *inside* either name stays single:
+Any `airflow.cfg` setting can also be given as an `AIRFLOW__SECTION__KEY`
+environment variable: the `[header]` the setting sits under and the setting's
+name, uppercased and joined by **double** underscores. An underscore *inside*
+either name stays single:
 
 ```
 airflow.cfg                          environment variable
@@ -177,13 +166,13 @@ dags_folder = <repo>/dags            AIRFLOW__CORE__DAGS_FOLDER=<repo>/dags
 refresh_interval = 5                 AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5
 ```
 
-Both are lines the script above exports: it configures Airflow through the
-environment instead of editing `airflow.cfg`. The Docker stack uses the same
-mechanism in [`docker-compose.yaml`](../../docker-compose.yaml).
+Both variables are exported by the script above, which configures Airflow
+through the environment instead of editing `airflow.cfg`;
+[`docker-compose.yaml`](../../docker-compose.yaml) does the same.
 
-> **Default connections are not created for you.** `fs_default` is added by hand
-> above because a `FileSensor` uses it unless told otherwise (§6). In Docker
-> the compose file provides it as `AIRFLOW_CONN_FS_DEFAULT`.
+> **Default connections are not created for you.** The script adds
+> `fs_default` because a `FileSensor` uses it unless told otherwise (§6). In
+> Docker the compose file provides it as `AIRFLOW_CONN_FS_DEFAULT`.
 
 Then either the all-in-one process:
 
@@ -191,7 +180,7 @@ Then either the all-in-one process:
 airflow standalone
 ```
 
-…or the components separately, which is what a real deployment looks like:
+…or the components separately, as in a real deployment:
 
 ```bash
 airflow api-server --port 8080

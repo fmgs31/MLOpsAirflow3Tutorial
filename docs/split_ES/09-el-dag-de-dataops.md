@@ -13,8 +13,8 @@ ejecuta cada una y detiene el pipeline cuando falla una comprobación.
 | `transform` | **dbt** | construye la tabla de entrenamiento a partir de las dos tablas sin procesar (`projects` y `tags`, tal como las carga Airbyte), en SQL |
 
 Cómo se hablan las piezas cuando se ejecuta el Dag. Cada columna es un
-sistema, y lo que está escrito en una columna ocurre en ese sistema; una flecha
-es un sistema llamando a otro, o datos que pasan de uno a otro:
+sistema, y lo que está escrito en ella ocurre ahí; una flecha es un sistema
+llamando a otro, o datos que pasan de uno a otro:
 
 ```
  Airflow (Docker)              │ Airbyte (abctl)       │ BigQuery (Google Cloud)
@@ -41,33 +41,28 @@ es un sistema llamando a otro, o datos que pasan de uno a otro:
  Dag mlops (§10)               │                       │
 ```
 
-Airflow arranca cada paso y espera a que termine. Solo las tasks de GX traen
-datos a Airflow:
+Airflow arranca cada paso y espera a que termine. GX y dbt están en la columna
+de Airflow, y Airbyte tiene la suya, porque son tipos de software distintos.
+Solo las tasks de GX traen datos a Airflow:
 
-1. Airflow le pide a la API de Airbyte que ejecute un sync. Airbyte descarga el
-   CSV y lo escribe en BigQuery; las filas no pasan por Airflow.
-2. Cada task de GX lee una tabla de BigQuery en el contenedor de Airflow, como
-   un DataFrame de pandas, y la comprueba ahí.
-3. dbt envuelve tu `SELECT` en un `CREATE TABLE … AS` y se lo manda a
-   BigQuery, que une sus propias dos tablas y escribe la tercera. Después dbt
-   manda los tests del proyecto, también como SQL. Ese proyecto de dbt lo creas
-   más abajo.
+1. **Airbyte** es un servidor, con su propia API. Airflow no lo ejecuta: le pide
+   a la API que ejecute un sync. Airbyte descarga el CSV y lo escribe en
+   BigQuery; las filas no pasan por Airflow.
+2. **GX Core** es una librería de Python, instalada en la imagen de Airflow
+   como pandas. Cada task de GX lee una tabla de BigQuery en el contenedor de
+   Airflow, como un DataFrame de pandas, y la valida dentro de su propio
+   proceso.
+3. **dbt Core** es un programa de línea de comandos, también instalado en la
+   imagen de Airflow. La task lo lanza como un comando; dbt envuelve tu
+   `SELECT` en un `CREATE TABLE … AS` y se lo manda a BigQuery, que une sus
+   propias dos tablas y escribe la tercera. Después dbt manda los tests del
+   proyecto, también como SQL. Ese proyecto de dbt lo creas en «4. Crea el
+   proyecto de dbt».
 4. La misma comprobación que en el paso 2, sobre la tabla nueva. Si pasa,
    Airflow registra el evento del Asset que arranca `mlops`.
 
-GX y dbt están en la columna de Airflow, y Airbyte tiene la suya, porque son
-tipos de software distintos:
-
-- **Airbyte** es un servidor, con su propia API. Airflow no lo ejecuta: le
-  pide que haga el trabajo.
-- **GX Core** es una librería de Python, instalada en la imagen de Airflow como
-  pandas. La task la importa y valida dentro de su propio proceso.
-- **dbt Core** es un programa de línea de comandos, también instalado en la
-  imagen de Airflow. La task lo lanza como un comando, y el trabajo pesado lo
-  hace BigQuery.
-
 GX y dbt tienen también versiones de pago, alojadas, GX Cloud y dbt Cloud, que
-sí son servicios. Con ellas, la task llamaría a una API, como hace con Airbyte
+sí son servicios; con ellas, la task llamaría a una API, como hace con Airbyte
 (ver «Alternativas» al final de esta sección).
 
 Cargar primero los datos sin procesar y transformarlos dentro del warehouse se
@@ -112,12 +107,11 @@ comprueba el anterior.
    dale dos roles: **BigQuery Data Editor** (crear datasets y tablas, escribir
    filas) y **BigQuery Job User** (ejecutar consultas).
 
-4. **Descarga su clave.** En **IAM & Admin → Service Accounts**, haz clic en
-   el email de la service account,
-   `airflow-tutorial@<project id>.iam.gserviceaccount.com`, para abrirla.
-   Luego abre su pestaña **Keys** y elige **Add key → Create new key →
-   JSON**. El navegador descarga un archivo. Muévelo a este repo como
-   `secrets/gcp-key.json`. Git ignora todo lo que hay en `secrets/`
+4. **Descarga su clave.** En **IAM & Admin → Service Accounts**, abre la
+   service account haciendo clic en su email,
+   `airflow-tutorial@<project id>.iam.gserviceaccount.com`. En su pestaña
+   **Keys**, elige **Add key → Create new key → JSON** y mueve el archivo
+   descargado a este repo como `secrets/gcp-key.json`. Git ignora todo lo que hay en `secrets/`
    salvo `.gitkeep`, así que no puedes hacer commit de la clave por accidente.
 
    > **Ese archivo es una contraseña.** Quien lo tenga puede leer y escribir
@@ -129,11 +123,11 @@ comprueba el anterior.
    `GCP_PROJECT_ID`, en `.env`. `BQ_LOCATION` indica dónde guarda BigQuery los datos: `US` (el valor
    por defecto), `EU`, o una región concreta cerca de ti, como
    `australia-southeast1` ([la lista completa](https://cloud.google.com/bigquery/docs/locations)).
-   Los datos de este tutorial son tan pequeños que cualquiera sirve. Elijas lo
-   que elijas, la destination de Airbyte que creas en «2. Airbyte» necesita el
-   mismo valor en su campo **Dataset location**. Decídelo antes del primer
-   sync: es el que crea el dataset, y la location de un dataset no se puede
-   cambiar. Después recrea los contenedores para que lean el valor nuevo:
+   Para los datos de este tutorial cualquiera sirve. La destination de Airbyte
+   que creas en «2. Airbyte» necesita el mismo valor en su campo **Dataset
+   location**. Decídelo antes del primer sync, que es el que crea el dataset:
+   la location de un dataset no se puede cambiar. Después recrea los
+   contenedores para que lean los valores nuevos:
 
    ```bash
    docker compose up -d
@@ -164,10 +158,9 @@ Si no llega, dónde se aumenta depende de cómo corre Docker:
 - **Docker Desktop en macOS o Linux:** **Settings → Resources → Advanced**,
   los límites de CPU y memoria.
 - **Docker Desktop en Windows con el backend de WSL2** (el de por defecto): esa
-  página no tiene límites que ajustar, porque Docker recibe lo que recibe
-  WSL2: todas las CPUs y la mitad de la memoria de la máquina. Para darle más
-  a WSL2, crea o edita el archivo `.wslconfig` en tu carpeta de usuario de
-  Windows (`%UserProfile%`):
+  página no tiene límites: Docker recibe lo que recibe WSL2, todas las CPUs y
+  la mitad de la memoria de la máquina. Para darle más a WSL2, crea o edita
+  `.wslconfig` en tu carpeta de usuario de Windows (`%UserProfile%`):
 
   ```ini
   [wsl2]
@@ -268,9 +261,9 @@ Si no llega, dónde se aumenta depende de cómo corre Docker:
    que Airbyte lleva el control de las cargas; el código de este repo lee solo las
    columnas del CSV.
 
-8. **Copia el ID de cada connection.** Airbyte no lo muestra en la página:
-   está en la barra de direcciones del navegador. Abre la connection desde
-   **Connections**, y el ID es el UUID que va justo después de `/connections/`:
+8. **Copia el ID de cada connection.** Airbyte solo lo muestra en la barra de
+   direcciones: abre la connection desde **Connections**, y el ID es el UUID
+   que va justo después de `/connections/`:
 
    ```
    http://localhost:8000/workspaces/<workspace id>/connections/<connection id>/status
@@ -295,9 +288,9 @@ docker compose exec airflow-scheduler airflow connections add my_airbyte_conn \
 ```
 
 **Comprobación.** La última línea es ``Successfully added `conn_id`=my_airbyte_conn``.
-Antes salen muchas líneas de warnings. Casi todas son `DeprecatedImportWarning`
-y `SyntaxWarning`, que aparecen mientras la CLI carga todos los providers de la
-imagen; son ruido. La penúltima, `empty cryptography key - values will not be
+Antes salen muchos warnings, casi todos `DeprecatedImportWarning` y
+`SyntaxWarning` que aparecen mientras la CLI carga todos los providers de la
+imagen: ruido. La penúltima, `empty cryptography key - values will not be
 stored encrypted`, es la falta de Fernet key de la §6: en este stack, las
 Connections se guardan sin cifrar.
 
@@ -474,11 +467,10 @@ MSYS_NO_PATHCONV=1 docker compose exec airflow-scheduler /opt/venvs/dbt/bin/dbt 
 ```
 
 **Comprobación.** `Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6`:
-un model y cinco tests. BigQuery tiene una tercera tabla, `labeled_projects`, con 764
-filas. Ejecuta el comando otra vez: mismo resultado, misma tabla, porque
-`+materialized: table` hace que dbt reemplace la tabla en cada ejecución. Un
-test fallido hace que `dbt build` termine con error, que es lo que hará fallar la
-task `transform` del Dag.
+un model y cinco tests. BigQuery tiene una tercera tabla, `labeled_projects`,
+con 764 filas. Ejecuta el comando otra vez: mismo resultado, misma tabla,
+porque `+materialized: table` la reemplaza. Un test fallido hace que
+`dbt build` termine con error.
 
 ¿Atascado? El proyecto terminado está en
 [`solutions/dbt_transforms/`](../../solutions/dbt_transforms/); cópialo con
@@ -762,9 +754,8 @@ Ahora que tienes un Dag con schedule, los backfills tienen sentido. Un backfill
 crea a posteriori los runs de cada franja de un rango de fechas. En Airflow un
 backfill es un objeto propio, con su API, su formulario en la UI y su política
 de reprocesado (`--reprocess-behavior`, más abajo). **Haz un dry-run
-primero**: `--dry-run` lista los runs que crearía el backfill sin crearlos, y un
-backfill con el rango de fechas equivocado es la forma más fácil de crear
-treinta runs por accidente:
+primero**: `--dry-run` lista los runs sin crearlos, y un rango de fechas
+equivocado es la forma más fácil de crear treinta runs por accidente:
 
 ```bash
 docker compose exec airflow-scheduler airflow backfill create \

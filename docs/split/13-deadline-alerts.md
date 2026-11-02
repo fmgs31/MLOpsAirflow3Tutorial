@@ -1,14 +1,13 @@
 ## 13. Deadline alerts
 
-A **deadline** answers "tell me if this run is taking too long". It is attached
-to the Dag, applies to the whole run, and is evaluated *while the run is still
-going* — so you hear about a stuck pipeline during the incident, not in the
-morning report.
+A **deadline** answers "tell me if this run is taking too long". It is set on
+the Dag, covers the whole run, and is checked *while the run is still going*,
+so you hear about a stuck pipeline during the incident, not the next morning.
 
 ### Build it
 
-`dags/07_deadline_alerts.py` is the shortest file of the seven, and all of its
-interesting part is in the decorator:
+`dags/07_deadline_alerts.py` is the shortest of the seven; everything
+interesting is in the decorator:
 
 ```python dags/07_deadline_alerts.py
 """Lesson 7 - deadline alerts: "tell me if this run is taking too long"."""
@@ -43,19 +42,17 @@ def deadline_alerts():
 ```
 
 Three pieces: a **reference** (where the clock starts), an **interval** (how
-long after it), and a **callback**, the function called when the deadline
-passes, with the `kwargs` passed to it. The callback is named by its import
-path (`module.function`) because it does not run inside any task: another
-process imports and runs it, and which one depends on the callback class —
-`SyncCallback` here; both classes are listed after the references. Pass a
+long after it), and a **callback**, the function called with `kwargs` when the
+deadline passes. The callback is given as an import path (`module.function`)
+because it runs outside any task, in another process that imports it. Pass a
 list to `deadline=` for several deadlines.
 
 References: `DAGRUN_QUEUED_AT`, `DAGRUN_LOGICAL_DATE`, `FIXED_DATETIME(dt)`,
-`AVERAGE_RUNTIME(max_runs=10)`; that last one is "slower than this Dag's own
-recent average", which is usually what you mean. Callbacks: `SyncCallback`
-(runs on the Executor) or `AsyncCallback` (runs on the Triggerer; use it for
-Notifiers, the ready-made alert senders that providers ship for Slack, email
-and the like, e.g. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
+`AVERAGE_RUNTIME(max_runs=10)`; the last means "slower than this Dag's recent
+average", usually what you want. Callbacks, whose class decides which process
+runs them: `SyncCallback` (the Executor) or `AsyncCallback` (the Triggerer;
+use it for Notifiers, the ready-made alert senders providers ship for Slack,
+email and the like, e.g. `AsyncCallback(SlackWebhookNotifier, kwargs={...})`).
 
 The Dag deliberately misses its own deadline:
 
@@ -82,18 +79,18 @@ docker compose exec airflow-scheduler airflow dags trigger deadline_alerts
 docker compose logs airflow-scheduler | grep "DEADLINE MISSED"
 ```
 
-**Checkpoint.** One `DEADLINE MISSED` line, about 30 seconds after the trigger,
-carrying the run's context, while `slow_step`, which sleeps for 75 seconds, is
-still running: you heard about the slow run before it finished. Missed and pending deadlines are also listed under
-Browse → **Deadlines**.
+**Checkpoint.** One `DEADLINE MISSED` line with the run's context, about 30
+seconds after the trigger, while `slow_step` (a 75-second sleep) is still
+running: you heard about the slow run before it finished. Missed and pending
+deadlines are also listed under Browse → **Deadlines**.
 
 > **Airflow 3.3.1 bug (the version this tutorial installs):** `airflow dags test`
 > crashes on any Dag that sets `deadline=`
 > (`psycopg2.ProgrammingError: can't adapt type 'dict'` out of
 > `DagRun.update_state`). The tasks run fine; only the CLI's final state update
-> fails. Trigger such Dags through the Scheduler instead. That is why `mlops`
-> carries no deadline: it would break the `airflow dags test mlops` step in
-> §10. [Details.](../troubleshooting.md)
+> fails, so trigger such Dags through the Scheduler. That is why `mlops` has no
+> deadline: it would break `airflow dags test mlops` in §10.
+> [Details.](../troubleshooting.md)
 
 Reference: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_alerts.py).
 

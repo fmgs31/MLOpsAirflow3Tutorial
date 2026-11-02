@@ -1,13 +1,12 @@
 ## 14. When the data goes wrong
 
 Every run so far has passed, because every run has read the same clean files.
-Real data arrives in pieces, late, re-sent and reformatted, and then the job
-is no longer writing the pipeline but answering it when a check fails. This
-section loads a second batch of projects over three deliveries, each with a
-problem real loads have. It works through the first two: where each shows up,
-how to find the rows behind it, where the fix belongs, and how much to re-run.
-The third you work through yourself. Then the same batch sets off the drift
-monitor of §12.
+Real data arrives in pieces, late, re-sent and reformatted, and the job
+becomes answering the pipeline when a check fails. This section loads a
+second batch of projects over three deliveries, each with a problem real loads
+have. For the first two it shows where the problem appears, how to find the
+rows behind it, where the fix belongs and how much to re-run; the third is
+yours. Then the same batch sets off the drift monitor of §12.
 
 | Delivery | What arrives | What is wrong | Where it shows up |
 |---|---|---|---|
@@ -21,16 +20,16 @@ monitor of §12.
 The files are in [`datasets/batch_2/`](../../datasets/batch_2/). The 191
 projects are real: Made With ML's holdout set, projects from the same site
 that are not in `datasets/projects.csv`. Their dates are moved to the five
-weeks after the newest arXiv paper of §12, so they are the newest rows in the
+weeks after the newest arXiv paper of §12, making them the newest rows in the
 warehouse, and the first three problems in the table are added on top. The
-fourth is not added: Made With ML published these tags with the three rarest ones already merged into `other`.
-[`scripts/make_batch_2.py`](../../scripts/make_batch_2.py) builds the files,
-and [`datasets/README.md`](../../datasets/README.md) lists what each one
-contains.
+fourth is not added: Made With ML published these tags with the three rarest
+already merged into `other`.
+[`scripts/make_batch_2.py`](../../scripts/make_batch_2.py) builds the files;
+[`datasets/README.md`](../../datasets/README.md) lists what each contains.
 
 Each sync in §9 is **Full Refresh Overwrite**, so each file is the whole table
 as the source would export it that day: the 1564 rows it already sent, then
-the new ones. A delivery is a change of URL in an Airbyte source: in Airbyte, open
+the new ones. A delivery is a change of URL in an Airbyte source: open
 **Sources**, choose the source, replace its **URL**, and save.
 
 ### Before you start
@@ -41,10 +40,10 @@ Pause `mlops`:
 docker compose exec airflow-scheduler airflow dags pause mlops
 ```
 
-A `dataops` run that passes emits the asset event that starts `mlops` (§8).
-Here that would train a model on the new projects before `monitoring` has
-compared them with what the production model knows, and that comparison is
-what "The drift alarm" is about. `dataops` stays un-paused, as §10 left it.
+A passing `dataops` run emits the asset event that starts `mlops` (§8), which
+here would train a model on the new projects before `monitoring` compares
+them with what the production model knows. That comparison is "The drift
+alarm". `dataops` stays un-paused, as §10 left it.
 
 ### Day 1: projects without tags
 
@@ -60,9 +59,9 @@ Leave `tags` as it is, and start a run:
 docker compose exec airflow-scheduler airflow dags trigger dataops
 ```
 
-**Checkpoint.** In the UI, the run fails at `transform` after a few
-minutes. Both syncs and both `validate_*` tasks are green, `transform` is red,
-and `validate_transformed` and `quality_report.summarize` are `upstream_failed`.
+**Checkpoint.** In the UI, after a few minutes, the run fails at `transform`:
+both syncs and both `validate_*` tasks are green, and `validate_transformed`
+and `quality_report.summarize` are `upstream_failed`.
 
 **Read the failure.** Open `transform`'s log. Near the end:
 
@@ -73,11 +72,11 @@ Got 191 results, configured to fail if != 0
 Done. PASS=5 WARN=0 ERROR=1 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6
 ```
 
-A dbt test is a query that returns the rows breaking the rule, and it fails
-when any come back. dbt writes each one, compiled, to
+A dbt test is a query that returns the rows breaking the rule; it fails when
+any come back. dbt writes each test, compiled, to
 `dbt/dbt_transforms/target/compiled/dbt_transforms/models/labeled_projects/schema.yml/not_null_labeled_projects_tag.sql`;
 this one selects `tag` where it is null. To see *which* projects, ask for
-more columns. In the BigQuery console (§9):
+more columns in the BigQuery console (§9):
 
 ```sql
 SELECT id, created_on, title
@@ -93,33 +92,32 @@ not grow:
 SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
 ```
 
-`n` is 1564. The projects arrived and their labels did not: labelling comes
-after the projects are submitted, and it is behind. Nothing is broken.
+`n` is 1564. The projects arrived before their labels: labelling follows
+submission, and it is behind. Nothing is broken.
 
-**Where the fix belongs: nowhere, yet.** Re-running gives the same failure,
-because the data is the same. Relaxing the test would let unlabelled projects
-reach training, where `preprocess` drops them without a word. Wait for the
-labels.
+**Where the fix belongs: nowhere, yet.** Re-running gives the same failure on
+the same data. Relaxing the test would let unlabelled projects reach
+training, where `preprocess` silently drops them. Wait for the labels.
 
-Two things the failure shows. First, `labeled_projects` now has the 191
-untagged rows: `dbt build` writes the table, then tests it. What kept them away
-from training is the gate after it: `validate_transformed` did not run, so no
-asset event was emitted. That gate protects only what waits for the asset.
-Whatever reads the table on its own gets the 191 untagged rows: `monitoring`
-(§12), scheduled on a cron rather than on the asset, and a run of `mlops`
-started by hand, which only its own check, `validate_training_data` (§10),
-stops. §16 shows the pattern that keeps a table that fails its tests from
-being published at all. Second, the wait: `transform` ran three times, a
-minute apart, because `dataops` gives every task `retries=2`. Retries help
-when the cause goes away by itself, such as a network error or a busy API; a data
-problem fails the same way every time. That is why the GX gates raise
-`AirflowFailException`, which skips the retries (§9). `transform` is a
-`BashOperator` running dbt, so it cannot tell a failed test from a lost
-connection, and retries both.
+The failure shows two more things. First, `labeled_projects` already has the
+191 untagged rows: `dbt build` writes the table, then tests it. What kept
+them from training is the next gate: `validate_transformed` did not run, so
+no asset event was emitted. That gate protects only what waits for the asset.
+Anything reading the table on its own gets the untagged rows: `monitoring`
+(§12), scheduled on a cron rather than on the asset, and a hand-started run
+of `mlops`, stopped only by its own check, `validate_training_data` (§10).
+§16 shows the pattern that keeps a table that fails its tests from being
+published at all. Second, the wait: `transform` ran three times, a minute
+apart, because `dataops` gives every task `retries=2`. Retries help when the
+cause goes away by itself (a network error, a busy API); a data problem fails
+the same way every time. That is why the GX gates raise
+`AirflowFailException`, which skips the retries (§9). `transform`, a
+`BashOperator` running dbt, cannot tell a failed test from a lost
+connection, so it retries both.
 
 ### Day 2: the same projects twice
 
-The labels arrive. Change both URLs, `projects` to:
+The labels arrive. Change `projects` to:
 
 ```
 https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/batch_2/day2_projects.csv
@@ -131,18 +129,18 @@ and `tags` to:
 https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/batch_2/day2_tags.csv
 ```
 
-This is a new delivery, so it gets a new run:
+A new delivery gets a new run:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags trigger dataops
 ```
 
-**Checkpoint.** This time the run fails within a minute, at
-`validate_projects`, with no retry. `validate_tags` is green, and `transform`,
+**Checkpoint.** This time the run fails within a minute at
+`validate_projects`, with no retry. `validate_tags` is green; `transform`,
 `validate_transformed` and `quality_report.summarize` are `upstream_failed`.
 
 **Read the failure.** `validate_projects`'s log ends with the failed
-expectation and a few of the rows that broke it:
+expectation and some of the rows that broke it:
 
 ```
 projects failed validation: [{'expectation': 'expect_compound_columns_to_be_unique:title,description', ...
@@ -158,25 +156,25 @@ GROUP BY title, description
 HAVING COUNT(*) > 1
 ```
 
-Four rows. Each pairs a 2020 project with a copy under a new id, 3800 to 3803,
-all four dated `2026-10-16 09:00:00`. The export sent four old projects again
-as if they were new.
+Four rows, each a 2020 project paired with a copy under a new id, 3800 to
+3803, all dated `2026-10-16 09:00:00`. The export re-sent four old projects
+as new.
 
-**Where the fix belongs: upstream.** The source has the bug, and it is the
-source's owner who can say which id is the real one. Report it, with the
-query. Deleting the copies in BigQuery does not help: the next sync replaces
-the whole table with the export again, copies included. Until a corrected
-export arrives, the gate holds the pipeline.
+**Where the fix belongs: upstream.** The bug is in the source, and only its
+owner can say which id is real. Report it, with the query. Deleting the
+copies in BigQuery does not help: the next sync overwrites the table with the
+export, copies included. Until a corrected export arrives, the gate holds the
+pipeline.
 
-One more line in `validate_tags`'s log, a warning, not a failure:
+`validate_tags`'s log has one more line, a warning, not a failure:
 `expect_column_values_to_be_in_set:tag` with `'other'` in its details. The new
 tags include a value the source never used before. The expectation is
 non-critical (§9), so the run went on. "The drift alarm" comes back to it.
 
 ### Day 3: a new date format
 
-Days 1 and 2 worked through each question for you. Day 3 is yours: the
-delivery and the goal are below, and the diagnosis and the fix are up to you.
+Days 1 and 2 answered each question for you. Day 3 is yours: below are the
+delivery and the goal; the diagnosis and the fix are up to you.
 
 The corrected export arrives. Change the `projects` source's URL to:
 
@@ -188,17 +186,16 @@ https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/bat
 docker compose exec airflow-scheduler airflow dags trigger dataops
 ```
 
-**Your task.** The run fails. The source's owner confirms that this export is
+**Your task.** The run fails. The source's owner confirms this export is
 right: it is how the source sends its data from now on. Get this run to
-`success` without extracting the data again, and leave a check behind, so
-that the next time something like this happens it is a dbt `FAIL` with a
-count of rows.
+`success` without extracting the data again, and leave a check behind so that
+next time something like this is a dbt `FAIL` with a count of rows.
 
-One tool you have not used yet: a run can re-run from any of its tasks. Open
+One tool you have not used yet: re-running a run from any of its tasks. Open
 the run in the UI, click a task, and choose **Clear Task Instance**.
-**Downstream** is already selected, so the tasks after it are cleared too.
-Choose **Confirm**, and the run starts again from that task. Which task to
-clear is part of the exercise.
+**Downstream** is preselected, so the tasks after it are cleared too. Choose
+**Confirm**, and the run restarts from that task. Which task to clear is part
+of the exercise.
 
 **Done when:**
 
@@ -214,7 +211,7 @@ Open the hints one at a time, only when you are stuck.
 <details>
 <summary>Hint 1: what kind of failure is it?</summary>
 
-Compare the last line of `transform`'s log with day 1's, which read
+Compare the last line of `transform`'s log with day 1's,
 `PASS=5 WARN=0 ERROR=1 SKIP=0`. What does a skip mean, and why would five
 things be skipped? Then find the line that names a value.
 
@@ -258,9 +255,9 @@ The raw tables are right. Which is the first task whose output was wrong?
 <details>
 <summary>Solution</summary>
 
-**Read the failure.** Both `validate_*` tasks pass, the warning about `other`
-included, and `transform` fails after its retries again. Its log is
-different from day 1's:
+**Read the failure.** Both `validate_*` tasks pass, with the warning about
+`other`, and `transform` again fails after its retries, with a log different
+from day 1's:
 
 ```
 ERROR creating sql table model mlops_course.labeled_projects
@@ -269,9 +266,10 @@ Invalid timestamp: '09/11/2026 17:19:07'
 Done. PASS=0 WARN=0 ERROR=1 SKIP=5 NO-OP=0 REUSED=0 TOTAL=6
 ```
 
-An `ERROR` is not a `FAIL`. A FAIL is a test that ran and found rows; an
+An `ERROR` is not a `FAIL`: a FAIL is a test that ran and found rows; an
 ERROR is SQL that could not run. Here `CAST(p.created_on AS TIMESTAMP)` met a
-value it cannot read, the model was not built, and its five tests were skipped.
+value it cannot read, so the model was not built and its five tests were
+skipped.
 
 ```sql
 SELECT created_on
@@ -280,8 +278,8 @@ WHERE SAFE_CAST(created_on AS TIMESTAMP) IS NULL
 ```
 
 191 rows, all written `MM/DD/YYYY HH:MM:SS`: the new projects. The export now
-writes dates differently. No check saw it: the `projects` suite checks the
-columns, the ids and the titles, and nothing about how a date is written.
+writes dates differently, and no check saw it: the `projects` suite checks
+the columns, the ids and the titles, not how a date is written.
 
 **Where the fix belongs: the transform.** The raw table holds what the source
 sends, and every row has a valid date, written one of two ways. Reading both
@@ -304,8 +302,8 @@ LEFT JOIN {{ source('mlops_course', 'tags') }} AS t
 ```
 
 `SAFE_CAST` returns `NULL` where `CAST` would stop the query, and `COALESCE`
-takes the first value that is not `NULL`: the old format, then the new one. A
-third format would give `NULL`, silently. So add the check this incident was
+takes the first non-`NULL` value: the old format, then the new one. A third
+format would silently give `NULL`. So add the check this incident was
 missing, in `dbt/dbt_transforms/models/labeled_projects/schema.yml`, before
 `title`:
 
@@ -315,26 +313,25 @@ missing, in `dbt/dbt_transforms/models/labeled_projects/schema.yml`, before
           - not_null
 ```
 
-A problem no check caught should leave a check behind. Next time it is a
-FAIL with a count of rows, not an error in the middle of the SQL.
+A problem no check caught should leave a check behind: next time it is a FAIL
+with a count of rows, not an error in the middle of the SQL.
 
-**Re-run only what changed.** The raw tables are right, so there is nothing
-to extract again: re-run `transform` and what comes after it. This is what
-ELT buys (§9). Clear `transform` in this failed run, and
-`validate_transformed` and `quality_report.summarize` are cleared with it.
-`transform` runs again in the same run, and `TOTAL=7` in its log is one model
-and six tests now.
+**Re-run only what changed.** The raw tables are right, so nothing needs
+extracting again: re-run `transform` and what follows it. This is what ELT
+buys (§9). Clear `transform` in this failed run; `validate_transformed` and
+`quality_report.summarize` are cleared with it. `transform` runs again in the
+same run, and `TOTAL=7` in its log is now one model and six tests.
 
 </details>
 
-The three days asked three different questions: should anything be fixed
-(day 1, no), whose fix is it (day 2, the source's), and where does it go
-(day 3, the transform). Re-running follows from the answer: a new delivery is
-a new run; a fix on your side re-runs from the task it changed.
+The three days asked three questions: should anything be fixed (day 1, no),
+whose fix is it (day 2, the source's), and where does it go (day 3, the
+transform). How much to re-run follows from the answer: a new delivery is a
+new run; a fix on your side re-runs from the task it changed.
 
 ### The drift alarm
 
-The data is in and checked. Now ask what the monitor of §12 makes of it:
+The data is in and checked. Now ask the monitor of §12 what it makes of it:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test monitoring
@@ -359,17 +356,17 @@ MANUAL INSPECTION NEEDED
 ```
 
 and `inspect` fails with `manual inspection needed - nothing was retrained
-or rolled back`. The run ends there, in seconds, failed: it needs a person,
-and nothing was retrained. That is the rule
-`decide` was written with in §12: a label the model has never seen means the
-label space moved, and retraining on data nobody understands yet is how a
-worse model ships. A drift alarm is a question; the inspection is yours.
+or rolled back`. The run ends there, in seconds: it needs a person, and
+nothing was retrained. That is the rule `decide` was written with in §12: a
+label the model has never seen means the label space moved, and retraining on
+data nobody understands yet is how a worse model ships. A drift alarm is a
+question; the inspection is yours.
 
-The current window is the 191 new projects, exactly: none of their ids is in
-the production model's `split_ids.json`. In its distribution, `other` is about
-14%, where the rows the model learned from never have it, and
-`reinforcement-learning`, `graph-learning` and `time-series` do not appear at
-all. Look at when each of those four tags was used:
+The current window is exactly the 191 new projects: none of their ids is in
+the production model's `split_ids.json`. In it, `other` is about 14%, though
+the rows the model learned from never have it, and `reinforcement-learning`,
+`graph-learning` and `time-series` do not appear at all. Look at when each of
+those four tags was used:
 
 ```sql
 SELECT tag, COUNT(*) AS n, DATE(MIN(created_on)) AS first, DATE(MAX(created_on)) AS last
@@ -386,15 +383,14 @@ time-series             58  2020-04-06  2026-08-11
 other                   26  2026-09-11  2026-10-13
 ```
 
-The three tags stop where `other` starts. From 11 September 2026 on, the
-source writes them as `other`, which is the same merge the model already
-makes: it learns four classes, and every other tag becomes `other` (§10). The
-`f1 at promotion=… now=…` line agrees: no drop, so the model is as good on
-the new projects as on its test split. Retraining
-would not fix this. The fix is to give the old rows the new vocabulary, in the
-transform, so the history and the new data use the same labels. In
-`labeled_projects.sql`, replace the last column, `t.tag`, so that the model
-reads:
+The three tags stop where `other` starts: from 11 September 2026 on, the
+source writes them as `other`. That is the merge the model already makes: it
+learns four classes, and every other tag becomes `other` (§10). The
+`f1 at promotion=… now=…` line agrees: no drop, so the model does as well on
+the new projects as on its test split. Retraining would not fix this. The fix
+is to give the old rows the new vocabulary, in the transform, so history and
+new data share the same labels. In `labeled_projects.sql`, replace the last
+column, `t.tag`, so that the model reads:
 
 ```sql
 SELECT
@@ -424,25 +420,25 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 
 **Checkpoint.** `new_labels=[]`, so `decide` no longer stops at `inspect`.
 Label drift is now around `0.006` with a shift of 0.10, length drift still
-around `5e-19` with 0.35, both shifts over `min_drift_shift`, and `decide` takes `trigger_retraining`, as in §12, and queues a run of `mlops`,
-which stays queued while `mlops` is paused.
+around `5e-19` with 0.35, both shifts over `min_drift_shift`, so `decide`
+takes `trigger_retraining`, as in §12, and queues a run of `mlops` that waits
+while `mlops` is paused.
 
 Both tests still report drift, and both are right. These 191 are Made With ML
-projects, like the 764 of §9, but the model learned from those and from the
-arXiv papers of §12 together. Next to that mix, the new projects are
-shorter, 17 words at the median against 22, and have twice the share of
-`mlops`, 8% against 4%. And the f1 did not drop. Drift is a difference, not
-damage: a drift test says the data moved, and only the performance check
-says whether that hurt. The policy of §12 retrains on either, at the cost of
-one training run, and the gate in `mlops` decides whether the result ships;
-a policy that retrained only on an f1 drop would take `continue_serving`
-here.
+projects, like the 764 of §9, but the model learned from those plus the
+arXiv papers of §12. Against that mix, the new projects are shorter (median
+17 words against 22) and have twice the share of `mlops` (8% against 4%).
+Yet the f1 did not drop. Drift is a difference, not damage: a drift test says
+the data moved; only the performance check says whether that hurt. The §12
+policy retrains on either, at the cost of one training run, and the gate in
+`mlops` decides whether the result ships; a policy that retrained only on an
+f1 drop would take `continue_serving` here.
 
-One loose end: every run of `dataops` still warns about `other`, in
+One loose end: every `dataops` run still warns about `other`, in
 `validate_tags` and `validate_transformed`. A warning that is always there
 stops being read, and the next one gets missed. The source now emits `other`
-on purpose, so it belongs in the list of tags it is known to emit. Add it to
-`KNOWN_RAW_TAGS` in [`src/project_tagger/config.py`](../../src/project_tagger/config.py):
+on purpose, so add it to the tags it is known to emit, `KNOWN_RAW_TAGS` in
+[`src/project_tagger/config.py`](../../src/project_tagger/config.py):
 
 ```python
 KNOWN_RAW_TAGS = [
@@ -468,14 +464,13 @@ and neither validation log has the warning any more.
 docker compose exec airflow-scheduler airflow dags unpause mlops
 ```
 
-The `mlops` run the monitor queued starts, and trains on all 1755 projects.
-Its gate may well keep the current model: the f1 did not drop, so there is
-little to win on the 49 new test rows, and `below the champion's … on the 49
-new test rows - not promoting` is a normal outcome; if the gate lets it
-through, `approve_promotion` waits for you, as in §10. The new projects are in,
-checked and labelled the same way as the old ones, and from now on every model
-trains on them. The sources keep their day 2 and day 3 URLs: that is your data
-now.
+The queued `mlops` run starts and trains on all 1755 projects. Its gate may
+well keep the current model: the f1 did not drop, so there is little to win
+on the 49 new test rows, and `below the champion's … on the 49 new test rows
+- not promoting` is a normal outcome; if the gate lets it through,
+`approve_promotion` waits for you, as in §10. The new projects are in,
+checked and labelled like the old ones, and every model from now on trains
+on them. The sources keep their day 2 and day 3 URLs: that is your data now.
 
 ---
 

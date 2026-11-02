@@ -1,58 +1,56 @@
 ## 12. Continual learning: monitorizar, decidir, actuar
 
-**Continual**, no continuo: el sistema se repite *con pausas*, y las pausas son
-deliberadas. Un monitor salta, se decide algo, y entonces corre el
-pipeline. Donde importa, decide una persona: lo que llega a producción espera
-a `approve_promotion`, la task de aprobación de la §10.
+**Continual**, no continuo: el sistema se repite *con pausas deliberadas*. Un
+monitor salta, se decide algo y entonces corre el pipeline. Donde importa,
+decide una persona: lo que llega a producción espera a `approve_promotion`, la
+task de aprobación de la §10.
 
-Lo que estás vigilando es el **drift**, de tres tipos:
+El monitor vigila el **drift**, de tres tipos:
 
 | Drift | Qué se movió | Aquí lo detecta |
 |---|---|---|
 | **data drift** | la distribución de entrada — el texto en sí | `length_drift`: un test de Kolmogorov–Smirnov sobre el número de palabras de cada texto |
 | **target drift** | la distribución de etiquetas — un tag domina, o aparece uno nuevo | `label_drift`: un test chi-cuadrado sobre los recuentos de tags, y `new_labels` |
-| **concept drift** | la relación entre entrada y etiqueta — la misma entrada ahora merece otra etiqueta | solo la comprobación de rendimiento en vivo, `monitoring.production_performance()`, que puntúa el modelo en producción con filas etiquetadas que no ha visto nunca: el f1 cae mientras las entradas parecen iguales |
+| **concept drift** | la relación entre entrada y etiqueta — la misma entrada ahora merece otra etiqueta | solo la comprobación de rendimiento, `monitoring.production_performance()`, que puntúa el modelo en producción con filas etiquetadas que no ha visto nunca: el f1 cae mientras las entradas parecen iguales |
 
 Los dos tests vienen de **alibi-detect**, una librería de detección de drift.
-Cada uno recibe una ventana de **referencia** (las filas de las que aprendió el
-modelo en producción) y una ventana **actual** (las filas que llegaron al
-warehouse después de entrenarlo, que no ha visto nunca), y responde con un **p-value**: la probabilidad de
-ver una diferencia al menos así de grande si en realidad nada hubiera cambiado.
-Un p-value pequeño significa que es poco probable que la diferencia sea
-casualidad. Por debajo de un umbral que eliges tú, por convención 0.05, el test
-informa de drift. El test de Kolmogorov–Smirnov (KS) compara cómo se reparte un
-valor numérico, aquí las palabras por texto, en las dos ventanas; el
+Cada uno compara una ventana de **referencia** (las filas de las que aprendió
+el modelo en producción) con una ventana **actual** (las filas que llegaron al
+warehouse después de entrenarlo, que no ha visto nunca) y devuelve un
+**p-value**: la probabilidad de una diferencia al menos así de grande si en
+realidad nada hubiera cambiado. Por debajo de un umbral que eliges tú, por
+convención 0.05, es poco probable que la diferencia sea casualidad y el test
+informa de drift. El test de Kolmogorov–Smirnov (KS) compara cómo se reparte
+un valor numérico, aquí las palabras por texto, en las dos ventanas; el
 chi-cuadrado compara dos conjuntos de recuentos por categoría.
 
 Un p-value dice cuán seguro está el test de que algo se movió, no cuánto. Con
 suficientes filas, un cambio demasiado pequeño para importar sigue siendo
-significativo, y un monitor que reentrena con cada cambio así arranca runs de
-entrenamiento que nadie necesita. Por eso cada test informa también de un
-**shift**, de 0 a 1: para los tags, la proporción de filas cuyo tag tendría que
-cambiar para que las dos mezclas coincidan (la *distancia de variación
-total*); para la longitud, la mayor separación entre las dos distribuciones
-acumuladas (la *distancia KS*). La política solo cuenta drift cuando el p-value
-es pequeño *y* el shift llega al menos a `min_drift_shift`.
+significativo, y reentrenar con cada cambio así arranca runs que nadie
+necesita. Por eso cada test informa también de un **shift**, de 0 a 1: para
+los tags, la proporción de filas cuyo tag tendría que cambiar para que las dos
+mezclas coincidan (la *distancia de variación total*); para la longitud, la
+mayor separación entre las dos distribuciones acumuladas (la *distancia KS*).
+La política solo cuenta drift cuando el p-value es pequeño *y* el shift llega
+al menos a `min_drift_shift`.
 
-Las dos ventanas salen del propio run de entrenamiento del modelo en
-producción. En la §10, `train_best` guardó con el run `split_ids.json`: los ids
-de proyecto de cada uno de sus splits. La **referencia** es cada fila de
-`labeled_projects` cuyo id estaba en su split de entrenamiento o de validación.
-La **actual** es cada fila cuyo id no está en ninguno de sus splits. Sus filas
-de test no están en ninguna de las dos ventanas: no aprendió de ellas, pero se
-eligió con ellas. Con menos de 50 filas actuales (`config.MIN_MONITOR_ROWS`)
-todavía no hay nada que medir, y el Dag mantiene el modelo y vuelve a mirar en
-su siguiente run.
+Las dos ventanas salen del run de entrenamiento del modelo en producción. En
+la §10, `train_best` guardó con el run `split_ids.json`: los ids de proyecto de
+cada split. La **referencia** es cada fila de `labeled_projects` cuyo id estaba
+en su split de entrenamiento o de validación; la **actual**, cada fila cuyo id
+no está en ninguno. Sus filas de test no están en ninguna ventana: no aprendió
+de ellas, pero se eligió con ellas. Con menos de 50 filas actuales
+(`config.MIN_MONITOR_ROWS`) todavía no hay nada que medir; el Dag mantiene el
+modelo y vuelve a mirar en su siguiente run.
 
-El f1 se mide dos veces sobre la ventana actual: sobre toda ella, y solo sobre
-sus filas más nuevas, las creadas en sus últimos 90 días
-(`config.RECENT_DAYS`), cuando son al menos 50. Un f1 sobre todo lo que el
-modelo no ha visto puede esconder una caída reciente: un buen año compensa un
-mal mes. La política toma la mayor de las dos caídas.
+El f1 se mide dos veces sobre la ventana actual: sobre toda ella, y sobre sus
+filas creadas en los últimos 90 días (`config.RECENT_DAYS`), cuando son al
+menos 50. Un f1 sobre todo puede esconder una caída reciente: un buen año
+compensa un mal mes. La política toma la mayor de las dos caídas.
 
 Cada run de monitorización acaba en una de cuatro acciones. En
 `dags/06_monitoring_and_retraining.py`, la task `decide`, un `@task.branch`
-(§10), elige una, y cada acción es su propia task:
+(§10), elige una; cada acción es su propia task:
 
 | Acción | Cuándo | Qué pasa |
 |---|---|---|
@@ -61,8 +59,8 @@ Cada run de monitorización acaba en una de cuatro acciones. En
 | **inspect** | apareció una etiqueta no vista, o el rendimiento se desplomó y el modelo anterior no es mejor | hacer fallar el run, para que una persona lo mire; no se reentrena ni se hace rollback |
 | **rollback** | el rendimiento se desplomó, y el modelo anterior lo hace mejor con las mismas filas | volver a apuntar producción al modelo anterior |
 
-Cómo se hablan las piezas cuando se ejecuta el Dag. Cada columna es un
-sistema, como en el diagrama de la §9:
+Cómo se hablan las piezas cuando se ejecuta el Dag, una columna por sistema,
+como en el diagrama de la §9:
 
 ```
  Airflow (Docker)               │ BigQuery          │ MLflow (Docker)
@@ -96,19 +94,19 @@ El modelo en producción de la §10 se entrenó con los 764 proyectos de Made
 With ML, así que cada fila del warehouse está en uno de sus splits y no hay
 nada que monitorizar. Ahora llegan 800 más: papers reales de informática de
 arXiv, enviados entre enero de 2025 y septiembre de 2026, cada uno escrito como
-un proyecto (su título, y la primera frase de su abstract como descripción) y
+un proyecto (su título, y la primera frase del abstract como descripción) y
 etiquetado según su categoría de arXiv.
 [`datasets/README.md`](../../datasets/README.md) explica cómo se eligieron y
 etiquetaron.
 
 Nadie los alteró para que apareciera drift. Se diferencian de los proyectos de
-Made With ML en dos cosas: más computer vision y ningún `mlops`, y
+Made With ML en dos cosas: más computer vision y ningún `mlops`; y
 descripciones más largas, porque la primera frase de un paper dice más que una
-reseña de una línea. La segunda es un cambio en cómo escribe el origen, no en
-de qué tratan los proyectos; un test sobre la longitud del texto no distingue
-una cosa de la otra. Los papers también son más nuevos, pero fecha y origen
-cambian a la vez, así que estos datos no dicen cuánto del drift se debe a la
-fecha.
+reseña de una línea. Lo segundo es un cambio en cómo escribe el origen, no en
+de qué tratan los proyectos, y un test sobre la longitud del texto no
+distingue una cosa de la otra. Los papers también son más nuevos, pero fecha y
+origen cambian a la vez, así que estos datos no dicen cuánto del drift se debe
+a la fecha.
 
 Antes, pausa `mlops`:
 
@@ -118,9 +116,9 @@ docker compose exec airflow-scheduler airflow dags pause mlops
 
 Un run de `dataops` que tiene éxito emite el asset event que arranca `mlops` (§8).
 Aquí eso entrenaría un modelo con los proyectos nuevos antes de que
-`monitoring` los haya comparado con lo que conoce el modelo en producción, y
-esa comparación es de lo que trata esta sección. `dataops` sigue sin pausa,
-como lo dejó la §10.
+`monitoring` los compare con lo que conoce el modelo en producción: justo la
+comparación de la que trata esta sección. `dataops` sigue sin pausa, como lo
+dejó la §10.
 
 Una entrega es un cambio de URL en una source de Airbyte. En Airbyte, abre
 **Sources**, elige `projects`, sustituye su **URL** por:
@@ -197,31 +195,31 @@ def monitoring_dag():
 ```
 
 (La función se llama `monitoring_dag` porque `monitoring` ya es el nombre del
-módulo importado. El `dag_id` es lo que ve Airflow.)
+módulo importado; el `dag_id` es lo que ve Airflow.)
 
 La task de drift, `detect_drift`, corre en **otro Python**. alibi-detect
-necesita `numpy<2`, algo que el entorno propio de Airflow no puede tener, así que la imagen trae un
-segundo virtualenv solo para él, `/opt/venvs/alibi`, y `config.ALIBI_PYTHON` es
-su intérprete. `@task.external_python` envía la función allí: Airflow escribe
-en archivos el código fuente de la función y sus argumentos, ejecuta ese
-intérprete sobre ellos en un subproceso, y recoge el valor que devuelve.
-Eso tiene consecuencias que verás en el código de abajo:
+necesita `numpy<2`, que el entorno de Airflow no puede tener, así que la
+imagen trae un segundo virtualenv para él, `/opt/venvs/alibi`, cuyo intérprete
+es `config.ALIBI_PYTHON`. `@task.external_python` envía la función allí:
+Airflow escribe en archivos su código fuente y sus argumentos, ejecuta ese
+intérprete sobre ellos en un subproceso y recoge el valor devuelto.
+Consecuencias, visibles en el código de abajo:
 
-- Todo lo que usa la función se **importa dentro de ella**. Los imports del
-  nivel superior de este archivo no existen en ese otro Python.
-- Los argumentos y el valor devuelto tienen que ser **datos simples**: se
-  serializan con pickle para pasar de un proceso a otro. Por eso entran rutas
-  y sale un dict de números; nunca un dataframe.
-- `expect_airflow=False`, porque ese virtualenv no tiene Airflow. La función
+- Todo lo que usa la función se **importa dentro de ella**; los imports del
+  nivel superior de este archivo no existen en ese Python.
+- Los argumentos y el valor devuelto tienen que ser **datos simples**,
+  serializados con pickle para pasar de un proceso a otro: entran rutas y sale
+  un dict de números, nunca un dataframe.
+- `expect_airflow=False`, porque ese virtualenv no tiene Airflow; la función
   tampoco recibe el contexto. El umbral llega como template,
-  `"{{ params.drift_p_val }}"`, que se renderiza antes de que arranque el
+  `"{{ params.drift_p_val }}"`, renderizado antes de que arranque el
   subproceso, así que llega como string, y `float()` lo convierte.
 
 Es la versión ligera de lo que la §16 recomienda para equipos con dependencias
 que chocan: una imagen de contenedor por task, con `KubernetesPodOperator`.
 
-Primero, medir. Las ventanas se escriben una sola vez, y las leen tanto los
-tests de drift como la comprobación de rendimiento:
+Primero, medir. Las ventanas se escriben una vez, y las leen tanto los tests
+de drift como la comprobación de rendimiento:
 
 ```python dags/06_monitoring_and_retraining.py
     @task
@@ -315,30 +313,29 @@ Después, decidir:
         return "continue_serving"
 ```
 
-`params` es la política — los defaults de `POLICY_PARAMS`, o lo que se le haya
+`params` es la política: los defaults de `POLICY_PARAMS`, o lo que se le haya
 dado a este run. Las dos primeras comprobaciones van antes de cualquier
-política: sin modelo en producción hay uno que entrenar, y sin ventana actual
-todavía no hay nada que juzgar. Después, `f1_drop` es la mayor caída de las
-dos ventanas de f1, `drifted` le pide a un test a la vez un p-value pequeño y
-un shift suficiente, y cada condición de reentrenamiento vigila uno de los
-tres tipos de drift de la tabla. Fíjate en el orden: **una etiqueta nueva lleva a
-`inspect`, no a `trigger_retraining`.** Reentrenar con datos cuyo espacio de
-etiquetas todavía no has entendido es la receta para publicar un modelo peor
-creyendo que es mejor.
+política: sin modelo en producción hay que entrenar uno; sin ventana actual no
+hay nada que juzgar todavía. Después, `f1_drop` es la mayor de las dos caídas
+de f1, `drifted` exige a un test un p-value pequeño y un shift suficiente, y
+cada condición de reentrenamiento vigila uno de los tres tipos de drift de la
+tabla. Fíjate en el orden: **una etiqueta nueva lleva a `inspect`, no a
+`trigger_retraining`.** Reentrenar con datos cuyo espacio de etiquetas todavía
+no has entendido es la receta para publicar un modelo peor creyendo que es
+mejor.
 
 Un desplome tampoco hace rollback por sí solo. **Un rollback solo ayuda si el
 problema es el modelo en producción**, así que `decide` lo comprueba antes: el
-champion anterior tampoco ha visto nunca las filas actuales, y si puntúa mejor
-con ellas, el modelo nuevo es peor, y `rollback` vuelve a poner el anterior.
-Si no puntúa mejor, los datos se movieron bajo los dos modelos, un rollback no
-arreglaría nada, y el run va a `inspect`. Lo mismo pasa con un desplome sin
-champion anterior al que volver.
+champion anterior tampoco ha visto las filas actuales, y si puntúa mejor con
+ellas, el modelo nuevo es peor y `rollback` vuelve a poner el anterior. Si no,
+los datos se movieron bajo los dos modelos, un rollback no arreglaría nada y
+el run va a `inspect`, igual que un desplome sin champion anterior al que
+volver.
 
-Los dos caminos a `trigger_retraining` pasan antes por `retrain_or_wait`. El
-monitor corre cada día; los datos nuevos no llegan cada día, y hasta que
-llegan, el drift que encontró sigue ahí. Sin esta comprobación, cada mañana
-arrancaría un run más de `mlops` con las mismas filas. Mantiene el modelo, en
-vez de reentrenar, en dos casos:
+Los dos caminos a `trigger_retraining` pasan por `retrain_or_wait`. El monitor
+corre cada día; los datos nuevos no llegan cada día, y hasta que llegan, el
+drift encontrado sigue ahí. Sin esta comprobación, cada mañana arrancaría otro
+run de `mlops` con las mismas filas. Mantiene el modelo en dos casos:
 
 - **Ya hay un run de `mlops` en cola o en marcha.** `ti.get_dr_count` le
   pregunta a Airflow cuántos runs de otro Dag están en los estados dados.
@@ -346,8 +343,8 @@ vez de reentrenar, en dos casos:
   `prepare_windows` busca en MLflow el run de entrenamiento más reciente; si no
   es el del champion y su `split_ids.json` tiene todas las filas actuales, el
   gate o la aprobación lo rechazaron. Otra búsqueda con las mismas filas es un
-  reintento, no evidencia nueva. Lo que cambia eso es una entrega nueva, y esa
-  arranca `mlops` de todos modos, por su asset (§8).
+  reintento, no evidencia nueva. Lo que cambia eso es una entrega nueva, que
+  de todos modos arranca `mlops` por su asset (§8).
 
 Ahora las cuatro ramas que puede elegir `decide`. Tres son simples; la cuarta
 arranca otro Dag:
@@ -392,29 +389,27 @@ arranca otro Dag:
 
 `inspect` escribe lo que una persona necesita para empezar a mirar: qué se
 movió, y dónde falla el modelo, por tag y en cada slice de evaluación de la
-§10. Después falla a propósito, con `AirflowFailException` (§9). Un run que necesita a una
-persona no debe acabar en verde: un éxito se lee como "todo bien", y un fallo
-es a lo que se conectan las alertas (§16).
+§10. Después falla a propósito, con `AirflowFailException` (§9): un run que
+necesita a una persona no debe acabar en verde, porque un éxito se lee como
+"todo bien" y un fallo es a lo que se conectan las alertas (§16).
 
 `TriggerDagRunOperator` arranca otro Dag: crea un run `manual__` de `mlops`
-con el `conf` dado, y con `wait_for_completion=False` no se queda a mirarlo.
-No hay aprobación antes: un reentrenamiento no cambia nada en producción, y el
-modelo que produce todavía tiene que pasar `promotion_gate` y
-`approve_promotion` (§10).
+con el `conf` dado, y con `wait_for_completion=False` no se queda a esperarlo.
+No hay aprobación antes: un reentrenamiento no cambia nada en producción, y su
+modelo todavía tiene que pasar `promotion_gate` y `approve_promotion` (§10).
 
 `rollback` devuelve el alias `champion` del registry a `previous_champion`. No
-se vuelve a desplegar nada ni se copia ningún archivo: todo lo que cargue
-`models:/project_tagger@champion` recibirá la versión anterior la próxima vez
-que lo cargue. Eso es lo que hace un rollback lo bastante barato como para
-automatizarlo. `registry.rollback` además borra el alias `previous_champion`,
-para que un segundo rollback no pueda volver a poner el modelo malo, y
-etiqueta la versión retirada con `rolled_back_reason`, que la UI de MLflow
-muestra. La task emite `production_model`, como `promote_model` en la §10: un
-rollback cambia el modelo en producción tanto como una promoción. `decide` solo
-elige `rollback` después de ver un champion anterior; si el alias ya no está
-cuando la task se ejecuta, falla en vez de saltarse, porque el modelo
-desplomado sigue en producción y alguien tiene que saberlo. Una task fallida
-no emite asset event.
+se despliega ni se copia nada: todo lo que cargue
+`models:/project_tagger@champion` recibirá la versión anterior en su próxima
+carga, y eso hace un rollback lo bastante barato como para automatizarlo.
+`registry.rollback` además borra el alias `previous_champion`, para que un
+segundo rollback no pueda volver a poner el modelo malo, y etiqueta la versión
+retirada con `rolled_back_reason`, visible en la UI de MLflow. La task emite
+`production_model`, como `promote_model` en la §10: un rollback cambia el
+modelo en producción tanto como una promoción. `decide` solo elige `rollback`
+tras ver un champion anterior; si el alias ya no está cuando la task se
+ejecuta, falla en vez de saltarse, porque el modelo desplomado sigue en
+producción y alguien tiene que saberlo. Una task fallida no emite asset event.
 
 Termina conectando las tasks:
 
@@ -433,9 +428,8 @@ Termina conectando las tasks:
 monitoring_dag()
 ```
 
-Cuatro ramas que salen de `decide`, que devuelve el `task_id` de la rama que
-hay que ejecutar. No hay join al final, porque nada tiene que correr después de
-todas ellas.
+`decide` devuelve el `task_id` de la rama que hay que ejecutar. No hay join al
+final, porque nada tiene que correr después de todas ellas.
 
 ### Ejecútalo
 
@@ -446,11 +440,11 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 **Comprobación.** `prepare_windows` escribe en el log `'num_current': 800`,
 con `version` la del champion: los 800 papers son las filas que no ha visto
 nunca. `check_performance` escribe su f1 en la promoción y ahora, en torno a
-0.89 y 0.80: una caída de entre 0.05 y 0.11, según la búsqueda, por debajo de
-`max_f1_drop` (0.15). `f1_recent`, sobre los 122 papers de los últimos 90 días, es
-más alto que `f1_now`: los papers más nuevos no son los que se le dan mal, así
-que la ventana entera da la mayor caída. `f1_previous` es `None`: es el primer
-modelo que se promociona, así que no hay con qué compararlo.
+0.89 y 0.80: una caída de entre 0.05 y 0.11 según la búsqueda, por debajo de
+`max_f1_drop` (0.15). `f1_recent`, sobre los 122 papers de los últimos 90
+días, es más alto que `f1_now`: los papers más nuevos no son los que se le dan
+mal, así que la ventana entera da la mayor caída. `f1_previous` es `None`: es
+el primer modelo que se promociona, así que no hay con qué compararlo.
 `decide` escribe los dos p-values, label drift en torno a `1e-22` y length
 drift `0`, los dos muy por debajo de 0.05, y los dos shifts muy por encima de
 0.05. Dicen cosas distintas:
@@ -458,14 +452,14 @@ drift `0`, los dos muy por debajo de 0.05, y los dos shifts muy por encima de
 - **Target drift**, shift 0.19. `computer-vision` es el 38 % de las filas de
   las que aprendió el modelo y el 57 % de las nuevas; `mlops`, el 8 % de lo
   que aprendió, no aparece.
-- **Data drift**, shift 0.63. La longitud mediana de un texto es de 16
-  palabras en las filas de las que aprendió el modelo, y de 27 en las nuevas:
-  un p-value demasiado pequeño para mostrarse como algo distinto de `0`.
+- **Data drift**, shift 0.63. La mediana es de 16 palabras por texto en las
+  filas de las que aprendió el modelo, y de 27 en las nuevas: un p-value
+  demasiado pequeño para mostrarse como algo distinto de `0`.
 - **Rendimiento.** El f1 bajó, pero menos que `max_f1_drop`, así que la
   comprobación de concept drift no habría saltado sola.
 
 Dos tests informan de drift, así que `decide` elige la rama de
-reentrenamiento. Después:
+reentrenamiento:
 
 ```
 Branch into trigger_retraining
@@ -478,9 +472,8 @@ Comprueba esa última línea:
 docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 ```
 
-Tiene ahora un run `manual__…` recién creado por este Dag, en `queued`:
-`mlops` está en pausa, así que el run espera. Un Dag decidió que otro Dag
-debía correr.
+`mlops` tiene ahora un run `manual__…` recién creado por este Dag, en `queued`
+porque `mlops` está en pausa. Un Dag decidió que otro Dag debía correr.
 
 > **Cambia la política, cambia la decisión.** El umbral es un param, así que a
 > un run se le puede dar otro:
@@ -490,16 +483,16 @@ debía correr.
 >     airflow dags test monitoring --conf '{"drift_p_val": 0}'
 > ```
 >
-> Ningún p-value queda por debajo de 0, así que ningún test informa de drift,
-> y la política solo mira el f1, cuya caída está por debajo de `max_f1_drop`:
-> `decide()` devuelve `continue_serving`, la rama de reentrenamiento queda
-> skipped, y el run termina en segundos. Los mismos datos y el mismo modelo en
-> producción, y otra decisión: el desenlace depende de la política, y para eso
-> es un param. Aquí, además, es la peor política: el f1 sí bajó, y el
-> reentrenamiento de abajo lo recupera.
+> Ningún p-value queda por debajo de 0, así que ningún test informa de drift y
+> solo cuenta el f1, cuya caída está por debajo de `max_f1_drop`: `decide()`
+> devuelve `continue_serving`, la rama de reentrenamiento queda skipped y el
+> run termina en segundos. Mismos datos, mismo modelo en producción, otra
+> decisión: el desenlace depende de la política, y para eso es un param. Aquí,
+> además, es la peor política: el f1 sí bajó, y el reentrenamiento de abajo lo
+> recupera.
 
 **Deja correr el reentrenamiento.** El run creado por `trigger_retraining`
-está esperando, porque `mlops` sigue en pausa. Quítale la pausa:
+espera porque `mlops` sigue en pausa. Quítale la pausa:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause mlops
@@ -507,20 +500,20 @@ docker compose exec airflow-scheduler airflow dags unpause mlops
 
 **Comprobación.** El run en cola arranca en unos segundos y termina con éxito
 un par de minutos después. Su snapshot tiene las 1564 filas, y su split de
-test 319 de ellas: las 157 con las que se evaluó el champion, más 162 de los
-papers, por el mismo hash. `compare_with_champion` escribe tres líneas, `all`,
-`new` y `old`. Sobre las 162 filas de test nuevas el modelo nuevo saca
-entre 0.92 y 0.96 y el champion entre 0.82 y 0.85; sobre las 157 viejas los
-dos quedan cerca, el modelo nuevo normalmente uno o dos puntos por debajo.
+test 319: las 157 con las que se evaluó el champion, más 162 de los papers,
+por el mismo hash. `compare_with_champion` escribe tres líneas, `all`, `new` y
+`old`. Sobre las 162 filas de test nuevas el modelo nuevo saca entre 0.92 y
+0.96 y el champion entre 0.82 y 0.85; sobre las 157 viejas los dos quedan
+cerca, el modelo nuevo normalmente uno o dos puntos por debajo.
 `promotion_gate` escribe `f1=… clears the champion's … on the 162 new test
 rows - promoting`, y `approve_promotion` te espera, como en la §10. Esta es la
 decisión para la que existe la aprobación: los números están en el aviso, y el
-modelo en MLflow. Apruébalo en su pestaña
-**Required Actions**, o deja que el default lo apruebe a los 60 segundos, y
-`promote_model` mueve `champion` a la versión nueva.
+modelo en MLflow. Apruébalo en su pestaña **Required Actions**, o deja que el
+default lo apruebe a los 60 segundos, y `promote_model` mueve `champion` a la
+versión nueva.
 
-Eso es el drift tratado: el modelo nuevo aprendió de 638 de los papers, y en
-los que no ha visto ninguno de los dos modelos es entre 8 y 14 puntos mejor.
+Drift tratado: el modelo nuevo aprendió de 638 de los papers, y en los que no
+ha visto ninguno de los dos modelos es entre 8 y 14 puntos mejor.
 
 Pregunta al monitor una vez más:
 
@@ -529,26 +522,25 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
 **Comprobación.** `decide` escribe `only 0 new rows since version … was
-trained - nothing to measure`, con la versión que acaba de promocionar
-`promote_model`, y elige `continue_serving`, en segundos. El champion nuevo
-se construyó con las 1564 filas, así que cada fila está en uno de sus splits. La
-siguiente entrega, en la §14, vuelve a darle al monitor algo que medir.
+trained - nothing to measure`, con la versión recién promocionada, y elige
+`continue_serving` en segundos. El champion nuevo se construyó con las 1564
+filas, así que cada fila está en uno de sus splits. La siguiente entrega, en
+la §14, vuelve a darle al monitor algo que medir.
 
 Referencia: [`solutions/06_monitoring_and_retraining.py`](../../solutions/06_monitoring_and_retraining.py).
 
 ### Lo que el monitor no ve
 
-La comprobación de rendimiento necesita el tag real de cada fila actual, y
-aquí cada fila llega con su tag, elegido por quien envió el proyecto. En la
-mayoría de los sistemas la verdad llega tarde, o nunca: un préstamo entra en
-impago meses después de la decisión, y casi nadie informa de vuelta sobre una
-recomendación. Hasta que llega, hay tres maneras de suplirla: un **proxy** de
-la etiqueta, una señal que llega antes; **etiquetar a mano una muestra
-pequeña** de las filas nuevas; o el **importance weighting**, que estima el f1
-en producción a partir de filas que sí tienen etiqueta, con cada slice
-ponderado según lo común que es ahora en producción. Los tests de drift no
-necesitan etiquetas, y por eso vale la pena ejecutarlos incluso donde todavía
-no se puede medir el f1.
+La comprobación de rendimiento necesita el tag real de cada fila actual; aquí
+cada fila llega con su tag, elegido por quien envió el proyecto. En la mayoría
+de los sistemas la verdad llega tarde, o nunca: un préstamo entra en impago
+meses después de la decisión, y casi ninguna recomendación recibe respuesta.
+Hasta que llega, hay tres maneras de suplirla: un **proxy** de la etiqueta,
+una señal que llega antes; **etiquetar a mano una muestra pequeña** de las
+filas nuevas; o el **importance weighting**, que estima el f1 en producción a
+partir de filas etiquetadas, con cada slice ponderado según lo común que es
+ahora en producción. Los tests de drift no necesitan etiquetas, y por eso vale
+la pena ejecutarlos incluso donde todavía no se puede medir el f1.
 
 Tampoco vigila el sistema en sí: latencia, throughput, tasa de errores, CPU y
 memoria. Eso pertenece a la capa de serving, el servicio que responde a las
@@ -557,9 +549,9 @@ peticiones de predicción, que este proyecto no tiene.
 ### Lo que "reentrenar" deja fuera
 
 `trigger_retraining` dispara `mlops`, que entrena con lo que haya en el
-warehouse. Eso es la orquestación; no es el problema completo del
-reentrenamiento. Cada uno de estos sería una task más en una versión real de
-este Dag:
+warehouse. Eso es la orquestación, no el problema completo del
+reentrenamiento. Cada uno de estos pasos sería una task más en una versión
+real de este Dag:
 
 | Paso | Por qué no es automático |
 |---|---|
@@ -572,26 +564,25 @@ este Dag:
 
 La otra restricción es el **catastrophic forgetting**: entrenar solo con la
 ventana nueva hace que el modelo olvide patrones que antes acertaba, así que
-corrige los errores de hoy y vuelve a cometer los de antes. El Dag de este
-tutorial lo evita entrenando siempre con la tabla etiquetada completa: vale con
-este tamaño, y es lo primero que hay que revisar cuando la tabla deje de caber
-en una task.
+corrige los errores de hoy y vuelve a cometer los de antes. Este Dag lo evita
+entrenando siempre con la tabla etiquetada completa: vale con este tamaño, y
+es lo primero que hay que revisar cuando la tabla deje de caber en una task.
 
-Por eso también `promotion_gate`, en la §10, compara con el modelo que está en
-producción, sobre las mismas filas de test, en vez de solo con un umbral fijo:
-un modelo reentrenado que es peor que el actual no debería publicarse solo
-porque saltó un monitor.
+Por eso también `promotion_gate`, en la §10, compara con el modelo en
+producción sobre las mismas filas de test, y no solo con un umbral fijo: un
+modelo reentrenado peor que el actual no debería publicarse solo porque saltó
+un monitor.
 
 La línea `old` de `compare_with_champion` es donde se ve el olvido: el f1 del
 modelo nuevo sobre las filas de test del propio champion. En el run de
 reentrenamiento de esta sección costó uno o dos puntos. Un equipo que quiera
-ponerle límite añade un **guardarraíl** al gate: no se promociona si el f1
-sobre las filas viejas cae más de un margen fijado.
+limitarlo añade un **guardarraíl** al gate: no se promociona si el f1 sobre
+las filas viejas cae más de un margen fijado.
 
 ### Hacer rollback menos a menudo
 
 Si hace falta un rollback, es que antes un modelo malo llegó a producción. Las
-**estrategias de despliegue** reducen el daño que puede hacer antes de que
+**estrategias de despliegue** limitan el daño que puede hacer antes de que
 alguien se dé cuenta:
 
 | Estrategia | Cómo recibe tráfico el modelo nuevo |
@@ -600,13 +591,12 @@ alguien se dé cuenta:
 | **shadow** (o *dark canary*) | el modelo nuevo recibe una copia de las peticiones reales y sus predicciones se registran, nunca se devuelven; se evalúa con datos en vivo sin afectar a ningún usuario |
 | **blue-green** | la versión nueva corre junto a la antigua, y el tráfico cambia de una a otra de golpe, con la antigua lista para volver a ella |
 
-Pertenecen a la capa de serving, el servicio que responde a las peticiones
-de predicción, que este proyecto no tiene: aquí `champion` cambia de golpe.
-Pero el punto de partida está en el registry: con un alias `challenger` junto a
-`champion`, el sistema de serving sabe qué versión recibe la parte del canary
-o la copia del shadow, y el promotion gate pasa a ser "las métricas en vivo del
-challenger superan a las del champion" en vez de una puntuación sobre un
-conjunto de test.
+Pertenecen a la capa de serving, que este proyecto no tiene: aquí `champion`
+cambia de golpe. Pero empiezan en el registry: un alias `challenger` junto a
+`champion` le dice al sistema de serving qué versión recibe la parte del
+canary o la copia del shadow, y el promotion gate pasa a ser "las métricas en
+vivo del challenger superan a las del champion" en vez de una puntuación sobre
+un conjunto de test.
 
 ---
 
