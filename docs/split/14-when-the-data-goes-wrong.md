@@ -4,15 +4,16 @@ Every run so far has passed, because every run has read the same clean files.
 Real data arrives in pieces, late, re-sent and reformatted, and then the job
 is no longer writing the pipeline but answering it when a check fails. This
 section loads a second batch of projects over three deliveries, each with a
-problem real loads have, and works through each one: where it shows up, how
-to find the rows behind it, where the fix belongs, and how much to re-run.
-Then the same batch sets off the drift monitor of §12.
+problem real loads have. It works through the first two: where each shows up,
+how to find the rows behind it, where the fix belongs, and how much to re-run.
+The third you work through yourself. Then the same batch sets off the drift
+monitor of §12.
 
 | Delivery | What arrives | What is wrong | Where it shows up |
 |---|---|---|---|
 | Day 1 | 191 new projects | their tags have not arrived | `transform`: a dbt test fails |
 | Day 2 | the tags, and the projects again | four old projects re-sent under new ids | `validate_projects`: a GX suite fails |
-| Day 3 | the projects, corrected | the new projects' dates are in another format | `transform`: the model cannot be built, and no check saw it coming |
+| Day 3 | the projects, corrected | for you to find | for you to find |
 | — | (the same data) | the tags use a different vocabulary from 11 September 2026 on | `monitoring`: drift |
 
 ### The batch
@@ -174,6 +175,9 @@ non-critical (§9), so the run went on. "The drift alarm" comes back to it.
 
 ### Day 3: a new date format
 
+Days 1 and 2 worked through each question for you. Day 3 is yours: the
+delivery and the goal are below, and the diagnosis and the fix are up to you.
+
 The corrected export arrives. Change the `projects` source's URL to:
 
 ```
@@ -184,9 +188,79 @@ https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/bat
 docker compose exec airflow-scheduler airflow dags trigger dataops
 ```
 
-**Checkpoint.** Both `validate_*` tasks pass, the warning about `other`
+**Your task.** The run fails. The source's owner confirms that this export is
+right: it is how the source sends its data from now on. Get this run to
+`success` without extracting the data again, and leave a check behind, so
+that the next time something like this happens it is a dbt `FAIL` with a
+count of rows.
+
+One tool you have not used yet: a run can re-run from any of its tasks. Open
+the run in the UI, click a task, and choose **Clear Task Instance**.
+**Downstream** is already selected, so the tasks after it are cleared too.
+Choose **Confirm**, and the run starts again from that task. Which task to
+clear is part of the exercise.
+
+**Done when:**
+
+- the run is `success`, and `validate_transformed` passes with the same
+  warning about `other` as `validate_tags`;
+- `transform`'s log ends with
+  `Done. PASS=7 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7`, one test more
+  than on day 1;
+- `labeled_projects` has 1755 rows.
+
+Open the hints one at a time, only when you are stuck.
+
+<details>
+<summary>Hint 1: what kind of failure is it?</summary>
+
+Compare the last line of `transform`'s log with day 1's, which read
+`PASS=5 WARN=0 ERROR=1 SKIP=0`. What does a skip mean, and why would five
+things be skipped? Then find the line that names a value.
+
+</details>
+
+<details>
+<summary>Hint 2: which rows?</summary>
+
+The model reads the raw `projects` table (§9). BigQuery's `SAFE_CAST` returns
+`NULL` where `CAST` would stop the query: use it to find the rows `CAST`
+cannot read.
+
+</details>
+
+<details>
+<summary>Hint 3: where does the fix go?</summary>
+
+Day 2 showed why changing a raw table does not last. The fix goes in
+`dbt/dbt_transforms/models/labeled_projects/labeled_projects.sql`. BigQuery's
+`SAFE.PARSE_TIMESTAMP` reads a timestamp written in a format you give it, and
+`COALESCE` returns the first of its arguments that is not `NULL`.
+
+</details>
+
+<details>
+<summary>Hint 4: which check?</summary>
+
+After your fix, what does a date written in a third format become in
+`labeled_projects`? Which test, added to
+`dbt/dbt_transforms/models/labeled_projects/schema.yml` (§9), would catch it?
+
+</details>
+
+<details>
+<summary>Hint 5: which task to clear?</summary>
+
+The raw tables are right. Which is the first task whose output was wrong?
+
+</details>
+
+<details>
+<summary>Solution</summary>
+
+**Read the failure.** Both `validate_*` tasks pass, the warning about `other`
 included, and `transform` fails after its retries again. Its log is
-different:
+different from day 1's:
 
 ```
 ERROR creating sql table model mlops_course.labeled_projects
@@ -246,14 +320,12 @@ FAIL with a count of rows, not an error in the middle of the SQL.
 
 **Re-run only what changed.** The raw tables are right, so there is nothing
 to extract again: re-run `transform` and what comes after it. This is what
-ELT buys (§9). In the UI, open this failed run, click `transform`, and choose
-**Clear Task Instance**. **Downstream** is already selected, so
-`validate_transformed` and `quality_report.summarize` are cleared too. Choose **Confirm**.
+ELT buys (§9). Clear `transform` in this failed run, and
+`validate_transformed` and `quality_report.summarize` are cleared with it.
+`transform` runs again in the same run, and `TOTAL=7` in its log is one model
+and six tests now.
 
-**Checkpoint.** `transform` runs again in the same run and its log ends with
-`Done. PASS=7 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7`: one model and
-six tests now. `validate_transformed` passes, with the same warning about
-`other`, and the run is `success`. `labeled_projects` has 1755 rows.
+</details>
 
 The three days asked three different questions: should anything be fixed
 (day 1, no), whose fix is it (day 2, the source's), and where does it go

@@ -4,16 +4,16 @@ Hasta ahora todos los runs salieron bien, porque todos leyeron los mismos archiv
 limpios. Los datos reales llegan por partes, tarde, repetidos y con otro
 formato, y entonces el trabajo ya no es escribir el pipeline sino reaccionar
 cuando un control falla. Esta sección carga un segundo lote de proyectos en
-tres entregas, cada una con un problema que tienen las cargas reales, y
-resuelve cada una: dónde aparece, cómo encontrar las filas que lo causan,
-dónde va el arreglo y cuánto hay que volver a ejecutar. Después, el mismo lote
-dispara el monitor de drift de la §12.
+tres entregas, cada una con un problema que tienen las cargas reales. Resuelve
+las dos primeras: dónde aparece cada problema, cómo encontrar las filas que lo
+causan, dónde va el arreglo y cuánto hay que volver a ejecutar. La tercera la
+resuelves tú. Después, el mismo lote dispara el monitor de drift de la §12.
 
 | Entrega | Qué llega | Qué está mal | Dónde aparece |
 |---|---|---|---|
 | Día 1 | 191 proyectos nuevos | sus tags todavía no llegaron | `transform`: falla un test de dbt |
 | Día 2 | los tags, y otra vez los proyectos | cuatro proyectos viejos reenviados con ids nuevos | `validate_projects`: falla una suite de GX |
-| Día 3 | los proyectos, corregidos | las fechas de los proyectos nuevos vienen en otro formato | `transform`: el model no se puede construir, y ningún control lo vio venir |
+| Día 3 | los proyectos, corregidos | te toca encontrarlo | te toca encontrarlo |
 | — | (los mismos datos) | desde el 11 de septiembre de 2026 los tags usan otro vocabulario | `monitoring`: drift |
 
 ### El lote
@@ -181,6 +181,10 @@ es crítica (§9), así que el run siguió. "La alarma de drift" vuelve sobre é
 
 ### Día 3: un formato de fecha nuevo
 
+En los días 1 y 2 el tutorial respondió cada pregunta por ti. El día 3 es
+tuyo: abajo están la entrega y el objetivo, y el diagnóstico y el arreglo te
+tocan a ti.
+
 Llega la exportación corregida. Cambia la URL de la source `projects` a:
 
 ```
@@ -191,9 +195,81 @@ https://raw.githubusercontent.com/fmgs31/MLOpsAirflow3Tutorial/main/datasets/bat
 docker compose exec airflow-scheduler airflow dags trigger dataops
 ```
 
-**Comprobación.** Las dos tasks `validate_*` pasan, con el aviso sobre
+**Tu tarea.** El run falla. Quien administra el origen confirma que esta
+exportación está bien: así manda sus datos a partir de ahora. Consigue que
+este run termine en `success` sin volver a extraer los datos, y deja un
+control, para que la próxima vez que pase algo así sea un `FAIL` de dbt con
+una cantidad de filas.
+
+Una herramienta que todavía no usaste: un run puede volver a ejecutarse desde
+cualquiera de sus tasks. Abre el run en la UI, haz clic en una task y elige
+**Clear Task Instance**. **Downstream** ya está seleccionado, así que las
+tasks que vienen después también se limpian. Elige **Confirm**, y el run
+vuelve a empezar desde esa task. Qué task limpiar es parte del ejercicio.
+
+**Terminaste cuando:**
+
+- el run está en `success`, y `validate_transformed` pasa con el mismo aviso
+  sobre `other` que `validate_tags`;
+- el log de `transform` termina con
+  `Done. PASS=7 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7`, un test más
+  que en el día 1;
+- `labeled_projects` tiene 1755 filas.
+
+Abre las pistas de una en una, solo cuando te atasques.
+
+<details>
+<summary>Pista 1: ¿qué tipo de fallo es?</summary>
+
+Compara la última línea del log de `transform` con la del día 1, que decía
+`PASS=5 WARN=0 ERROR=1 SKIP=0`. ¿Qué significa un skip, y por qué se
+saltarían cinco cosas? Después busca la línea que nombra un valor.
+
+</details>
+
+<details>
+<summary>Pista 2: ¿qué filas?</summary>
+
+El model lee la tabla sin procesar `projects` (§9). `SAFE_CAST`, en BigQuery,
+devuelve `NULL` donde `CAST` detendría la consulta: úsalo para encontrar las
+filas que `CAST` no sabe leer.
+
+</details>
+
+<details>
+<summary>Pista 3: ¿dónde va el arreglo?</summary>
+
+El día 2 mostró por qué cambiar una tabla sin procesar no dura. El arreglo va
+en `dbt/dbt_transforms/models/labeled_projects/labeled_projects.sql`.
+`SAFE.PARSE_TIMESTAMP`, en BigQuery, lee un timestamp escrito en el formato
+que le indiques, y `COALESCE` devuelve el primero de sus argumentos que no es
+`NULL`.
+
+</details>
+
+<details>
+<summary>Pista 4: ¿qué control?</summary>
+
+Después de tu arreglo, ¿en qué se convierte en `labeled_projects` una fecha
+escrita en un tercer formato? ¿Qué test, añadido a
+`dbt/dbt_transforms/models/labeled_projects/schema.yml` (§9), lo detectaría?
+
+</details>
+
+<details>
+<summary>Pista 5: ¿qué task limpiar?</summary>
+
+Las tablas sin procesar están bien. ¿Cuál es la primera task cuyo resultado
+estuvo mal?
+
+</details>
+
+<details>
+<summary>Solución</summary>
+
+**Lee el fallo.** Las dos tasks `validate_*` pasan, con el aviso sobre
 `other` incluido, y `transform` vuelve a fallar después de sus reintentos. Su
-log es distinto:
+log es distinto del del día 1:
 
 ```
 ERROR creating sql table model mlops_course.labeled_projects
@@ -256,16 +332,12 @@ SQL.
 
 **Vuelve a ejecutar solo lo que cambió.** Las tablas sin procesar están bien, así
 que no hay nada que volver a extraer: vuelve a ejecutar `transform` y lo que
-viene después. Eso es lo que da ELT (§9). En la UI, abre este run fallido,
-haz clic en `transform` y elige **Clear Task Instance**. **Downstream** ya
-está seleccionado, así que `validate_transformed` y `quality_report.summarize`
-también se limpian. Elige
-**Confirm**.
+viene después. Eso es lo que da ELT (§9). Limpia `transform` en este run
+fallido, y `validate_transformed` y `quality_report.summarize` se limpian con
+ella. `transform` vuelve a correr en el mismo run, y el `TOTAL=7` de su log
+es ahora un model y seis tests.
 
-**Comprobación.** `transform` vuelve a correr en el mismo run y su log termina
-con `Done. PASS=7 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7`: ahora un
-model y seis tests. `validate_transformed` pasa, con el mismo aviso sobre
-`other`, y el run queda en `success`. `labeled_projects` tiene 1755 filas.
+</details>
 
 Los tres días hicieron tres preguntas distintas: si había que arreglar algo
 (día 1, no), de quién era el arreglo (día 2, del origen) y dónde iba (día 3,

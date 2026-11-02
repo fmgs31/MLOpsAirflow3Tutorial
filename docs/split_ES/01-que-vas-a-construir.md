@@ -190,6 +190,12 @@ tests de drift de *Monitoring*. Lo nuevo es cómo se combinan:
   paso, sobre un stack de Docker que levantas con un comando, con soluciones y
   tests para comprobar lo que escribes. Cada comando se ha probado contra un
   stack real.
+- **Un problema que resuelves por tu cuenta.** La lección de orquestación,
+  como este tutorial hasta la §14, te guía en cada paso. En la §14 una entrega
+  rompe el pipeline y solo recibes el objetivo: encuentras la causa, decides
+  dónde va el arreglo, lo escribes, añades el control que faltaba y vuelves a
+  ejecutar lo mínimo, con pistas si te atascas y una solución con la que
+  comparar.
 - **Un pipeline que se dispara solo.** Los datos nuevos arrancan el
   entrenamiento a través de un asset, sin triggers manuales (§8).
 - **Un paso de promoción.** El Dag `mlops` de la lección de orquestación

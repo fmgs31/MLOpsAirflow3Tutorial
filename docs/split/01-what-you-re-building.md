@@ -182,6 +182,11 @@ tracking*, the evaluation slices from *Evaluation* and the drift tests from
   by step, on a Docker stack you start with one command, with solutions and
   tests to check what you wrote. Every command has been run against a real
   stack.
+- **A problem you solve on your own.** The orchestration lesson, like this
+  tutorial up to §14, walks you through every step. In §14 a delivery breaks
+  the pipeline and you get only the goal: you find the cause, decide where the
+  fix belongs, write it, add the check that was missing and re-run as little
+  as possible, with hints if you get stuck and a solution to compare with.
 - **A pipeline that starts itself.** New data starts training through an
   asset, with no manual triggers (§8).
 - **A promotion step.** The orchestration lesson's `mlops` Dag ends at
