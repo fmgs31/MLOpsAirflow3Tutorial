@@ -349,9 +349,12 @@ retraining branch: `Branch into inspect`. Then:
 MANUAL INSPECTION NEEDED
   new labels: ['other']
   current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
+  f1 at promotion=… now=…
 ```
 
-The run ends there, in seconds, with nothing retrained. That is the rule
+and `inspect` fails with `manual inspection needed - nothing was retrained
+or rolled back`. The run ends there, in seconds, failed: it needs a person,
+and nothing was retrained. That is the rule
 `decide` was written with in §12: a label the model has never seen means the
 label space moved, and retraining on data nobody understands yet is how a
 worse model ships. A drift alarm is a question; the inspection is yours.

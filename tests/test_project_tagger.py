@@ -149,6 +149,7 @@ def fake_champion(monkeypatch):
     split_ids = {"train": list(range(1, 46)), "val": list(range(46, 61)), "test": list(range(61, 91))}
     monkeypatch.setattr(monitoring.registry, "get_production", lambda: champion)
     monkeypatch.setattr(monitoring.registry, "load_split_ids", lambda run_id: split_ids)
+    monkeypatch.setattr(monitoring.registry, "latest_training_run", lambda: "run-3")
     return champion
 
 
@@ -163,6 +164,8 @@ def test_prepare_windows_uses_the_champions_split_ids(tmp_path, monkeypatch, fak
     assert set(current["id"]) == set(range(91, 121))
     assert windows["num_current"] == 30
     assert windows["version"] == "3"
+    # The newest training run is the champion's own: nothing has been tried on these rows.
+    assert windows["already_trained_on"] is False
     # Raw tags are kept, so a tag the model never saw stays visible to drift checks.
     assert "graph-learning" in set(current["tag"])
 
@@ -173,8 +176,32 @@ def test_prepare_windows_has_nothing_to_measure_below_the_minimum(
     monkeypatch.setattr(config, "SNAPSHOTS_DIR", tmp_path)
     monkeypatch.setattr(config, "MIN_MONITOR_ROWS", 50)
     windows = monitoring.prepare_windows("monitoring-2", df=LABELED)
-    assert windows == {"version": "3", "num_current": 30, "reference": None, "current": None}
+    assert windows == {
+        "version": "3",
+        "num_current": 30,
+        "already_trained_on": False,
+        "reference": None,
+        "current": None,
+    }
     assert monitoring.production_performance(windows["current"]) is None
+
+
+def test_prepare_windows_sees_a_rejected_retrain_on_the_same_rows(
+    tmp_path, monkeypatch, fake_champion
+) -> None:
+    """A newer training run that had every current row (ids 91-120) means retraining would repeat it."""
+    monkeypatch.setattr(config, "SNAPSHOTS_DIR", tmp_path)
+    monkeypatch.setattr(config, "MIN_MONITOR_ROWS", 10)
+    champion_ids = monitoring.registry.load_split_ids("run-3")
+    newer = {"train": list(range(1, 91)), "val": list(range(91, 111)), "test": list(range(111, 121))}
+    monkeypatch.setattr(monitoring.registry, "latest_training_run", lambda: "run-4")
+    monkeypatch.setattr(
+        monitoring.registry, "load_split_ids", lambda run_id: newer if run_id == "run-4" else champion_ids
+    )
+    assert monitoring.prepare_windows("monitoring-5", df=LABELED)["already_trained_on"] is True
+    # One more row arrives that the newer run never had: retraining is worth it again.
+    newer["test"] = list(range(111, 120))
+    assert monitoring.prepare_windows("monitoring-6", df=LABELED)["already_trained_on"] is False
 
 
 def test_prepare_windows_without_a_champion(monkeypatch) -> None:

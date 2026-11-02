@@ -61,6 +61,12 @@ def get_production() -> dict[str, Any] | None:
     return _describe(version) if version else None
 
 
+def get_previous() -> dict[str, Any] | None:
+    """The version a rollback would go back to; None if there is none."""
+    version = _version_by_alias(config.PREVIOUS_ALIAS)
+    return _describe(version) if version else None
+
+
 def promote(version: str) -> dict[str, Any]:
     """Point `champion` at `version`, keeping the old champion as `previous_champion`."""
     client = _client()
@@ -108,6 +114,21 @@ def load_model(alias: str = config.CHAMPION_ALIAS, version: str | None = None):
     ref = f"/{version}" if version else f"@{alias}"
     with quiet_skops():
         return mlflow.sklearn.load_model(f"models:/{config.REGISTERED_MODEL}{ref}")
+
+
+def latest_training_run() -> str | None:
+    """The run id of the newest final training run, promoted or not; None if there is none."""
+    client = _client()
+    experiment = client.get_experiment_by_name(config.MLFLOW_EXPERIMENT)
+    if experiment is None:
+        return None
+    runs = client.search_runs(
+        [experiment.experiment_id],
+        filter_string="tags.kind = 'final'",
+        order_by=["attributes.start_time DESC"],
+        max_results=1,
+    )
+    return runs[0].info.run_id if runs else None
 
 
 def load_split_ids(run_id: str) -> dict[str, list]:

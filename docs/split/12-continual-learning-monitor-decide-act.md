@@ -20,8 +20,9 @@ which it has never seen), and answers with a
 **p-value**: the probability of seeing a difference at least this large if
 nothing had really changed. A small p-value means the difference is unlikely
 to be chance. Below a threshold you choose, conventionally 0.05, the test
-reports drift. The Kolmogorov–Smirnov (KS) test compares two distributions of a
-number; the chi-squared test compares two sets of category counts.
+reports drift. The Kolmogorov–Smirnov (KS) test compares how a numeric value,
+here words per text, is spread in the two windows; the chi-squared test
+compares two sets of category counts.
 
 Both windows come from the production model's own training run. In §10,
 `train_best` logged `split_ids.json` with the run: the project ids in each of
@@ -32,15 +33,16 @@ from them, but it was chosen on them. With fewer than 50 current rows
 (`config.MIN_MONITOR_ROWS`) there is nothing to measure yet, and the Dag keeps
 serving and looks again on its next run.
 
-A monitoring event has four sensible responses, and
-`dags/06_monitoring_and_retraining.py` makes them branches:
+Every monitoring run ends in one of four actions. In
+`dags/06_monitoring_and_retraining.py`, the `decide` task, a `@task.branch`
+(§10), picks one, and each action is its own task:
 
-| Response | When | What happens |
+| Action | When | What happens |
 |---|---|---|
-| **continue** | drift and performance within limits | nothing; keep serving |
+| **continue** | drift and performance within limits, or a retrain on this data is already queued, running or turned down | nothing; keep serving |
 | **improve** | f1 dropped, or the input or label distribution moved | trigger `mlops`, whose gate and approval decide what ships (§10) |
-| **inspect** | an unseen label appeared | stop and page someone — the label space changed |
-| **rollback** | performance collapsed | re-point production at the previous model |
+| **inspect** | an unseen label appeared, or performance collapsed and the previous model is no better | fail the run, so a person looks; nothing is retrained or rolled back |
+| **rollback** | performance collapsed, and the previous model does better on the same rows | re-point production at the previous model |
 
 How the pieces talk when the Dag runs. Each column is one system, as in the
 §9 diagram:
@@ -58,8 +60,9 @@ How the pieces talk when the Dag runs. Each column is one system, as in the
  2 detect_drift (alibi-detect,  │                   │
    in its own virtualenv)       │                   │
    reads the two files          │                   │
- 3 check_performance ◄──────────────────────────────── the champion model
-   scores it on current.parquet │                   │
+ 3 check_performance ◄──────────────────────────────── the champion and
+   scores both models on        │                   │  previous_champion
+   current.parquet              │                   │  models
  4 decide: one branch of        │                   │
    continue_serving             │                   │
    inspect                      │                   │
@@ -139,7 +142,7 @@ import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
-from airflow.sdk.exceptions import AirflowSkipException
+from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, monitoring, registry
@@ -201,8 +204,8 @@ performance check both read them:
     @task
     def prepare_windows(*, run_id: str) -> dict[str, Any]:
         key = run_id.replace(":", "-").replace("+", "-")
-        # Writes reference.parquet and current.parquet; returns their paths, num_current
-        # and version (the champion's). With no champion, or fewer than
+        # Writes reference.parquet and current.parquet; returns their paths, num_current,
+        # version (the champion's) and already_trained_on. With no champion, or fewer than
         # config.MIN_MONITOR_ROWS current rows, it writes nothing and the paths are None.
         windows = monitoring.prepare_windows(f"monitoring-{key}")
         print(f"windows: {windows}")
@@ -218,17 +221,30 @@ performance check both read them:
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
-        # The champion's f1_at_promotion, and its f1_now on the current window;
-        # None when there is no window.
+        # The champion's f1_at_promotion, its f1_now on the current window, and
+        # f1_previous, the previous champion's on the same rows (None if there
+        # is no previous champion); None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
-            print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+            print(
+                f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f} "
+                f"previous champion={performance['f1_previous']}"
+            )
         return performance
 ```
 
 Then decide:
 
 ```python dags/06_monitoring_and_retraining.py
+    def retrain_or_wait(windows: dict[str, Any], ti) -> str:
+        if ti.get_dr_count(dag_id="mlops", states=["queued", "running"]):
+            print("an mlops run is already queued or running - not starting another")
+            return "continue_serving"
+        if windows["already_trained_on"]:
+            print("a model was already trained on every current row and not promoted - waiting for new data")
+            return "continue_serving"
+        return "trigger_retraining"
+
     @task.branch
     def decide(
         windows: dict[str, Any],
@@ -236,10 +252,11 @@ Then decide:
         performance: dict[str, Any] | None,
         *,
         params: dict[str, Any],
+        ti,
     ) -> str:
         if windows["version"] is None:
             print("No production model yet - train one.")
-            return "trigger_retraining"
+            return retrain_or_wait(windows, ti)
         if drift is None or performance is None:
             print(
                 f"only {windows['num_current']} new rows since version {windows['version']} "
@@ -256,7 +273,10 @@ Then decide:
         print(f"f1_drop={f1_drop:.4f}")
 
         if f1_drop >= params["critical_f1_drop"]:
-            return "rollback"
+            f1_previous = performance["f1_previous"]
+            if f1_previous is not None and f1_previous > performance["f1_now"]:
+                return "rollback"
+            return "inspect"
         if drift["new_labels"]:
             return "inspect"
         if (
@@ -264,7 +284,7 @@ Then decide:
             or label["p_val"] < params["drift_p_val"]           # target drift
             or length["p_val"] < params["drift_p_val"]          # data drift
         ):
-            return "trigger_retraining"
+            return retrain_or_wait(windows, ti)
         return "continue_serving"
 ```
 
@@ -277,6 +297,29 @@ kinds of drift in the table. Note the ordering: **a new label routes to
 you have not understood yet is how you ship a worse model with full
 confidence.
 
+A collapse does not roll back by itself either. **A rollback helps only if
+the model in production is the problem**, so `decide` checks that first: the
+previous champion has never seen the current rows either, and if it scores
+better on them, the newer model is worse, and `rollback` puts the previous one
+back. If it scores no better, the data moved under both models, rolling back
+would fix nothing, and the run goes to `inspect` instead. So does a collapse
+with no previous champion to go back to.
+
+Both ways into `trigger_retraining` pass through `retrain_or_wait` first. The
+monitor runs every day; new data does not arrive every day, and until it
+does, the drift it found stays there. Without this check, every morning would
+start one more `mlops` run on the same rows. It keeps serving instead in two
+cases:
+
+- **A run of `mlops` is already queued or running.** `ti.get_dr_count` asks
+  Airflow how many runs of another Dag are in the given states.
+- **A model was already trained on these rows and not promoted.**
+  `prepare_windows` looks up the newest training run in MLflow; if it is not
+  the champion's and its `split_ids.json` has every current row, the gate or
+  the approval turned it down. Another search on the same rows is a retry,
+  not new evidence. A new delivery is what changes that, and it starts `mlops`
+  through its asset anyway (§8).
+
 Now the four branches `decide` can pick. Three are simple; the fourth starts
 another Dag:
 
@@ -284,10 +327,12 @@ another Dag:
     continue_serving = EmptyOperator(task_id="continue_serving")
 
     @task
-    def inspect(drift: dict[str, Any]) -> None:
+    def inspect(drift: dict[str, Any], performance: dict[str, Any]) -> None:
         print("MANUAL INSPECTION NEEDED")
         print(f"  new labels: {drift['new_labels']}")
         print(f"  current distribution: {drift['current_distribution']}")
+        print(f"  f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        raise AirflowFailException("manual inspection needed - nothing was retrained or rolled back")
 
     @task(outlets=[PRODUCTION_MODEL])
     def rollback(
@@ -296,7 +341,7 @@ another Dag:
         reason = f"f1 fell from {performance['f1_at_promotion']:.4f} to {performance['f1_now']:.4f}"
         champion = registry.rollback(reason)
         if champion is None:
-            raise AirflowSkipException("no previous_champion - nothing to roll back to")
+            raise AirflowFailException("previous_champion is gone - nothing to roll back to")
         outlet_events[PRODUCTION_MODEL].extra = {
             "version": champion["version"],
             "rolled_back_version": champion["rolled_back_version"],
@@ -314,6 +359,11 @@ another Dag:
     )
 ```
 
+`inspect` prints what a person needs to start looking, then fails on purpose,
+with `AirflowFailException` (§9). A run that needs a person must not end
+green: a success is read as "all fine", and a failure is what alerting is
+wired to (§16).
+
 `TriggerDagRunOperator` starts another Dag: it creates a `manual__` run of
 `mlops` with the `conf` given, and with `wait_for_completion=False` it does
 not stay around to watch it. No approval stands before it: a retrain changes
@@ -328,8 +378,10 @@ load on. That is what makes a rollback cheap enough to automate.
 rollback cannot put the bad model back, and tags the retired version with
 `rolled_back_reason`, which the MLflow UI shows. The task emits
 `production_model`, like `promote_model` in §10: a rollback changes the model
-in production as much as a promotion does. With nothing to roll back to, it
-raises `AirflowSkipException`, and a skipped task emits no asset event.
+in production as much as a promotion does. `decide` only picks `rollback`
+after seeing a previous champion; if the alias is gone by the time the task
+runs, it fails rather than skips, because the collapsed model is still
+serving and someone must know. A failed task emits no asset event.
 
 Finish with the wiring:
 
@@ -340,7 +392,7 @@ Finish with the wiring:
     branch = decide(windows, drift, performance)
 
     branch >> continue_serving
-    branch >> inspect(drift)
+    branch >> inspect(drift, performance)
     branch >> rollback(performance)
     branch >> trigger_retraining
 
@@ -360,7 +412,9 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 **Checkpoint.** `prepare_windows` logs `'num_current': 800`, with `version`
 the champion's: the 800 papers are the rows it has never seen.
 `check_performance` logs its f1 at promotion and now, around 0.89 and 0.82: a
-drop of 0.05 to 0.10, depending on the search, under `max_f1_drop`. `decide` logs the two
+drop of 0.05 to 0.10, depending on the search, under `max_f1_drop`. It also
+logs `previous champion=None`: this is the first model ever promoted, so
+there is nothing to compare it with. `decide` logs the two
 p-values: label drift around `1e-22`, length drift `0`. Both are far below
 0.05, and they say different things:
 

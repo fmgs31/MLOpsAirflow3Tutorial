@@ -28,8 +28,13 @@ def prepare_windows(run_key: str, df: pd.DataFrame | None = None) -> dict[str, A
     """Write the reference and current windows to files; return their paths.
 
     Returns `version` (the champion's, or None if nothing is promoted),
-    `num_current`, and the two paths - None when there is no champion, or
-    fewer than `config.MIN_MONITOR_ROWS` new rows: nothing to measure yet.
+    `num_current`, `already_trained_on`, and the two paths - None when there
+    is no champion, or fewer than `config.MIN_MONITOR_ROWS` new rows: nothing
+    to measure yet.
+
+    `already_trained_on` is True when a training run newer than the
+    champion's already had every current row, and was not promoted:
+    retraining now would repeat it on the same data.
 
     Files, not dataframes, cross the boundary: the drift task runs in another
     Python, and XCom carries paths, never payloads. The raw tags are kept (no
@@ -37,7 +42,13 @@ def prepare_windows(run_key: str, df: pd.DataFrame | None = None) -> dict[str, A
     """
     champion = registry.get_production()
     if champion is None:
-        return {"version": None, "num_current": 0, "reference": None, "current": None}
+        return {
+            "version": None,
+            "num_current": 0,
+            "already_trained_on": False,
+            "reference": None,
+            "current": None,
+        }
 
     if df is None:
         df = data_module.load_labeled()
@@ -48,9 +59,17 @@ def prepare_windows(run_key: str, df: pd.DataFrame | None = None) -> dict[str, A
     reference = df[df["id"].isin(learned)]
     current = df[~df["id"].isin(seen)]
 
+    already_trained_on = False
+    latest = registry.latest_training_run()
+    if latest is not None and latest != champion["run_id"]:
+        latest_ids = registry.load_split_ids(latest)
+        latest_seen = set(latest_ids["train"]) | set(latest_ids["val"]) | set(latest_ids["test"])
+        already_trained_on = set(current["id"]) <= latest_seen
+
     windows: dict[str, Any] = {
         "version": champion["version"],
         "num_current": len(current),
+        "already_trained_on": already_trained_on,
         "reference": None,
         "current": None,
     }
@@ -67,7 +86,12 @@ def prepare_windows(run_key: str, df: pd.DataFrame | None = None) -> dict[str, A
 
 
 def production_performance(current_fp: str | None) -> dict[str, Any] | None:
-    """Score the champion on the current window. None if there is no window to score on."""
+    """Score the champion, and the version a rollback would go back to, on the current window.
+
+    None if there is no window to score on. `f1_previous` is None when there is
+    no previous champion. Both models have never seen these rows: the champion
+    was trained on everything the warehouse had then, the previous one on less.
+    """
     champion = registry.get_production()
     if champion is None or current_fp is None:
         return None
@@ -76,9 +100,16 @@ def production_performance(current_fp: str | None) -> dict[str, Any] | None:
     current = pd.read_parquet(current_fp)
     current["tag"] = current["tag"].where(current["tag"].isin(config.ACCEPTED_TAGS), config.OTHER_TAG)
     metrics = evaluate_module.evaluate(registry.load_model(), current)
+    previous = registry.get_previous()
+    f1_previous = None
+    if previous is not None:
+        previous_model = registry.load_model(version=previous["version"])
+        f1_previous = evaluate_module.evaluate(previous_model, current)["f1"]
     return {
         "version": champion["version"],
         "f1_at_promotion": champion["metrics"]["f1"],
         "f1_now": metrics["f1"],
         "slices": metrics["slices"],
+        "previous_version": previous["version"] if previous else None,
+        "f1_previous": f1_previous,
     }

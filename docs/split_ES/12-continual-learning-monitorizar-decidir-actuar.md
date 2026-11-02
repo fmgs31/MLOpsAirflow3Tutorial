@@ -16,12 +16,13 @@ Lo que estás vigilando es el **drift**, de tres tipos:
 Los dos tests vienen de **alibi-detect**, una librería de detección de drift.
 Cada uno recibe una ventana de **referencia** (las filas de las que aprendió el
 modelo en producción) y una ventana **actual** (las filas que llegaron al
-warehouse después de entrenarlo, que no ha visto nunca), y responde con un **p-valor**: la probabilidad de
+warehouse después de entrenarlo, que no ha visto nunca), y responde con un **p-value**: la probabilidad de
 ver una diferencia al menos así de grande si en realidad nada hubiera cambiado.
-Un p-valor pequeño significa que es poco probable que la diferencia sea
+Un p-value pequeño significa que es poco probable que la diferencia sea
 casualidad. Por debajo de un umbral que eliges tú, por convención 0.05, el test
-informa de drift. El test de Kolmogorov–Smirnov (KS) compara dos distribuciones
-de un número; el chi-cuadrado compara dos conjuntos de recuentos por categoría.
+informa de drift. El test de Kolmogorov–Smirnov (KS) compara cómo se reparte un
+valor numérico, aquí las palabras por texto, en las dos ventanas; el
+chi-cuadrado compara dos conjuntos de recuentos por categoría.
 
 Las dos ventanas salen del propio run de entrenamiento del modelo en
 producción. En la §10, `train_best` guardó con el run `split_ids.json`: los ids
@@ -33,15 +34,16 @@ eligió con ellas. Con menos de 50 filas actuales (`config.MIN_MONITOR_ROWS`)
 todavía no hay nada que medir, y el Dag mantiene el modelo y vuelve a mirar en
 su siguiente run.
 
-Un evento de monitorización tiene cuatro respuestas sensatas, y
-`dags/06_monitoring_and_retraining.py` las convierte en branches:
+Cada run de monitorización acaba en una de cuatro acciones. En
+`dags/06_monitoring_and_retraining.py`, la task `decide`, un `@task.branch`
+(§10), elige una, y cada acción es su propia task:
 
-| Respuesta | Cuándo | Qué pasa |
+| Acción | Cuándo | Qué pasa |
 |---|---|---|
-| **continue** | drift y rendimiento dentro de los límites | nada; el modelo actual sigue en producción |
+| **continue** | drift y rendimiento dentro de los límites, o ya hay un reentrenamiento con estos datos en cola, en marcha o rechazado | nada; el modelo actual sigue en producción |
 | **improve** | el f1 bajó, o se movió la distribución de entrada o la de etiquetas | disparar `mlops`, cuyo gate y cuya aprobación deciden qué se publica (§10) |
-| **inspect** | apareció una etiqueta no vista | parar y avisar a alguien — el espacio de etiquetas cambió |
-| **rollback** | el rendimiento se desplomó | volver a apuntar producción al modelo anterior |
+| **inspect** | apareció una etiqueta no vista, o el rendimiento se desplomó y el modelo anterior no es mejor | hacer fallar el run, para que una persona lo mire; no se reentrena ni se hace rollback |
+| **rollback** | el rendimiento se desplomó, y el modelo anterior lo hace mejor con las mismas filas | volver a apuntar producción al modelo anterior |
 
 Cómo se hablan las piezas cuando se ejecuta el Dag. Cada columna es un
 sistema, como en el diagrama de la §9:
@@ -59,8 +61,8 @@ sistema, como en el diagrama de la §9:
  2 detect_drift (alibi-detect,  │                   │
    en su propio virtualenv)     │                   │
    lee los dos archivos         │                   │
- 3 check_performance ◄──────────────────────────────── el modelo champion
-   lo puntúa sobre              │                   │
+ 3 check_performance ◄──────────────────────────────── los modelos champion
+   puntúa los dos sobre         │                   │  y previous_champion
    current.parquet              │                   │
  4 decide: una rama de          │                   │
    continue_serving             │                   │
@@ -144,7 +146,7 @@ import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
-from airflow.sdk.exceptions import AirflowSkipException
+from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, monitoring, registry
@@ -206,8 +208,8 @@ tests de drift como la comprobación de rendimiento:
     @task
     def prepare_windows(*, run_id: str) -> dict[str, Any]:
         key = run_id.replace(":", "-").replace("+", "-")
-        # Writes reference.parquet and current.parquet; returns their paths, num_current
-        # and version (the champion's). With no champion, or fewer than
+        # Writes reference.parquet and current.parquet; returns their paths, num_current,
+        # version (the champion's) and already_trained_on. With no champion, or fewer than
         # config.MIN_MONITOR_ROWS current rows, it writes nothing and the paths are None.
         windows = monitoring.prepare_windows(f"monitoring-{key}")
         print(f"windows: {windows}")
@@ -223,17 +225,30 @@ tests de drift como la comprobación de rendimiento:
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
-        # The champion's f1_at_promotion, and its f1_now on the current window;
-        # None when there is no window.
+        # The champion's f1_at_promotion, its f1_now on the current window, and
+        # f1_previous, the previous champion's on the same rows (None if there
+        # is no previous champion); None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
-            print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+            print(
+                f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f} "
+                f"previous champion={performance['f1_previous']}"
+            )
         return performance
 ```
 
 Después, decidir:
 
 ```python dags/06_monitoring_and_retraining.py
+    def retrain_or_wait(windows: dict[str, Any], ti) -> str:
+        if ti.get_dr_count(dag_id="mlops", states=["queued", "running"]):
+            print("an mlops run is already queued or running - not starting another")
+            return "continue_serving"
+        if windows["already_trained_on"]:
+            print("a model was already trained on every current row and not promoted - waiting for new data")
+            return "continue_serving"
+        return "trigger_retraining"
+
     @task.branch
     def decide(
         windows: dict[str, Any],
@@ -241,10 +256,11 @@ Después, decidir:
         performance: dict[str, Any] | None,
         *,
         params: dict[str, Any],
+        ti,
     ) -> str:
         if windows["version"] is None:
             print("No production model yet - train one.")
-            return "trigger_retraining"
+            return retrain_or_wait(windows, ti)
         if drift is None or performance is None:
             print(
                 f"only {windows['num_current']} new rows since version {windows['version']} "
@@ -261,7 +277,10 @@ Después, decidir:
         print(f"f1_drop={f1_drop:.4f}")
 
         if f1_drop >= params["critical_f1_drop"]:
-            return "rollback"
+            f1_previous = performance["f1_previous"]
+            if f1_previous is not None and f1_previous > performance["f1_now"]:
+                return "rollback"
+            return "inspect"
         if drift["new_labels"]:
             return "inspect"
         if (
@@ -269,7 +288,7 @@ Después, decidir:
             or label["p_val"] < params["drift_p_val"]           # target drift
             or length["p_val"] < params["drift_p_val"]          # data drift
         ):
-            return "trigger_retraining"
+            return retrain_or_wait(windows, ti)
         return "continue_serving"
 ```
 
@@ -282,6 +301,29 @@ vigila uno de los tres tipos de drift de la tabla. Fíjate en el orden: **una et
 etiquetas todavía no has entendido es la receta para publicar un modelo peor
 creyendo que es mejor.
 
+Un desplome tampoco hace rollback por sí solo. **Un rollback solo ayuda si el
+problema es el modelo en producción**, así que `decide` lo comprueba antes: el
+champion anterior tampoco ha visto nunca las filas actuales, y si puntúa mejor
+con ellas, el modelo nuevo es peor, y `rollback` vuelve a poner el anterior.
+Si no puntúa mejor, los datos se movieron bajo los dos modelos, un rollback no
+arreglaría nada, y el run va a `inspect`. Lo mismo pasa con un desplome sin
+champion anterior al que volver.
+
+Los dos caminos a `trigger_retraining` pasan antes por `retrain_or_wait`. El
+monitor corre cada día; los datos nuevos no llegan cada día, y hasta que
+llegan, el drift que encontró sigue ahí. Sin esta comprobación, cada mañana
+arrancaría un run más de `mlops` con las mismas filas. Mantiene el modelo, en
+vez de reentrenar, en dos casos:
+
+- **Ya hay un run de `mlops` en cola o en marcha.** `ti.get_dr_count` le
+  pregunta a Airflow cuántos runs de otro Dag están en los estados dados.
+- **Ya se entrenó un modelo con estas filas y no se promocionó.**
+  `prepare_windows` busca en MLflow el run de entrenamiento más reciente; si no
+  es el del champion y su `split_ids.json` tiene todas las filas actuales, el
+  gate o la aprobación lo rechazaron. Otra búsqueda con las mismas filas es un
+  reintento, no evidencia nueva. Lo que cambia eso es una entrega nueva, y esa
+  arranca `mlops` de todos modos, por su asset (§8).
+
 Ahora las cuatro ramas que puede elegir `decide`. Tres son simples; la cuarta
 arranca otro Dag:
 
@@ -289,10 +331,12 @@ arranca otro Dag:
     continue_serving = EmptyOperator(task_id="continue_serving")
 
     @task
-    def inspect(drift: dict[str, Any]) -> None:
+    def inspect(drift: dict[str, Any], performance: dict[str, Any]) -> None:
         print("MANUAL INSPECTION NEEDED")
         print(f"  new labels: {drift['new_labels']}")
         print(f"  current distribution: {drift['current_distribution']}")
+        print(f"  f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        raise AirflowFailException("manual inspection needed - nothing was retrained or rolled back")
 
     @task(outlets=[PRODUCTION_MODEL])
     def rollback(
@@ -301,7 +345,7 @@ arranca otro Dag:
         reason = f"f1 fell from {performance['f1_at_promotion']:.4f} to {performance['f1_now']:.4f}"
         champion = registry.rollback(reason)
         if champion is None:
-            raise AirflowSkipException("no previous_champion - nothing to roll back to")
+            raise AirflowFailException("previous_champion is gone - nothing to roll back to")
         outlet_events[PRODUCTION_MODEL].extra = {
             "version": champion["version"],
             "rolled_back_version": champion["rolled_back_version"],
@@ -319,6 +363,11 @@ arranca otro Dag:
     )
 ```
 
+`inspect` escribe lo que una persona necesita para empezar a mirar, y después
+falla a propósito, con `AirflowFailException` (§9). Un run que necesita a una
+persona no debe acabar en verde: un éxito se lee como "todo bien", y un fallo
+es a lo que se conectan las alertas (§16).
+
 `TriggerDagRunOperator` arranca otro Dag: crea un run `manual__` de `mlops`
 con el `conf` dado, y con `wait_for_completion=False` no se queda a mirarlo.
 No hay aprobación antes: un reentrenamiento no cambia nada en producción, y el
@@ -333,9 +382,11 @@ automatizarlo. `registry.rollback` además borra el alias `previous_champion`,
 para que un segundo rollback no pueda volver a poner el modelo malo, y
 etiqueta la versión retirada con `rolled_back_reason`, que la UI de MLflow
 muestra. La task emite `production_model`, como `promote_model` en la §10: un
-rollback cambia el modelo en producción tanto como una promoción. Si no hay a
-dónde volver, lanza `AirflowSkipException`, y una task skipped no emite asset
-event.
+rollback cambia el modelo en producción tanto como una promoción. `decide` solo
+elige `rollback` después de ver un champion anterior; si el alias ya no está
+cuando la task se ejecuta, falla en vez de saltarse, porque el modelo
+desplomado sigue en producción y alguien tiene que saberlo. Una task fallida
+no emite asset event.
 
 Termina conectando las tasks:
 
@@ -346,7 +397,7 @@ Termina conectando las tasks:
     branch = decide(windows, drift, performance)
 
     branch >> continue_serving
-    branch >> inspect(drift)
+    branch >> inspect(drift, performance)
     branch >> rollback(performance)
     branch >> trigger_retraining
 
@@ -368,15 +419,16 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 con `version` la del champion: los 800 papers son las filas que no ha visto
 nunca. `check_performance` escribe su f1 en la promoción y ahora, en torno a
 0.89 y 0.82: una caída de entre 0.05 y 0.10, según la búsqueda, por debajo de
-`max_f1_drop`.
-`decide` escribe los dos p-valores: label drift en torno a `1e-22`, length
+`max_f1_drop`. También escribe `previous champion=None`: es el primer modelo
+que se promociona, así que no hay con qué compararlo.
+`decide` escribe los dos p-values: label drift en torno a `1e-22`, length
 drift `0`. Los dos quedan muy por debajo de 0.05, y dicen cosas distintas:
 
 - **Target drift.** `computer-vision` es el 38 % de las filas de las que
   aprendió el modelo y el 57 % de las nuevas; `mlops`, el 8 % de lo que
   aprendió, no aparece.
 - **Data drift.** La longitud mediana de un texto es de 16 palabras en las filas de las
-  que aprendió el modelo, y de 27 en las nuevas: un p-valor demasiado pequeño
+  que aprendió el modelo, y de 27 en las nuevas: un p-value demasiado pequeño
   para mostrarse como algo distinto de `0`.
 - **Rendimiento.** El f1 bajó, pero menos que `max_f1_drop`, así que la
   comprobación de concept drift no habría saltado sola.
@@ -407,7 +459,7 @@ debía correr.
 >     airflow dags test monitoring --conf '{"drift_p_val": 0}'
 > ```
 >
-> Ningún p-valor queda por debajo de 0, así que ningún test informa de drift,
+> Ningún p-value queda por debajo de 0, así que ningún test informa de drift,
 > y la política solo mira el f1, cuya caída está por debajo de `max_f1_drop`:
 > `decide()` devuelve `continue_serving`, la rama de reentrenamiento queda
 > skipped, y el run termina en segundos. Los mismos datos y el mismo modelo en

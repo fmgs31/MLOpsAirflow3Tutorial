@@ -939,13 +939,14 @@ sensors_and_events()
 ```python
 """Lesson 6 - continual learning: monitor, decide, and act.
 
-A monitoring event has four sensible responses, and this Dag makes them
-explicit branches:
+Every monitoring run ends in one of four actions, each its own branch:
 
     continue  keep serving; log the alert and move on
     improve   retrain on new data (triggers the mlops Dag)
-    inspect   the label space or schema changed - a human should look
-    rollback  live performance collapsed - revert to the previous model
+    inspect   fail the run so a human looks: the label space changed, or
+              performance collapsed and the previous model is no better
+    rollback  live performance collapsed and the previous model does better
+              on the same rows - revert to it
 
 Every measurement is of the production model on rows it has never seen: the
 rows that reached the warehouse after it was trained.
@@ -971,7 +972,7 @@ import pendulum
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Param, dag, task
-from airflow.sdk.exceptions import AirflowSkipException
+from airflow.sdk.exceptions import AirflowFailException
 from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, monitoring, registry
@@ -1008,8 +1009,8 @@ def monitoring_dag():
     def prepare_windows(*, run_id: str) -> dict[str, Any]:
         """Read the warehouse once and write the two windows drift is measured on."""
         key = run_id.replace(":", "-").replace("+", "-")
-        # Writes reference.parquet and current.parquet; returns their paths, num_current
-        # and version (the champion's). With no champion, or fewer than
+        # Writes reference.parquet and current.parquet; returns their paths, num_current,
+        # version (the champion's) and already_trained_on. With no champion, or fewer than
         # config.MIN_MONITOR_ROWS current rows, it writes nothing and the paths are None.
         windows = monitoring.prepare_windows(f"monitoring-{key}")
         print(f"windows: {windows}")
@@ -1029,12 +1030,29 @@ def monitoring_dag():
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
-        # The champion's f1_at_promotion, and its f1_now on the current window;
-        # None when there is no window.
+        # The champion's f1_at_promotion, its f1_now on the current window, and
+        # f1_previous, the previous champion's on the same rows (None if there
+        # is no previous champion); None when there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
-            print(f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+            print(
+                f"f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f} "
+                f"previous champion={performance['f1_previous']}"
+            )
         return performance
+
+    def retrain_or_wait(windows: dict[str, Any], ti) -> str:
+        """`trigger_retraining`, unless a retrain on this data is already queued, running or done."""
+        if ti.get_dr_count(dag_id="mlops", states=["queued", "running"]):
+            print("an mlops run is already queued or running - not starting another")
+            return "continue_serving"
+        if windows["already_trained_on"]:
+            # A model built on these same rows was already turned down; a new
+            # search on them is a retry, not new evidence. The next delivery
+            # starts mlops through its asset (§8).
+            print("a model was already trained on every current row and not promoted - waiting for new data")
+            return "continue_serving"
+        return "trigger_retraining"
 
     @task.branch
     def decide(
@@ -1043,10 +1061,11 @@ def monitoring_dag():
         performance: dict[str, Any] | None,
         *,
         params: dict[str, Any],
+        ti,
     ) -> str:
         if windows["version"] is None:
             print("No production model yet - train one.")
-            return "trigger_retraining"
+            return retrain_or_wait(windows, ti)
         if drift is None or performance is None:
             print(
                 f"only {windows['num_current']} new rows since version {windows['version']} "
@@ -1063,7 +1082,12 @@ def monitoring_dag():
         print(f"f1_drop={f1_drop:.4f}")
 
         if f1_drop >= params["critical_f1_drop"]:
-            return "rollback"
+            # Roll back only to a model that does better on the same rows. If
+            # the previous one is no better, the data moved, not the model.
+            f1_previous = performance["f1_previous"]
+            if f1_previous is not None and f1_previous > performance["f1_now"]:
+                return "rollback"
+            return "inspect"
         if drift["new_labels"]:
             # An unseen label means the schema/label space moved. Retraining on
             # data you do not understand yet is how you ship a worse model.
@@ -1073,16 +1097,20 @@ def monitoring_dag():
             or label["p_val"] < params["drift_p_val"]           # target drift
             or length["p_val"] < params["drift_p_val"]          # data drift
         ):
-            return "trigger_retraining"
+            return retrain_or_wait(windows, ti)
         return "continue_serving"
 
     continue_serving = EmptyOperator(task_id="continue_serving")
 
+    # Fails on purpose: a run that needs a person must not end green, and a
+    # failed task is what alerting (§16) is wired to.
     @task
-    def inspect(drift: dict[str, Any]) -> None:
+    def inspect(drift: dict[str, Any], performance: dict[str, Any]) -> None:
         print("MANUAL INSPECTION NEEDED")
         print(f"  new labels: {drift['new_labels']}")
         print(f"  current distribution: {drift['current_distribution']}")
+        print(f"  f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        raise AirflowFailException("manual inspection needed - nothing was retrained or rolled back")
 
     # Moving `champion` changes the production model as much as a promotion
     # does, so this task emits the same asset as `promote_model` in mlops.
@@ -1093,8 +1121,9 @@ def monitoring_dag():
         reason = f"f1 fell from {performance['f1_at_promotion']:.4f} to {performance['f1_now']:.4f}"
         champion = registry.rollback(reason)
         if champion is None:
-            # A skipped task emits no asset event: production did not change.
-            raise AirflowSkipException("no previous_champion - nothing to roll back to")
+            # `decide` saw a previous champion; it is gone now. Fail rather than
+            # skip: the collapsed model is still serving, and someone must know.
+            raise AirflowFailException("previous_champion is gone - nothing to roll back to")
         outlet_events[PRODUCTION_MODEL].extra = {
             "version": champion["version"],
             "rolled_back_version": champion["rolled_back_version"],
@@ -1117,7 +1146,7 @@ def monitoring_dag():
     branch = decide(windows, drift, performance)
 
     branch >> continue_serving
-    branch >> inspect(drift)
+    branch >> inspect(drift, performance)
     branch >> rollback(performance)
     branch >> trigger_retraining
 

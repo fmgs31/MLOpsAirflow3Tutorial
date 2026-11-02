@@ -363,9 +363,12 @@ reentrenamiento: `Branch into inspect`. Después:
 MANUAL INSPECTION NEEDED
   new labels: ['other']
   current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
+  f1 at promotion=… now=…
 ```
 
-El run termina ahí, en segundos, sin reentrenar nada. Es la regla con la que
+e `inspect` falla con `manual inspection needed - nothing was retrained or
+rolled back`. El run termina ahí, en segundos, fallido: necesita a una
+persona, y no se reentrenó nada. Es la regla con la que
 se escribió `decide` en la §12: un label que el modelo nunca vio significa que
 el espacio de labels se movió, y reentrenar con datos que nadie entiende
 todavía es como sale a producción un modelo peor. Una alarma de drift es una
