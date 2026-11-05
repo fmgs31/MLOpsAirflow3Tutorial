@@ -11,7 +11,7 @@ el material de referencia sea fácil de encontrar:
   [`tests/test_readme_listings.py`](../../tests/test_readme_listings.py), de
   modo que los listados no pueden quedar desfasados respecto al código que se
   ejecuta.
-- **[Qué se verificó de verdad](../verified_ES.md)** — el registro de qué
+- **[Registro de verificación](../verified_ES.md)** — el registro de qué
   afirmaciones de este tutorial se comprobaron contra un stack
   `apache/airflow:3.3.1` en marcha, cuándo, y cómo se midió cada cifra. Nada
   de eso es un paso que ejecutar.

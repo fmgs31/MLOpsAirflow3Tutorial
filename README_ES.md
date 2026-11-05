@@ -13,8 +13,8 @@ Sigue la [lección de orquestación](https://madewithml.com/courses/mlops/orches
 de Made With ML, reconstruida para Airflow 3 y preparada para ejecutarse, paso
 a paso, en tu máquina. Airflow, MLflow y Airbyte corren en local con Docker; el
 warehouse es BigQuery, en un proyecto de Google Cloud que creas en la §9. Los
-comandos se comprueban contra un stack real — ver [Qué se verificó de
-verdad](docs/verified_ES.md) para saber cuáles, y cuándo.
+comandos se comprueban contra un stack real — ver el [registro de
+verificación](docs/verified_ES.md) para saber cuáles, y cuándo.
 
 **Se asume:** Python, la línea de comandos, Docker instalado, y una cuenta de
 Google para el Free Trial de Google Cloud (pide una tarjeta, y no cobra nada
@@ -77,7 +77,7 @@ quiera aprender.
 Material de referencia: [CLI cheatsheet](docs/cheatsheet.md) ·
 [Troubleshooting](docs/troubleshooting.md) ·
 [Los Dags terminados, completos](docs/appendix-dags_ES.md) ·
-[Qué se verificó de verdad](docs/verified_ES.md)
+[Registro de verificación](docs/verified_ES.md)
 
 ---
 

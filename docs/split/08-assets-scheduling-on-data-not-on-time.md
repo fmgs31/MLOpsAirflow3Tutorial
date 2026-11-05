@@ -215,7 +215,7 @@ three events, and `triggering_asset_events` in `prepare_data` lists them all.
 > the run and the pause only holds it. The same goes for a consumer that did
 > not exist yet when the event was written: the `dataops` run you make in §9
 > emits an event that `mlops`, written in §10, never sees. (Checked all three
-> ways on this stack — see [what was actually verified](../verified.md).)
+> ways on this stack — see the [verification log](../verified.md).)
 
 ---
 

@@ -225,8 +225,8 @@ ocupado, el *siguiente* run de `mlops` se lleva los tres eventos, y
 > *manual* crea el run y la pausa solo lo retiene. Lo mismo vale para un
 > consumidor que todavía no existía cuando se escribió el evento: el run de
 > `dataops` que harás en la §9 emite un evento que `mlops`, escrito en la §10,
-> nunca verá. (Comprobado de las tres formas en este stack — ver [qué se
-> verificó de verdad](../verified_ES.md).)
+> nunca verá. (Comprobado de las tres formas en este stack — ver el [registro de
+> verificación](../verified_ES.md).)
 
 ---
 

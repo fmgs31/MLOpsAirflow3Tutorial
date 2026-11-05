@@ -1,4 +1,4 @@
-# Qué se verificó de verdad
+# Registro de verificación
 
 > Parte del [tutorial de Airflow 3](../README_ES.md), sacado de él para que el
 > tutorial siga siendo legible. `§N` se refiere a una sección numerada de ese

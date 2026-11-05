@@ -9,7 +9,7 @@ material stays findable:
   [`scripts/sync_readme.py`](../../scripts/sync_readme.py) and verified by
   [`tests/test_readme_listings.py`](../../tests/test_readme_listings.py), so the
   listings cannot drift from the code that runs.
-- **[What was actually verified](../verified.md)** — the record of which
+- **[Verification log](../verified.md)** — the record of which
   claims in this tutorial were read off a live `apache/airflow:3.3.1` stack,
   when, and how each figure was measured. Nothing there is a step to run.
 

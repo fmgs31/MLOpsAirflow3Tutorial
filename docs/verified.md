@@ -1,4 +1,4 @@
-# What was actually verified
+# Verification log
 
 > Part of the [Airflow 3 tutorial](../README.md), split out of it to keep the
 > tutorial itself readable. `§N` below refers to a numbered section of that
