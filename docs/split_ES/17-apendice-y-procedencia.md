@@ -1,20 +1,15 @@
 ## 17. Apéndice y procedencia
 
-Las secciones anteriores construyen cada Dag por partes. Dos documentos más
-largos están fuera de las secciones, para que el tutorial siga siendo legible y
-el material de referencia sea fácil de encontrar:
+Las secciones anteriores construyen cada Dag por partes.
+**[Los Dags terminados, completos](../appendix-dags_ES.md)** tiene cada
+solución de principio a fin, en orden de lectura, inyectada desde
+[`solutions/`](../../solutions/) por
+[`scripts/sync_readme.py`](../../scripts/sync_readme.py) y verificada por
+[`tests/test_readme_listings.py`](../../tests/test_readme_listings.py), de modo
+que los listados no pueden quedar desfasados respecto al código que se ejecuta.
 
-- **[Los Dags terminados, completos](../appendix-dags_ES.md)** — cada solución
-  de principio a fin, en orden de lectura, inyectada desde
-  [`solutions/`](../../solutions/) por
-  [`scripts/sync_readme.py`](../../scripts/sync_readme.py) y verificada por
-  [`tests/test_readme_listings.py`](../../tests/test_readme_listings.py), de
-  modo que los listados no pueden quedar desfasados respecto al código que se
-  ejecuta.
-- **[Registro de verificación](../verified_ES.md)** — el registro de qué
-  afirmaciones de este tutorial se comprobaron contra un stack
-  `apache/airflow:3.3.1` en marcha, cuándo, y cómo se midió cada cifra. Nada
-  de eso es un paso que ejecutar.
+La última ejecución completa de la §1 a la §12, con cada comando tal como está
+escrito, fue el 2026-11-05, contra `apache/airflow:3.3.1`.
 
 ---
 

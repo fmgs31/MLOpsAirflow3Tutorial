@@ -13,8 +13,7 @@ It follows Made With ML's [orchestration lesson](https://madewithml.com/courses/
 rebuilt for Airflow 3 and made to run, step by step, on your machine.
 Airflow, MLflow and Airbyte run locally in Docker; the warehouse is BigQuery,
 on a Google Cloud project you create in §9. Commands are checked against a
-real stack — see the [verification log](../verified.md) for which, and
-when.
+real stack; [§17](17-appendix-and-provenance.md) says which, and when.
 
 **Assumed:** Python, the command line, Docker installed, and a Google account
 for Google Cloud's Free Trial (it asks for a card, and charges nothing unless
@@ -63,8 +62,7 @@ getting it right took extensive corrections, polishing and a fair amount of work
 
 Reference material: [CLI cheatsheet](../cheatsheet.md) ·
 [Troubleshooting](../troubleshooting.md) ·
-[The finished Dags in full](../appendix-dags.md) ·
-[Verification log](../verified.md)
+[The finished Dags in full](../appendix-dags.md)
 
 ---
 

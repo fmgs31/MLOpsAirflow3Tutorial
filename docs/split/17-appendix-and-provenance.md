@@ -1,17 +1,14 @@
 ## 17. Appendix and provenance
 
-The sections before this one build each Dag in pieces. Two longer documents
-live outside the sections, so the tutorial stays readable and the reference
-material stays findable:
+The sections before this one build each Dag in pieces.
+**[The finished Dags in full](../appendix-dags.md)** has every solution end to
+end, in reading order, injected from [`solutions/`](../../solutions/) by
+[`scripts/sync_readme.py`](../../scripts/sync_readme.py) and verified by
+[`tests/test_readme_listings.py`](../../tests/test_readme_listings.py), so the
+listings cannot drift from the code that runs.
 
-- **[The finished Dags in full](../appendix-dags.md)** — every solution end to
-  end, in reading order, injected from [`solutions/`](../../solutions/) by
-  [`scripts/sync_readme.py`](../../scripts/sync_readme.py) and verified by
-  [`tests/test_readme_listings.py`](../../tests/test_readme_listings.py), so the
-  listings cannot drift from the code that runs.
-- **[Verification log](../verified.md)** — the record of which
-  claims in this tutorial were read off a live `apache/airflow:3.3.1` stack,
-  when, and how each figure was measured. Nothing there is a step to run.
+§1 to §12 were last run end to end on 2026-11-05, every command as written,
+against `apache/airflow:3.3.1`.
 
 ---
 
