@@ -88,10 +88,11 @@ def prepare_windows(run_key: str, df: pd.DataFrame | None = None) -> dict[str, A
 def production_performance(current_fp: str | None) -> dict[str, Any] | None:
     """Score the champion, and the version a rollback would go back to, on the current window.
 
-    None if there is no window to score on. `f1_now` is the champion's on the
-    whole window; `f1_recent` on its last `config.RECENT_DAYS` alone, or None
-    when those hold fewer than `config.MIN_MONITOR_ROWS` rows. `f1_previous`
-    is the previous champion's on the whole window, None when there is none.
+    None if there is no window to score on. `f1_cumulative` is the champion's
+    on the whole window; `f1_sliding_window` on its rows created in the
+    `config.SLIDING_WINDOW_DAYS` up to the newest one, or None when those are
+    fewer than `config.MIN_MONITOR_ROWS`. `f1_previous` is the previous
+    champion's on the whole window, None when there is none.
     Both models have never seen these rows: the champion was trained on
     everything the warehouse had then, the previous one on less.
     """
@@ -104,10 +105,11 @@ def production_performance(current_fp: str | None) -> dict[str, Any] | None:
     current["tag"] = current["tag"].where(current["tag"].isin(config.ACCEPTED_TAGS), config.OTHER_TAG)
     model = registry.load_model()
     metrics = evaluate_module.evaluate(model, current)
-    recent = current[current["created_on"] > current["created_on"].max() - pd.Timedelta(days=config.RECENT_DAYS)]
-    f1_recent = None
-    if len(recent) >= config.MIN_MONITOR_ROWS:
-        f1_recent = evaluate_module.evaluate(model, recent)["f1"]
+    start = current["created_on"].max() - pd.Timedelta(days=config.SLIDING_WINDOW_DAYS)
+    sliding_window = current[current["created_on"] > start]
+    f1_sliding_window = None
+    if len(sliding_window) >= config.MIN_MONITOR_ROWS:
+        f1_sliding_window = evaluate_module.evaluate(model, sliding_window)["f1"]
     previous = registry.get_previous()
     f1_previous = None
     if previous is not None:
@@ -115,10 +117,10 @@ def production_performance(current_fp: str | None) -> dict[str, Any] | None:
         f1_previous = evaluate_module.evaluate(previous_model, current)["f1"]
     return {
         "version": champion["version"],
-        "f1_at_promotion": champion["metrics"]["f1"],
-        "f1_now": metrics["f1"],
-        "f1_recent": f1_recent,
-        "recent_rows": len(recent),
+        "f1_baseline": champion["metrics"]["f1"],
+        "f1_cumulative": metrics["f1"],
+        "f1_sliding_window": f1_sliding_window,
+        "sliding_window_rows": len(sliding_window),
         "per_class": metrics["per_class"],
         "slices": metrics["slices"],
         "previous_version": previous["version"] if previous else None,

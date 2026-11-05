@@ -10,8 +10,8 @@ p-value below the threshold means drift.
     KSDrift         on the text length    data drift: do the inputs look different?
 
 A p-value says how sure the test is that something moved, not how much: with
-enough rows, a tiny change is significant. So each result also has a `shift`,
-from 0 to 1: for the tags, the share of rows whose tag would have to change
+enough rows, a tiny change is significant. So each result also has an
+`effect_size`, from 0 to 1: for the tags, the share of rows whose tag would have to change
 for the two mixes to match (total variation distance); for the length, the
 largest gap between the two cumulative distributions (the KS distance).
 
@@ -40,7 +40,7 @@ def _summary(prediction: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def label_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict[str, Any]:
+def target_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict[str, Any]:
     from alibi_detect.cd import ChiSquareDrift
 
     # The test needs integer categories. Encode over both windows, so a tag
@@ -51,9 +51,9 @@ def label_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict[
     x_cur = current.map(codes).to_numpy().reshape(-1, 1)
     detector = ChiSquareDrift(x_ref, p_val=p_val, categories_per_feature={0: len(categories)})
     # alibi-detect's `distance` here is the chi-squared statistic, which grows
-    # with the row count; the shift is the size of the change itself.
+    # with the row count; the effect size is the size of the change itself.
     shares = reference.value_counts(normalize=True).sub(current.value_counts(normalize=True), fill_value=0)
-    return {**_summary(detector.predict(x_cur)), "shift": float(shares.abs().sum() / 2)}
+    return {**_summary(detector.predict(x_cur)), "effect_size": float(shares.abs().sum() / 2)}
 
 
 def length_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict[str, Any]:
@@ -63,7 +63,7 @@ def length_drift(reference: pd.Series, current: pd.Series, p_val: float) -> dict
     x_cur = current.str.split().str.len().to_numpy(dtype="float32").reshape(-1, 1)
     detector = KSDrift(x_ref, p_val=p_val)
     summary = _summary(detector.predict(x_cur))
-    return {**summary, "shift": summary["distance"]}
+    return {**summary, "effect_size": summary["distance"]}
 
 
 def distribution(tags: pd.Series) -> dict[str, float]:
@@ -82,7 +82,7 @@ def detect_drift(
     reference = pd.read_parquet(reference_fp)
     current = pd.read_parquet(current_fp)
     return {
-        "label_drift": label_drift(reference["tag"], current["tag"], p_val),
+        "target_drift": target_drift(reference["tag"], current["tag"], p_val),
         "length_drift": length_drift(reference["text"], current["text"], p_val),
         "new_labels": sorted(set(current["tag"]) - set(reference["tag"])),
         "reference_distribution": distribution(reference["tag"]),

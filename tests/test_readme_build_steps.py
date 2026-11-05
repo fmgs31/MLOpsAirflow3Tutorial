@@ -51,6 +51,7 @@ SHARED_FILES = {
     "dags/.airflowignore",
     "dags/project_tagger_orchestration/__init__.py",
     "dags/project_tagger_orchestration/assets.py",
+    "dags/project_tagger_orchestration/links.py",
 }
 
 

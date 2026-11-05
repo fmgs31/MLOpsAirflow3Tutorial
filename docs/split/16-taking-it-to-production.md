@@ -36,6 +36,22 @@ anyone else's. Heavy compute belongs on a cluster (Ray, Spark, EMR, Dataproc)
 that Airflow triggers and tracks: Airflow is an orchestrator, not a compute
 engine.
 
+**Serving the model.** Here, nothing outside MLflow loads the model. In
+production something does, such as a Dag that re-tags every project or one
+that tells the inference service to reload. It schedules on
+`production_model` and runs after each promotion or rollback, with the new
+version in the event's `extra`:
+
+```python
+@dag(schedule=PRODUCTION_MODEL)
+def score_projects():
+    @task
+    def score(*, triggering_asset_events: Mapping[Asset, Sequence[Any]]) -> None:
+        version = triggering_asset_events[PRODUCTION_MODEL][-1].extra["version"]
+        model = registry.load_model(version=version)
+        ...
+```
+
 **Dag bundles.** The Dag processor reads *bundles*; the default is one
 `LocalDagBundle` named `dags-folder`, which reads the `dags_folder` setting.
 `GitDagBundle` adds versioning: each Dag run records the commit it ran with,

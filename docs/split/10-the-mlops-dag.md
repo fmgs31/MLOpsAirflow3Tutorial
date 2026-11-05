@@ -106,6 +106,58 @@ so the whole run works on the same data. MLflow ends up with the study's run,
 the trials as its child runs, and the final run, the only one with the model
 file.
 
+### Links to MLflow
+
+A run of this Dag leaves three things in MLflow worth opening: the study's
+run, the final run and the new version. An **extra link** is a button on a
+task instance's page that opens an address outside Airflow. The links go
+in the shared package of §8, not in the Dag file, so `monitoring` (§12) can
+use them too. Two tasks of the Dag, `best_params` and `train_best`, get them.
+Create `dags/project_tagger_orchestration/links.py`:
+
+```python dags/project_tagger_orchestration/links.py
+"""Extra links: buttons on a task instance that open, in the MLflow UI, what the task made."""
+
+from __future__ import annotations
+
+from airflow.sdk import BaseOperatorLink
+from airflow.sdk.execution_time.xcom import XCom
+
+from project_tagger import registry
+
+
+class MlflowRunLink(BaseOperatorLink):
+    name = "MLflow run"
+
+    def __init__(self, field: str = "run_id") -> None:
+        self.field = field
+
+    def get_link(self, operator, *, ti_key) -> str:
+        result = XCom.get_value(ti_key=ti_key, key="return_value")
+        return registry.run_url(result[self.field]) if result else ""
+
+
+class MlflowModelVersionLink(BaseOperatorLink):
+    name = "MLflow model version"
+
+    def get_link(self, operator, *, ti_key) -> str:
+        result = XCom.get_value(ti_key=ti_key, key="return_value")
+        return registry.version_url(result["version"]) if result else ""
+```
+
+A link is a class with a `name`, the button's label, and a `get_link` method
+that returns the address. Airflow calls `get_link` on the worker once the task
+has finished and keeps the address in XCom, under a key of its own
+(`_link_MlflowRunLink`). The UI reads it from there, so the button appears
+when the task has finished. `XCom.get_value` reads the task's return value,
+which holds the run id or the version this task instance made.
+`MlflowRunLink` reads the field it is given: `run_id` by default, as
+`train_best` returns it. `best_params` returns the study's run under
+`study_run_id`. `registry.run_url` and `registry.version_url` turn the id or
+version into an address in the MLflow UI, starting from
+`config.MLFLOW_UI_URL`. That is `http://localhost:5000`, the address your
+browser uses; `http://mlflow:5000` works only inside the Docker network.
+
 ### Build it
 
 Create `dags/04_mlops.py`:
@@ -128,6 +180,7 @@ from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, evaluate, registry, train as train_module, validate
 from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger_orchestration.links import MlflowModelVersionLink, MlflowRunLink
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -566,8 +619,8 @@ and fell back to its `defaults` leaves the "who" empty: that is how you tell
 "a person approved this" from "nobody was looking".
 
 `promote_model` moves the `champion` alias and emits `mlops`'s own asset,
-`production_model`, which nothing consumes yet; point a Dag's `schedule` at it
-and the edge appears in the Assets graph.
+`production_model`. No Dag in this tutorial consumes it; §16 shows what
+would.
 
 A **trigger rule** states what a task's upstream tasks must have done before
 it runs; branching is where you first need one. The join, `done`, needs
@@ -589,7 +642,10 @@ Finish the file with the wiring:
     )
     approved_data_gate >> results
 
-    trained = train_best(best_params(study, results), paths)
+    best = best_params(study, results)
+    trained = train_best(best, paths)
+    best.operator.operator_extra_links = [MlflowRunLink("study_run_id")]
+    trained.operator.operator_extra_links = [MlflowRunLink(), MlflowModelVersionLink()]
     comparison = compare_with_champion(trained, paths)
     summary = summarize_candidate(trained, comparison)
     decision = promotion_gate(trained, comparison)
@@ -614,6 +670,12 @@ a template, not an argument, so Airflow sees no dependency on its own, and
 without the edge the prompt could be built before the summary exists. The edge
 from `decision`, on to `promote_model` and `done`, is `promotion_gate`'s first
 branch; the last line is its second, and `done` joins them.
+
+`@task` has no argument for extra links, so the wiring sets them on the
+operator behind each task call: `best.operator` is `best_params`'s.
+`best_params` gets one button, **MLflow run**, to the study's run;
+`train_best` gets two, **MLflow run** and **MLflow model version**, to the
+final run and the version it registered.
 
 ### See the wiring
 
@@ -713,7 +775,11 @@ the `approve_promotion` branch, because the final model's f1 cleared the
 threshold and there was no production model to beat (`compare_with_champion`
 logged `no champion yet`), and the approval came from you or the default.
 
-Then look at what the run left in MLflow, at <http://localhost:5000>:
+Then look at what the run left in MLflow. Start from Airflow: in that `mlops`
+run, click `train_best` and open its **Details** tab. Under **Extra Links**,
+**MLflow run** opens the final run and **MLflow model version** opens
+version 1; `best_params`'s **MLflow run** opens the study's run. Or browse
+from <http://localhost:5000>:
 
 **Checkpoint.** The `project_tagger` experiment shows two runs:
 `project_tagger-asset_triggered__…`, the study's run, and

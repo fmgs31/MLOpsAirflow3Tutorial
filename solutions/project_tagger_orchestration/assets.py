@@ -46,8 +46,7 @@ RAW_TAGS = Asset(
 
 # Produced whenever the registry's `champion` alias moves: by `mlops` when a
 # model clears the promotion gate, and by `monitoring` when it rolls back.
-# Nothing is scheduled on it yet - point a Dag's `schedule` at it and the edge
-# appears in the UI's Assets graph.
+# No Dag in this tutorial schedules on it; one that serves the model would (§16).
 PRODUCTION_MODEL = Asset(
     name="production_model",
     group="model",

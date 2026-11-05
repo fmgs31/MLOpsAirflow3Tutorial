@@ -352,8 +352,11 @@ opina de ellos:
 docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
+Busca en la salida como en la §12; el traceback de `pendulum` es la misma
+comprobación inofensiva.
+
 **Comprobación.** `prepare_windows` registra `'num_current': 191`. `decide`
-registra un label drift con p-value cerca de `6e-41`, un length drift cerca de
+registra un target drift con p-value cerca de `6e-41`, un length drift cerca de
 `5e-19` y `new_labels=['other']`, y no toma ni `continue_serving` ni la rama de
 reentrenamiento: `Branch into inspect`. Después:
 
@@ -361,7 +364,7 @@ reentrenamiento: `Branch into inspect`. Después:
 MANUAL INSPECTION NEEDED
   new labels: ['other']
   current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
-  f1 at promotion=… now=…
+  f1 baseline=… cumulative=…
   computer-vision: 71 rows, f1 …
   mlops: 16 rows, f1 …
   natural-language-processing: 78 rows, f1 …
@@ -401,7 +404,7 @@ other                   26  2026-09-11  2026-10-13
 Los tres tags se acaban donde empieza `other`: desde el 11 de septiembre de
 2026, el origen los escribe como `other`. Es la misma fusión que ya hace el
 modelo: aprende cuatro clases, y todo otro tag pasa a `other` (§10). La línea
-`f1 at promotion=… now=…` coincide: no hay caída, así que el modelo funciona
+`f1 baseline=… cumulative=…` coincide: no hay caída, así que el modelo funciona
 igual de bien con los proyectos nuevos que con su split de test. Reentrenar no
 arreglaría esto. El arreglo es dar a las filas viejas el vocabulario nuevo, en
 el transform, para que el historial y los datos nuevos usen las mismas
@@ -436,16 +439,21 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
 **Comprobación.** `new_labels=[]`, así que `decide` ya no se para en
-`inspect`. El label drift queda ahora cerca de `0.006` con un shift de 0.10, el
-length drift sigue cerca de `5e-19` con 0.35, los dos shifts por encima de
-`min_drift_shift`, así que `decide` toma `trigger_retraining`, como en la §12,
-y deja en cola un run de `mlops` que espera mientras `mlops` esté en pausa.
+`inspect`. Los dos tests de drift tienen un p-value por debajo de 0.05 y un
+effect size por encima de `min_effect_size`:
+
+| Test | p-value | Effect size | Filas de las que aprendió el modelo | Filas nuevas |
+|---|---|---|---|---|
+| Target drift | cerca de `0.006` | 0.10 | `mlops` 4 % | `mlops` 8 % |
+| Data drift | cerca de `5e-19` | 0.35 | mediana de 22 palabras por texto | mediana de 17 palabras por texto |
+
+`decide` toma `trigger_retraining`, como en la §12, y deja en cola un run de
+`mlops` que espera mientras `mlops` esté en pausa.
 
 Los dos tests siguen informando de drift, y los dos tienen razón. Estos 191
 son proyectos de Made With ML, como los 764 de la §9, pero el modelo aprendió
-de esos más los papers de arXiv de la §12. Frente a esa mezcla, los proyectos
-nuevos son más cortos (mediana de 17 palabras frente a 22) y tienen el doble
-de `mlops` (un 8 % frente a un 4 %). Y el f1 no bajó. Drift es una diferencia,
+de esos más los papers de arXiv de la §12: frente a esa mezcla, los proyectos
+nuevos son más cortos y tienen el doble de `mlops`. Y el f1 no bajó. Drift es una diferencia,
 no un daño: un test de drift dice que los datos se movieron; solo la
 comprobación de rendimiento dice si eso hizo daño. La política de la §12
 reentrena en los dos casos, a costa de un entrenamiento, y el gate de `mlops`

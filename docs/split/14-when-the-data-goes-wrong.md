@@ -337,8 +337,11 @@ The data is in and checked. Now ask the monitor of §12 what it makes of it:
 docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
+Search the output as in §12; the `pendulum` traceback is the same harmless
+check.
+
 **Checkpoint.** `prepare_windows` logs `'num_current': 191`. `decide` logs
-label drift at a p-value around `6e-41`, length drift around `5e-19`, and
+target drift at a p-value around `6e-41`, length drift around `5e-19`, and
 `new_labels=['other']`, and takes neither `continue_serving` nor the
 retraining branch: `Branch into inspect`. Then:
 
@@ -346,7 +349,7 @@ retraining branch: `Branch into inspect`. Then:
 MANUAL INSPECTION NEEDED
   new labels: ['other']
   current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
-  f1 at promotion=… now=…
+  f1 baseline=… cumulative=…
   computer-vision: 71 rows, f1 …
   mlops: 16 rows, f1 …
   natural-language-processing: 78 rows, f1 …
@@ -386,7 +389,7 @@ other                   26  2026-09-11  2026-10-13
 The three tags stop where `other` starts: from 11 September 2026 on, the
 source writes them as `other`. That is the merge the model already makes: it
 learns four classes, and every other tag becomes `other` (§10). The
-`f1 at promotion=… now=…` line agrees: no drop, so the model does as well on
+`f1 baseline=… cumulative=…` line agrees: no drop, so the model does as well on
 the new projects as on its test split. Retraining would not fix this. The fix
 is to give the old rows the new vocabulary, in the transform, so history and
 new data share the same labels. In `labeled_projects.sql`, replace the last
@@ -419,16 +422,21 @@ docker compose exec airflow-scheduler airflow dags test monitoring
 ```
 
 **Checkpoint.** `new_labels=[]`, so `decide` no longer stops at `inspect`.
-Label drift is now around `0.006` with a shift of 0.10, length drift still
-around `5e-19` with 0.35, both shifts over `min_drift_shift`, so `decide`
-takes `trigger_retraining`, as in §12, and queues a run of `mlops` that waits
-while `mlops` is paused.
+Both drift tests have a p-value below 0.05 and an effect size over
+`min_effect_size`:
+
+| Test | p-value | Effect size | Rows the model learned from | New rows |
+|---|---|---|---|---|
+| Target drift | around `0.006` | 0.10 | `mlops` 4% | `mlops` 8% |
+| Data drift | around `5e-19` | 0.35 | median text of 22 words | median text of 17 words |
+
+`decide` takes `trigger_retraining`, as in §12, and queues a run of `mlops`
+that waits while `mlops` is paused.
 
 Both tests still report drift, and both are right. These 191 are Made With ML
 projects, like the 764 of §9, but the model learned from those plus the
-arXiv papers of §12. Against that mix, the new projects are shorter (median
-17 words against 22) and have twice the share of `mlops` (8% against 4%).
-Yet the f1 did not drop. Drift is a difference, not damage: a drift test says
+arXiv papers of §12: against that mix, the new projects are shorter and have
+twice the share of `mlops`. Yet the f1 did not drop. Drift is a difference, not damage: a drift test says
 the data moved; only the performance check says whether that hurt. The §12
 policy retrains on either, at the cost of one training run, and the gate in
 `mlops` decides whether the result ships; a policy that retrained only on an

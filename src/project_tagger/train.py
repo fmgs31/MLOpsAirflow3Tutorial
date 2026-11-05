@@ -188,8 +188,9 @@ def best_trial(study_name: str) -> dict[str, Any]:
     study = optuna.load_study(study_name=study_name, storage=config.OPTUNA_STORAGE)
     best = study.best_trial
     trial_run_id = best.user_attrs["mlflow_run_id"]
+    study_run_id = study.user_attrs["mlflow_run_id"]
     mlflow = setup_mlflow()
-    with mlflow.start_run(run_id=study.user_attrs["mlflow_run_id"]):
+    with mlflow.start_run(run_id=study_run_id):
         mlflow.log_metrics({"best_f1": best.value, "num_trials": len(study.trials)})
         mlflow.set_tag("best_trial_run_id", trial_run_id)
     return {
@@ -198,6 +199,7 @@ def best_trial(study_name: str) -> dict[str, Any]:
         "params": best.params,
         "num_trials": len(study.trials),
         "mlflow_run_id": trial_run_id,
+        "study_run_id": study_run_id,
     }
 
 

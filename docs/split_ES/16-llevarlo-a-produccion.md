@@ -38,6 +38,22 @@ contiene Airflow, y cada equipo actualiza sus librerías sin tocar las de nadie
 más. El cómputo pesado pertenece a un clúster (Ray, Spark, EMR, Dataproc) que
 Airflow dispara y sigue: Airflow es un orquestador, no un motor de cómputo.
 
+**Servir el modelo.** Aquí nada fuera de MLflow carga el modelo. En producción
+algo lo hace, como un Dag que vuelve a etiquetar todos los proyectos o uno que
+avisa al servicio de inferencia para que lo recargue. Ese Dag se programa sobre
+`production_model` y corre tras cada promoción o rollback, con la nueva versión
+en el `extra` del evento:
+
+```python
+@dag(schedule=PRODUCTION_MODEL)
+def score_projects():
+    @task
+    def score(*, triggering_asset_events: Mapping[Asset, Sequence[Any]]) -> None:
+        version = triggering_asset_events[PRODUCTION_MODEL][-1].extra["version"]
+        model = registry.load_model(version=version)
+        ...
+```
+
 **Dag bundles.** El Dag processor lee *bundles*; el de por defecto es un
 `LocalDagBundle` llamado `dags-folder`, que lee el ajuste `dags_folder`.
 `GitDagBundle` añade versionado: cada Dag run registra el commit con el que

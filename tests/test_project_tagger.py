@@ -224,7 +224,7 @@ def test_drift_flags_a_new_label(tmp_path, monkeypatch, fake_champion) -> None:
 
     report = drift.detect_drift(windows["reference"], windows["current"], p_val=0.05)
     assert "reinforcement-learning" in report["new_labels"]
-    assert report["label_drift"]["is_drift"]
+    assert report["target_drift"]["is_drift"]
     assert drift.detect_drift(None, None) is None
 
 
@@ -332,6 +332,11 @@ def test_tune_train_register_promote_rollback(local_tracking) -> None:
     assert len(study_runs) == 1  # the retried create_study reused it
     assert set(trial_runs["tags.mlflow.parentRunId"]) == {study_runs["run_id"][0]}
     assert study_runs["tags.best_trial_run_id"][0] == best["mlflow_run_id"]
+    assert best["study_run_id"] == study_runs["run_id"][0]
+    experiment_id = study_runs["experiment_id"][0]
+    assert registry.run_url(best["study_run_id"]) == (
+        f"{config.MLFLOW_UI_URL}/#/experiments/{experiment_id}/runs/{best['study_run_id']}"
+    )
 
     versions = []
     for i in range(2):

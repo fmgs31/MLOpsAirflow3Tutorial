@@ -19,7 +19,7 @@ comentarios se dejan en inglés: son los archivos que de verdad se ejecutan.
 Primero, el paquete que importan `dataops` y `mlops` (§8): `.airflowignore`,
 y después `project_tagger_orchestration/`.
 <details>
-<summary><b>solutions/project_tagger_orchestration/</b> — los Assets que los Dags producen y consumen (§8)</summary>
+<summary><b>solutions/project_tagger_orchestration/</b> — los Assets que los Dags producen y consumen (§8), y los links a MLflow (§10)</summary>
 
 <!-- BEGIN FILE: solutions/.airflowignore -->
 ```
@@ -83,8 +83,7 @@ RAW_TAGS = Asset(
 
 # Produced whenever the registry's `champion` alias moves: by `mlops` when a
 # model clears the promotion gate, and by `monitoring` when it rolls back.
-# Nothing is scheduled on it yet - point a Dag's `schedule` at it and the edge
-# appears in the UI's Assets graph.
+# No Dag in this tutorial schedules on it; one that serves the model would (§16).
 PRODUCTION_MODEL = Asset(
     name="production_model",
     group="model",
@@ -92,6 +91,47 @@ PRODUCTION_MODEL = Asset(
 )
 ```
 <!-- END FILE: solutions/project_tagger_orchestration/assets.py -->
+
+<!-- BEGIN FILE: solutions/project_tagger_orchestration/links.py -->
+```python
+"""Extra links: buttons on a task instance that open, in the MLflow UI, what the task made.
+
+Airflow calls `get_link` on the worker once the task has finished and keeps the
+URL in XCom; the UI reads it from there. Each link reads the task's return
+value, so the button points at the run or version that task instance made.
+"""
+
+from __future__ import annotations
+
+from airflow.sdk import BaseOperatorLink
+from airflow.sdk.execution_time.xcom import XCom
+
+from project_tagger import registry
+
+
+class MlflowRunLink(BaseOperatorLink):
+    """The MLflow run whose id the task returned under `field`."""
+
+    name = "MLflow run"
+
+    def __init__(self, field: str = "run_id") -> None:
+        self.field = field
+
+    def get_link(self, operator, *, ti_key) -> str:
+        result = XCom.get_value(ti_key=ti_key, key="return_value")
+        return registry.run_url(result[self.field]) if result else ""
+
+
+class MlflowModelVersionLink(BaseOperatorLink):
+    """The registered version the task returned under `version`."""
+
+    name = "MLflow model version"
+
+    def get_link(self, operator, *, ti_key) -> str:
+        result = XCom.get_value(ti_key=ti_key, key="return_value")
+        return registry.version_url(result["version"]) if result else ""
+```
+<!-- END FILE: solutions/project_tagger_orchestration/links.py -->
 
 </details>
 
@@ -548,6 +588,8 @@ Also shown:
   `response_timeout` mean an unattended run still resolves instead of hanging.
 * **XCom discipline** - tasks exchange paths, run ids and metric dicts. The
   models live in MLflow and the data in the warehouse and on disk.
+* **Extra links** - buttons on `best_params` and `train_best` that open, in the
+  MLflow UI, the study's run, the final run and the new version.
 
 Deadline alerts live in `07_deadline_alerts.py` - see the note there for why
 they are not attached to this Dag.
@@ -571,6 +613,7 @@ from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, evaluate, registry, train as train_module, validate
 from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger_orchestration.links import MlflowModelVersionLink, MlflowRunLink
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -792,7 +835,11 @@ def mlops():
     # mapped instance waits on it.
     approved_data_gate >> results
 
-    trained = train_best(best_params(study, results), paths)
+    best = best_params(study, results)
+    trained = train_best(best, paths)
+    # `@task` takes no links; they go on the operator the task call made.
+    best.operator.operator_extra_links = [MlflowRunLink("study_run_id")]
+    trained.operator.operator_extra_links = [MlflowRunLink(), MlflowModelVersionLink()]
     comparison = compare_with_champion(trained, paths)
     summary = summarize_candidate(trained, comparison)
     decision = promotion_gate(trained, comparison)
@@ -941,12 +988,12 @@ sensors_and_events()
 
 Every monitoring run ends in one of four actions, each its own branch:
 
-    continue  keep serving; log the alert and move on
-    improve   retrain on new data (triggers the mlops Dag)
-    inspect   fail the run so a human looks: the label space changed, or
-              performance collapsed and the previous model is no better
-    rollback  live performance collapsed and the previous model does better
-              on the same rows - revert to it
+    continue_serving    keep serving; log the alert and move on
+    trigger_retraining  retrain on new data (triggers the mlops Dag)
+    inspect             fail the run so a human looks: the label space changed,
+                        or performance collapsed and the previous model is no better
+    rollback            live performance collapsed and the previous model does
+                        better on the same rows - revert to it
 
 Every measurement is of the production model on rows it has never seen: the
 rows that reached the warehouse after it was trained.
@@ -959,6 +1006,8 @@ Pieces on show:
 * `@task.branch` picking one arm of the response.
 * `TriggerDagRunOperator` for cross-Dag orchestration. Retraining needs no
   approval here: what reaches production is approved in `mlops`.
+* Extra links: `rollback` gets a button to the version it put back in
+  production; `TriggerDagRunOperator` comes with one to the run it started.
 
 Run it:
     airflow dags test monitoring
@@ -977,6 +1026,7 @@ from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, monitoring, registry
 from project_tagger_orchestration.assets import PRODUCTION_MODEL
+from project_tagger_orchestration.links import MlflowModelVersionLink
 
 DEFAULT_ARGS = {"owner": "ml-engineering", "retries": 1}
 
@@ -988,7 +1038,7 @@ POLICY_PARAMS = {
     "drift_p_val": Param(
         0.05, type="number", description="A drift test with a p-value below this reports drift."
     ),
-    "min_drift_shift": Param(
+    "min_effect_size": Param(
         0.05, type="number", description="...and only if at least this much of the distribution moved (0-1)."
     ),
     "max_f1_drop": Param(0.15, type="number", description="f1 drop that triggers retraining."),
@@ -1027,20 +1077,24 @@ def monitoring_dag():
     def detect_drift(windows: dict, p_val: str) -> dict | None:
         from project_tagger import drift
 
-        # label_drift and length_drift (each with is_drift, p_val, distance, shift),
+        # target_drift and length_drift (each with is_drift, p_val, distance, effect_size),
         # new_labels and both tag distributions; None when there are no files.
         return drift.detect_drift(windows["reference"], windows["current"], float(p_val))
 
     @task
     def check_performance(windows: dict[str, Any]) -> dict[str, Any] | None:
-        # The champion's f1_at_promotion; its f1_now on the current window and
-        # f1_recent on the newest rows of it; f1_previous, the previous
-        # champion's on the window; per_class and slices. None when there is no window.
+        # The champion's f1_baseline; its f1_cumulative on the whole current
+        # window and f1_sliding_window on its newest rows; f1_previous, the
+        # previous champion's on the window; per_class and slices. None when
+        # there is no window.
         performance = monitoring.production_performance(windows["current"])
         if performance:
-            f1s = {k: performance[k] for k in ("f1_at_promotion", "f1_now", "f1_recent", "f1_previous")}
-            print({k: None if f1 is None else round(f1, 4) for k, f1 in f1s.items()})
-            print(f"recent: the last {config.RECENT_DAYS} days, {performance['recent_rows']} rows")
+            names = ("f1_baseline", "f1_cumulative", "f1_sliding_window", "f1_previous")
+            print({k: None if performance[k] is None else round(performance[k], 4) for k in names})
+            print(
+                f"sliding window: the {config.SLIDING_WINDOW_DAYS} days up to the newest row, "
+                f"{performance['sliding_window_rows']} rows"
+            )
         return performance
 
     def retrain_or_wait(windows: dict[str, Any], ti) -> str:
@@ -1049,9 +1103,9 @@ def monitoring_dag():
             print("an mlops run is already queued or running - not starting another")
             return "continue_serving"
         if windows["already_trained_on"]:
-            # A model built on these same rows was already turned down; a new
-            # search on them is a retry, not new evidence. The next delivery
-            # starts mlops through its asset (§8).
+            # A model built on these same rows was already turned down; another
+            # Optuna search on them would only be luck. New rows start mlops
+            # on their own through its asset (§8).
             print("a model was already trained on every current row and not promoted - waiting for new data")
             return "continue_serving"
         return "trigger_retraining"
@@ -1075,26 +1129,36 @@ def monitoring_dag():
             )
             return "continue_serving"
 
-        label, length = drift["label_drift"], drift["length_drift"]
+        target, length = drift["target_drift"], drift["length_drift"]
         print(
-            f"label drift p={label['p_val']:.4g} shift={label['shift']:.3f} "
-            f"length drift p={length['p_val']:.4g} shift={length['shift']:.3f} "
+            f"target drift p={target['p_val']:.4g} effect_size={target['effect_size']:.3f} "
+            f"length drift p={length['p_val']:.4g} effect_size={length['effect_size']:.3f} "
             f"new_labels={drift['new_labels']} policy={dict(params)}"
         )
         # The larger drop of the two windows: a cumulative f1 can hide a recent fall.
-        f1_worst = min(f1 for f1 in (performance["f1_now"], performance["f1_recent"]) if f1 is not None)
-        f1_drop = performance["f1_at_promotion"] - f1_worst
+        f1s = (performance["f1_cumulative"], performance["f1_sliding_window"])
+        f1_worst = min(f1 for f1 in f1s if f1 is not None)
+        f1_drop = performance["f1_baseline"] - f1_worst
         print(f"f1_drop={f1_drop:.4f}")
+        # The return value is only the branch's task_id; these show in the UI, one row each.
+        for key, value in {
+            "target_drift_p": target["p_val"],
+            "target_drift_effect_size": target["effect_size"],
+            "length_drift_p": length["p_val"],
+            "length_drift_effect_size": length["effect_size"],
+            "f1_drop": f1_drop,
+        }.items():
+            ti.xcom_push(key=key, value=value)
 
         def drifted(test: dict[str, Any]) -> bool:
             # Sure that something moved, and enough of it to be worth a training run.
-            return test["p_val"] < params["drift_p_val"] and test["shift"] >= params["min_drift_shift"]
+            return test["p_val"] < params["drift_p_val"] and test["effect_size"] >= params["min_effect_size"]
 
         if f1_drop >= params["critical_f1_drop"]:
             # Roll back only to a model that does better on the same rows. If
             # the previous one is no better, the data moved, not the model.
             f1_previous = performance["f1_previous"]
-            if f1_previous is not None and f1_previous > performance["f1_now"]:
+            if f1_previous is not None and f1_previous > performance["f1_cumulative"]:
                 return "rollback"
             return "inspect"
         if drift["new_labels"]:
@@ -1103,7 +1167,7 @@ def monitoring_dag():
             return "inspect"
         if (
             f1_drop >= params["max_f1_drop"]    # concept drift
-            or drifted(label)                   # target drift
+            or drifted(target)                   # target drift
             or drifted(length)                  # data drift
         ):
             return retrain_or_wait(windows, ti)
@@ -1118,7 +1182,7 @@ def monitoring_dag():
         print("MANUAL INSPECTION NEEDED")
         print(f"  new labels: {drift['new_labels']}")
         print(f"  current distribution: {drift['current_distribution']}")
-        print(f"  f1 at promotion={performance['f1_at_promotion']:.4f} now={performance['f1_now']:.4f}")
+        print(f"  f1 baseline={performance['f1_baseline']:.4f} cumulative={performance['f1_cumulative']:.4f}")
         # Where it fails: per tag, and on the evaluation slices of §10.
         for name, m in {**performance["per_class"], **performance["slices"]}.items():
             print(f"  {name}: {m['support']} rows, f1 {m['f1']:.4f}")
@@ -1130,7 +1194,7 @@ def monitoring_dag():
     def rollback(
         performance: dict[str, Any], *, outlet_events: OutletEventAccessorsProtocol
     ) -> dict[str, Any]:
-        reason = f"f1 fell from {performance['f1_at_promotion']:.4f} to {performance['f1_now']:.4f}"
+        reason = f"f1 fell from {performance['f1_baseline']:.4f} to {performance['f1_cumulative']:.4f}"
         champion = registry.rollback(reason)
         if champion is None:
             # `decide` saw a previous champion; it is gone now. Fail rather than
@@ -1156,10 +1220,12 @@ def monitoring_dag():
     drift = detect_drift(windows, "{{ params.drift_p_val }}")
     performance = check_performance(windows)
     branch = decide(windows, drift, performance)
+    restored = rollback(performance)
+    restored.operator.operator_extra_links = [MlflowModelVersionLink()]
 
     branch >> continue_serving
     branch >> inspect(drift, performance)
-    branch >> rollback(performance)
+    branch >> restored
     branch >> trigger_retraining
 
 

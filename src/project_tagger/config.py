@@ -67,6 +67,9 @@ KNOWN_RAW_TAGS = [
 # MLflow: where runs are tracked and models registered. Without the env var
 # MLflow writes to a SQLite file in the working directory.
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+# The MLflow UI as your browser reaches it, for links to runs and versions. The
+# tasks reach the server at the tracking URI, a name only Docker's network knows.
+MLFLOW_UI_URL = os.getenv("MLFLOW_UI_URL", "http://localhost:5000")
 MLFLOW_EXPERIMENT = "project_tagger"
 REGISTERED_MODEL = "project_tagger"
 CHAMPION_ALIAS = "champion"
@@ -102,9 +105,10 @@ ALIBI_PYTHON = os.getenv("PROJECT_TAGGER_ALIBI_PYTHON", "/opt/venvs/alibi/bin/py
 # to measure yet: the monitoring Dag keeps serving and checks again next run.
 MIN_MONITOR_ROWS = int(os.getenv("PROJECT_TAGGER_MIN_MONITOR_ROWS", "50"))
 
-# The production f1 is also measured on the newest rows alone, those created in
-# the last RECENT_DAYS of the current window: a cumulative f1 can hide a recent fall.
-RECENT_DAYS = int(os.getenv("PROJECT_TAGGER_RECENT_DAYS", "90"))
+# Besides the cumulative f1, on the whole current window, the production model
+# is scored on a sliding window: the current rows created in the
+# SLIDING_WINDOW_DAYS up to the newest one. A cumulative f1 can hide a recent fall.
+SLIDING_WINDOW_DAYS = int(os.getenv("PROJECT_TAGGER_SLIDING_WINDOW_DAYS", "90"))
 
 
 def table_id(table: str) -> str:

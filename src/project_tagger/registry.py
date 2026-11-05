@@ -131,6 +131,17 @@ def latest_training_run() -> str | None:
     return runs[0].info.run_id if runs else None
 
 
+def run_url(run_id: str) -> str:
+    """The run's page in the MLflow UI."""
+    experiment_id = _client().get_run(run_id).info.experiment_id
+    return f"{config.MLFLOW_UI_URL}/#/experiments/{experiment_id}/runs/{run_id}"
+
+
+def version_url(version: str) -> str:
+    """The registered version's page in the MLflow UI."""
+    return f"{config.MLFLOW_UI_URL}/#/models/{config.REGISTERED_MODEL}/versions/{version}"
+
+
 def load_split_ids(run_id: str) -> dict[str, list]:
     """The project ids in each split of a training run, as it logged them in split_ids.json."""
     import mlflow

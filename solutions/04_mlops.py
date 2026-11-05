@@ -24,6 +24,8 @@ Also shown:
   `response_timeout` mean an unattended run still resolves instead of hanging.
 * **XCom discipline** - tasks exchange paths, run ids and metric dicts. The
   models live in MLflow and the data in the warehouse and on disk.
+* **Extra links** - buttons on `best_params` and `train_best` that open, in the
+  MLflow UI, the study's run, the final run and the new version.
 
 Deadline alerts live in `07_deadline_alerts.py` - see the note there for why
 they are not attached to this Dag.
@@ -47,6 +49,7 @@ from airflow.sdk.types import OutletEventAccessorsProtocol
 
 from project_tagger import config, data, evaluate, registry, train as train_module, validate
 from project_tagger_orchestration.assets import LABELED_PROJECTS, PRODUCTION_MODEL
+from project_tagger_orchestration.links import MlflowModelVersionLink, MlflowRunLink
 
 DEFAULT_ARGS = {
     "owner": "ml-engineering",
@@ -268,7 +271,11 @@ def mlops():
     # mapped instance waits on it.
     approved_data_gate >> results
 
-    trained = train_best(best_params(study, results), paths)
+    best = best_params(study, results)
+    trained = train_best(best, paths)
+    # `@task` takes no links; they go on the operator the task call made.
+    best.operator.operator_extra_links = [MlflowRunLink("study_run_id")]
+    trained.operator.operator_extra_links = [MlflowRunLink(), MlflowModelVersionLink()]
     comparison = compare_with_champion(trained, paths)
     summary = summarize_candidate(trained, comparison)
     decision = promotion_gate(trained, comparison)
