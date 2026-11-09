@@ -33,10 +33,15 @@ psycopg2.ProgrammingError: can't adapt type 'dict'
 [SQL: SELECT deadline_alert.id, ... WHERE deadline_alert.id = %(id_1)s::UUID]
 ```
 
-Raised from `DagRun.update_state` → `DeadlineAlertModel.get_by_id`: the
-`dag.test()` code path passes the serialized alert where an alert id is
-expected. **The tasks all run to completion first** — only the CLI's final state
-update fails, so the traceback is noisier than the actual damage.
+Raised from `DagRun.update_state` → `DeadlineAlertModel.get_by_id`, at the
+moment the run is marked successful: Airflow looks up each deadline alert by id
+to prune the deadlines that were never missed, and the `dag.test()` code path
+passes the serialized alert where an alert id is expected. **The tasks all run
+to completion first** — only that final step fails, so the traceback is noisier
+than the actual damage. Upstream issue:
+[apache/airflow#73428](https://github.com/apache/airflow/issues/73428) (its
+title quotes a different error, `AttributeError: 'dict' object has no attribute
+'hex'`; same cause, a dict where the alert id should be).
 
 Workaround: exercise deadline Dags through the Scheduler, not `dags test`:
 
@@ -46,8 +51,9 @@ airflow dags trigger deadline_alerts
 ```
 
 That path works correctly — `solutions/07_deadline_alerts.py` fires its callback at
-exactly +30s. This is why the `mlops` Dag has no `deadline=`: it would make the
-lesson's own "run it with `airflow dags test`" instruction fail.
+exactly +30s. This is why §13 puts the deadline on a separate Dag rather than on
+`mlops`: the §10 "Try it" runs `mlops` with `airflow dags test` to pass it a
+variable with `-e`, and that would stop working.
 
 ## `KeyError: 'logical_date'` — but only on some runs
 

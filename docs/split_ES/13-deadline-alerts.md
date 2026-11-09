@@ -86,13 +86,15 @@ segundos después del trigger, mientras `slow_step` (un sleep de 75 segundos)
 sigue corriendo: te enteraste del run lento antes de que terminara. Los
 deadlines perdidos y pendientes también se listan bajo Browse → **Deadlines**.
 
-> **Bug de Airflow 3.3.1 (la versión que instala este tutorial):**
-> `airflow dags test` revienta con cualquier Dag que defina `deadline=`
-> (`psycopg2.ProgrammingError: can't adapt type 'dict'`
-> lanzado desde `DagRun.update_state`). Las tasks corren bien; solo falla la
-> actualización final de estado de la CLI, así que dispara esos Dags a través
-> del Scheduler. Por eso `mlops` no lleva deadline: rompería
-> `airflow dags test mlops` en la §10.
+> **Bug de Airflow 3.3.1 (la versión que instala este tutorial):** con un Dag
+> que define `deadline=`, `airflow dags test` revienta al final: todas las
+> tasks terminan bien, y en el momento en que marca el run como exitoso falla
+> con `psycopg2.ProgrammingError: can't adapt type 'dict'` (lanzado desde
+> `DagRun.update_state`). Los runs que dispara el Scheduler no tienen el
+> problema, así que prueba esos Dags a través del Scheduler. Por eso esta
+> sección pone el deadline en un Dag aparte y no en `mlops`: el "Pruébalo" de
+> la §10 ejecuta `mlops` con `airflow dags test` para pasarle una variable con
+> `-e`, y dejaría de funcionar.
 > [Detalles.](../troubleshooting.md)
 
 Referencia: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_alerts.py).
