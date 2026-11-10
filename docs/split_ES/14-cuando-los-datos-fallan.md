@@ -407,16 +407,26 @@ Los tres tags se acaban donde empieza `misc`: desde el 11 de septiembre de
 fuera de sus cuatro clases (§10) pasa a `other`, tanto `misc` como los tres
 viejos, por eso las líneas por clase de arriba muestran `other` y no `misc`. La línea
 `f1 baseline=… cumulative=…` coincide: no hay caída, así que el modelo funciona
-igual de bien con los proyectos nuevos que con su split de test. Reentrenar no
-arreglaría esto. El arreglo es dar a las filas viejas el vocabulario nuevo, en
-el transform, para que el historial y los datos nuevos usen las mismas
-etiquetas. Aceptar `misc` como tag conocido sin tocar el transform no
-bastaría: el monitor compara los tags de `labeled_projects`, no las clases del
-modelo, así que `misc` seguiría siendo un label nuevo en cada run y `decide`
-pararía siempre en `inspect`; y, aunque no parara, el target drift mediría el
-cambio de nombre, no un cambio en los datos. En
-`labeled_projects.sql`, reemplaza la última columna, `t.tag`,
-para que el model quede así:
+igual de bien con los proyectos nuevos que con su split de test.
+
+Soluciones incorrectas:
+
+- **Reentrenar.** El modelo no tiene nada que arreglar: el f1 no cae y los
+  cuatro tags ya acaban en `other`. Los datos seguirían usando dos nombres para
+  lo mismo.
+- **Aceptar `misc` como tag conocido sin tocar el transform.** El monitor
+  compara los tags de `labeled_projects`, no las clases del modelo, así que
+  `misc` seguiría siendo un label nuevo en cada run y `decide` pararía siempre
+  en `inspect`. Aunque no parara, el target drift mediría el cambio de nombre,
+  no un cambio en los datos.
+- **Devolver las filas `misc` a los tres tags viejos.** Una fila `misc` nueva
+  podría venir de cualquiera de los tres, y el origen ya no dice de cuál:
+  sería adivinar.
+
+La solución es dar a las filas viejas el vocabulario nuevo, en el transform,
+para que el historial y los datos nuevos usen las mismas etiquetas. En
+`labeled_projects.sql`, reemplaza la última columna, `t.tag`, para que el model
+quede así:
 
 ```sql
 SELECT

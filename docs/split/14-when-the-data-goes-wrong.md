@@ -396,14 +396,25 @@ source writes them as `misc`. The model already merges them: any tag outside
 its four classes (§10) becomes `other`, `misc` as well as the three old ones,
 which is why the per-class lines above show `other`, not `misc`. The
 `f1 baseline=… cumulative=…` line agrees: no drop, so the model does as well on
-the new projects as on its test split. Retraining would not fix this. The fix
-is to give the old rows the new vocabulary, in the transform, so history and
-new data share the same labels. Accepting `misc` as a known tag and leaving the
-transform alone would not be enough: the monitor compares the tags in
-`labeled_projects`, not the model's classes, so `misc` would stay a new label
-on every run and `decide` would always stop at `inspect`; and even past that,
-target drift would measure the rename, not a change in the data. In `labeled_projects.sql`, replace the last
-column, `t.tag`, so that the model reads:
+the new projects as on its test split.
+
+Wrong fixes:
+
+- **Retraining.** The model has nothing to fix: f1 does not drop and all four
+  tags already end up as `other`. The data would still use two names for the
+  same thing.
+- **Accepting `misc` as a known tag and leaving the transform alone.** The
+  monitor compares the tags in `labeled_projects`, not the model's classes, so
+  `misc` would stay a new label on every run and `decide` would always stop at
+  `inspect`. Even past that, target drift would measure the rename, not a
+  change in the data.
+- **Mapping `misc` rows back to the three old tags.** A new `misc` row could
+  come from any of the three, and the source no longer says which: it would be
+  guessing.
+
+The fix is to give the old rows the new vocabulary, in the transform, so
+history and new data share the same labels. In `labeled_projects.sql`, replace
+the last column, `t.tag`, so that the model reads:
 
 ```sql
 SELECT
