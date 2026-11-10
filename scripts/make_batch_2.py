@@ -14,9 +14,10 @@ files start from `datasets/batch_1/`, and the problems are added on top:
 * day 3 drops the re-sent rows, and writes the new projects' dates as
   `MM/DD/YYYY HH:MM:SS`.
 
-The tags are left as upstream wrote them. Upstream had already collapsed the
-three rarest tags into `other`, which neither `tags.csv` nor `batch_1/`
-uses: that change is real, not added here.
+Upstream had already collapsed the three rarest tags into `other`, which
+neither `tags.csv` nor `batch_1/` uses: that change is real. Only its name is
+changed here, to `misc`, because `other` is also the class the model folds
+every unlearned tag into (§10), and the two would read as one.
 
     python scripts/make_batch_2.py
 
@@ -49,6 +50,10 @@ RESENT_ON = "2026-10-16 09:00:00"
 # Where the holdout's dates are moved to (see the docstring).
 NEW_START = datetime(2026, 9, 11)
 NEW_END = datetime(2026, 10, 15, 23, 59, 59)
+
+# Upstream's name for the merged tags, and the name the batch gives it.
+UPSTREAM_MERGED_TAG = "other"
+MERGED_TAG = "misc"
 
 STANDARD = "%Y-%m-%d %H:%M:%S"
 DAY3_FORMAT = "%m/%d/%Y %H:%M:%S"
@@ -84,7 +89,11 @@ def main() -> None:
     first, last = min(created), max(created)
     scale = (NEW_END - NEW_START) / (last - first)
     new = [
-        {**row, "created_on": (NEW_START + (when - first) * scale).strftime(STANDARD)}
+        {
+            **row,
+            "created_on": (NEW_START + (when - first) * scale).strftime(STANDARD),
+            "tag": MERGED_TAG if row["tag"] == UPSTREAM_MERGED_TAG else row["tag"],
+        }
         for row, when in zip(holdout, created)
     ]
 

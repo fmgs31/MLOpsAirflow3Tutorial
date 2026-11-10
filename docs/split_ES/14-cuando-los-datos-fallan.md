@@ -24,9 +24,7 @@ sitio que no están en `datasets/projects.csv`. Sus fechas se movieron a las
 cinco semanas siguientes al paper de arXiv más nuevo de la §12, para que sean
 las filas más nuevas del warehouse, y encima se añadieron los tres primeros
 problemas de la tabla. El cuarto no se añadió: Made With ML publicó estos tags
-con los tres más raros ya fusionados en `other`.
-[`datasets/README.md`](../../datasets/README.md) explica cómo se generan los
-archivos y qué trae cada uno.
+con los tres más raros ya fusionados en uno.
 
 Cada sync de la §9 es **Full Refresh Overwrite**, así que cada archivo es la
 tabla entera tal como la exportaría el origen ese día: las 1564 filas que ya
@@ -182,7 +180,7 @@ la tabla entera con la exportación, copias incluidas. Hasta que llegue una
 exportación corregida, el gate detiene el pipeline.
 
 El log de `validate_tags` tiene una línea más, un aviso, no un fallo:
-`expect_column_values_to_be_in_set:tag` con `'other'` en sus detalles. Los
+`expect_column_values_to_be_in_set:tag` con `'misc'` en sus detalles. Los
 tags nuevos traen un valor que el origen nunca había usado. La expectation no
 es crítica (§9), así que el run siguió. "La alarma de drift" vuelve sobre él.
 
@@ -211,7 +209,7 @@ limpiando una task, como en el día 1; qué task limpiar es parte del ejercicio.
 **Terminaste cuando:**
 
 - el run está en `success`, y `validate_transformed` pasa con el mismo aviso
-  sobre `other` que `validate_tags`;
+  sobre `misc` que `validate_tags`;
 - el log de `transform` termina con
   `Done. PASS=7 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7`, un test más
   que en el día 1;
@@ -269,7 +267,7 @@ estuvo mal?
 <summary>Solución</summary>
 
 **Lee el fallo.** Las dos tasks `validate_*` pasan, con el aviso sobre
-`other`, y `transform` vuelve a fallar tras sus reintentos, con un log
+`misc`, y `transform` vuelve a fallar tras sus reintentos, con un log
 distinto del del día 1:
 
 ```
@@ -360,13 +358,13 @@ comprobación inofensiva.
 
 **Comprobación.** `prepare_windows` registra `'num_current': 191`. `decide`
 registra un target drift con p-value cerca de `6e-41`, un length drift cerca de
-`5e-19` y `new_labels=['other']`, y no toma ni `continue_serving` ni la rama de
+`5e-19` y `new_labels=['misc']`, y no toma ni `continue_serving` ni la rama de
 reentrenamiento: `Branch into inspect`. Después:
 
 ```
 MANUAL INSPECTION NEEDED
-  new labels: ['other']
-  current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
+  new labels: ['misc']
+  current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'misc': 0.136..., 'mlops': 0.083...}
   f1 baseline=… cumulative=…
   computer-vision: 71 rows, f1 …
   mlops: 16 rows, f1 …
@@ -376,7 +374,7 @@ MANUAL INSPECTION NEEDED
   mentions_transformer: 28 rows, f1 …
 ```
 
-e `inspect` falla con `manual inspection needed - nothing was retrained or
+`inspect` falla con `manual inspection needed - nothing was retrained or
 rolled back`. El run termina ahí, en segundos: necesita a una persona, y no se
 reentrenó nada. Es la regla con la que se escribió `decide` en la §12: un
 label que el modelo nunca vio significa que el espacio de labels se movió, y
@@ -384,7 +382,7 @@ reentrenar con datos que nadie entiende todavía es como sale a producción un
 modelo peor. Una alarma de drift es una pregunta; la inspección te toca a ti.
 
 La ventana actual son exactamente los 191 proyectos nuevos: ninguno de sus ids
-está en el `split_ids.json` del modelo en producción. En ella, `other` ronda
+está en el `split_ids.json` del modelo en producción. En ella, `misc` ronda
 el 14%, aunque las filas de las que aprendió el modelo nunca lo tienen, y
 `reinforcement-learning`, `graph-learning` y `time-series` no aparecen. Mira
 cuándo se usó cada uno de esos cuatro tags:
@@ -392,7 +390,7 @@ cuándo se usó cada uno de esos cuatro tags:
 ```sql
 SELECT tag, COUNT(*) AS n, DATE(MIN(created_on)) AS first, DATE(MAX(created_on)) AS last
 FROM `<project id>.mlops_course.labeled_projects`
-WHERE tag IN ('other', 'reinforcement-learning', 'graph-learning', 'time-series')
+WHERE tag IN ('misc', 'reinforcement-learning', 'graph-learning', 'time-series')
 GROUP BY tag
 ORDER BY first
 ```
@@ -401,17 +399,23 @@ ORDER BY first
 graph-learning          41  2020-02-24  2026-02-09
 reinforcement-learning  73  2020-02-28  2026-09-10
 time-series             58  2020-04-06  2026-08-11
-other                   26  2026-09-11  2026-10-13
+misc                    26  2026-09-11  2026-10-13
 ```
 
-Los tres tags se acaban donde empieza `other`: desde el 11 de septiembre de
-2026, el origen los escribe como `other`. Es la misma fusión que ya hace el
-modelo: aprende cuatro clases, y todo otro tag pasa a `other` (§10). La línea
+Los tres tags se acaban donde empieza `misc`: desde el 11 de septiembre de
+2026, el origen los escribe como `misc`. El modelo ya los fusiona: todo tag
+fuera de sus cuatro clases (§10) pasa a `other`, tanto `misc` como los tres
+viejos, por eso las líneas por clase de arriba muestran `other` y no `misc`. La línea
 `f1 baseline=… cumulative=…` coincide: no hay caída, así que el modelo funciona
 igual de bien con los proyectos nuevos que con su split de test. Reentrenar no
 arreglaría esto. El arreglo es dar a las filas viejas el vocabulario nuevo, en
 el transform, para que el historial y los datos nuevos usen las mismas
-etiquetas. En `labeled_projects.sql`, reemplaza la última columna, `t.tag`,
+etiquetas. Aceptar `misc` como tag conocido sin tocar el transform no
+bastaría: el monitor compara los tags de `labeled_projects`, no las clases del
+modelo, así que `misc` seguiría siendo un label nuevo en cada run y `decide`
+pararía siempre en `inspect`; y, aunque no parara, el target drift mediría el
+cambio de nombre, no un cambio en los datos. En
+`labeled_projects.sql`, reemplaza la última columna, `t.tag`,
 para que el model quede así:
 
 ```sql
@@ -424,7 +428,7 @@ SELECT
     p.title,
     p.description,
     CASE
-        WHEN t.tag IN ('reinforcement-learning', 'graph-learning', 'time-series') THEN 'other'
+        WHEN t.tag IN ('reinforcement-learning', 'graph-learning', 'time-series') THEN 'misc'
         ELSE t.tag
     END AS tag
 FROM {{ source('mlops_course', 'projects') }} AS p
@@ -463,9 +467,9 @@ reentrena en los dos casos, a costa de un entrenamiento, y el gate de `mlops`
 decide si el resultado sale a producción; una política que solo reentrenara
 ante una caída del f1 tomaría aquí `continue_serving`.
 
-Queda un cabo suelto: cada run de `dataops` sigue avisando sobre `other`, en
+Queda un cabo suelto: cada run de `dataops` sigue avisando sobre `misc`, en
 `validate_tags` y en `validate_transformed`. Un aviso que siempre está deja de
-leerse, y el siguiente se pierde. El origen ahora emite `other` a propósito,
+leerse, y el siguiente se pierde. El origen ahora emite `misc` a propósito,
 así que añádelo a los tags que se sabe que emite, `KNOWN_RAW_TAGS` en
 [`src/project_tagger/config.py`](../../src/project_tagger/config.py):
 
@@ -477,7 +481,7 @@ KNOWN_RAW_TAGS = [
     "reinforcement-learning",
     "graph-learning",
     "time-series",
-    "other",
+    "misc",
 ]
 ```
 
