@@ -23,7 +23,8 @@ that are not in `datasets/projects.csv`. Their dates are moved to the five
 weeks after the newest arXiv paper of §12, making them the newest rows in the
 warehouse, and the first three problems in the table are added on top. The
 fourth is not added: Made With ML published these tags with the three rarest
-already merged into `other`.
+already merged into one, `other`. The batch renames it `misc`, because `other`
+is also the model's own class for tags it does not learn (§10).
 [`datasets/README.md`](../../datasets/README.md) explains how the files are
 built and what each contains.
 
@@ -179,7 +180,7 @@ export, copies included. Until a corrected export arrives, the gate holds the
 pipeline.
 
 `validate_tags`'s log has one more line, a warning, not a failure:
-`expect_column_values_to_be_in_set:tag` with `'other'` in its details. The new
+`expect_column_values_to_be_in_set:tag` with `'misc'` in its details. The new
 tags include a value the source never used before. The expectation is
 non-critical (§9), so the run went on. "The drift alarm" comes back to it.
 
@@ -207,7 +208,7 @@ which task to clear is part of the exercise.
 **Done when:**
 
 - the run is `success`, and `validate_transformed` passes with the same
-  warning about `other` as `validate_tags`;
+  warning about `misc` as `validate_tags`;
 - `transform`'s log ends with
   `Done. PASS=7 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=7`, one test more
   than on day 1;
@@ -263,7 +264,7 @@ The raw tables are right. Which is the first task whose output was wrong?
 <summary>Solution</summary>
 
 **Read the failure.** Both `validate_*` tasks pass, with the warning about
-`other`, and `transform` again fails after its retries, with a log different
+`misc`, and `transform` again fails after its retries, with a log different
 from day 1's:
 
 ```
@@ -349,13 +350,13 @@ check.
 
 **Checkpoint.** `prepare_windows` logs `'num_current': 191`. `decide` logs
 target drift at a p-value around `6e-41`, length drift around `5e-19`, and
-`new_labels=['other']`, and takes neither `continue_serving` nor the
+`new_labels=['misc']`, and takes neither `continue_serving` nor the
 retraining branch: `Branch into inspect`. Then:
 
 ```
 MANUAL INSPECTION NEEDED
-  new labels: ['other']
-  current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'other': 0.136..., 'mlops': 0.083...}
+  new labels: ['misc']
+  current distribution: {'natural-language-processing': 0.408..., 'computer-vision': 0.371..., 'misc': 0.136..., 'mlops': 0.083...}
   f1 baseline=… cumulative=…
   computer-vision: 71 rows, f1 …
   mlops: 16 rows, f1 …
@@ -373,7 +374,7 @@ data nobody understands yet is how a worse model ships. A drift alarm is a
 question; the inspection is yours.
 
 The current window is exactly the 191 new projects: none of their ids is in
-the production model's `split_ids.json`. In it, `other` is about 14%, though
+the production model's `split_ids.json`. In it, `misc` is about 14%, though
 the rows the model learned from never have it, and `reinforcement-learning`,
 `graph-learning` and `time-series` do not appear at all. Look at when each of
 those four tags was used:
@@ -381,7 +382,7 @@ those four tags was used:
 ```sql
 SELECT tag, COUNT(*) AS n, DATE(MIN(created_on)) AS first, DATE(MAX(created_on)) AS last
 FROM `<project id>.mlops_course.labeled_projects`
-WHERE tag IN ('other', 'reinforcement-learning', 'graph-learning', 'time-series')
+WHERE tag IN ('misc', 'reinforcement-learning', 'graph-learning', 'time-series')
 GROUP BY tag
 ORDER BY first
 ```
@@ -390,12 +391,13 @@ ORDER BY first
 graph-learning          41  2020-02-24  2026-02-09
 reinforcement-learning  73  2020-02-28  2026-09-10
 time-series             58  2020-04-06  2026-08-11
-other                   26  2026-09-11  2026-10-13
+misc                    26  2026-09-11  2026-10-13
 ```
 
-The three tags stop where `other` starts: from 11 September 2026 on, the
-source writes them as `other`. That is the merge the model already makes: it
-learns four classes, and every other tag becomes `other` (§10). The
+The three tags stop where `misc` starts: from 11 September 2026 on, the
+source writes them as `misc`. The model already merges them: it learns four
+classes, and every other tag, `misc` included, becomes its class `other`
+(§10), which is why the per-class lines above show `other`, not `misc`. The
 `f1 baseline=… cumulative=…` line agrees: no drop, so the model does as well on
 the new projects as on its test split. Retraining would not fix this. The fix
 is to give the old rows the new vocabulary, in the transform, so history and
@@ -412,7 +414,7 @@ SELECT
     p.title,
     p.description,
     CASE
-        WHEN t.tag IN ('reinforcement-learning', 'graph-learning', 'time-series') THEN 'other'
+        WHEN t.tag IN ('reinforcement-learning', 'graph-learning', 'time-series') THEN 'misc'
         ELSE t.tag
     END AS tag
 FROM {{ source('mlops_course', 'projects') }} AS p
@@ -449,9 +451,9 @@ policy retrains on either, at the cost of one training run, and the gate in
 `mlops` decides whether the result ships; a policy that retrained only on an
 f1 drop would take `continue_serving` here.
 
-One loose end: every `dataops` run still warns about `other`, in
+One loose end: every `dataops` run still warns about `misc`, in
 `validate_tags` and `validate_transformed`. A warning that is always there
-stops being read, and the next one gets missed. The source now emits `other`
+stops being read, and the next one gets missed. The source now emits `misc`
 on purpose, so add it to the tags it is known to emit, `KNOWN_RAW_TAGS` in
 [`src/project_tagger/config.py`](../../src/project_tagger/config.py):
 
@@ -463,7 +465,7 @@ KNOWN_RAW_TAGS = [
     "reinforcement-learning",
     "graph-learning",
     "time-series",
-    "other",
+    "misc",
 ]
 ```
 

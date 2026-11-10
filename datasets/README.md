@@ -103,7 +103,10 @@ The new projects' `created_on` is written `MM/DD/YYYY HH:MM:SS`.
 The dates are moved so the batch is the newest data in the warehouse: the
 holdout's March–October 2020 is mapped onto the five weeks after the newest
 paper in `batch_1/`, in the same order and with the same relative spacing.
-The new dates, the re-sent rows and the day 3 change are made for §14. The tags
-are not changed: upstream published the holdout with
+The new dates, the re-sent rows and the day 3 change are made for §14. The
+merged tag is real: upstream published the holdout with
 `reinforcement-learning`, `graph-learning` and `time-series` already
-collapsed into `other`, a value neither `tags.csv` nor `batch_1/` uses.
+collapsed into one value, which neither `tags.csv` nor `batch_1/` uses. Only
+its name is changed: upstream calls it `other`, and `day2_tags.csv` calls it
+`misc`, because `other` is also the class the model folds every unlearned
+tag into (§10).
