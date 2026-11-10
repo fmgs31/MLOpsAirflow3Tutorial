@@ -643,6 +643,123 @@ They belong to the serving layer, which this project does not have: here
 gets the canary share or the shadow copy, and the promotion gate becomes "the
 challenger's live metrics beat the champion's" instead of a test-set score.
 
+### Exercise: train only on something new
+
+`mlops` runs on every `labeled_projects` asset event, and `dataops` emits one
+on every run that passes, new rows or not. Un-paused, `dataops` runs every day
+at 03:00 (§9), so `mlops` trains every day: the same Optuna search on the same
+rows, one more registered version each time, and, whenever the search happens
+to score higher on the same test rows, an approval for a model whose only edge
+is luck. `retrain_or_wait` keeps `monitoring` from doing this; nothing does it
+for the asset.
+
+**Your task.** Make `mlops` skip training when the newest training run
+already had every row, and add a `force` Param that makes a run train anyway.
+
+"Every row" is by project id. A change to rows that already exist, such as a
+tag corrected at the source or the tag merge §14 makes in the transform,
+brings no new id; `force` is how you train on it.
+
+**Done when:**
+
+1. With every row in the champion's splits, as "Run it" left them, start
+   `dataops`:
+
+   ```bash
+   docker compose exec airflow-scheduler airflow dags trigger dataops
+   ```
+
+   When it passes, its asset event starts `mlops`, which finishes in seconds:
+   the first task logs `0 rows the newest training run did not have`,
+   `no_new_rows` and `done` are green, and every other task is skipped. MLflow
+   has no new run.
+2. A run you trigger yourself skips too:
+
+   ```bash
+   docker compose exec airflow-scheduler airflow dags trigger mlops
+   ```
+
+The other branch shows in §14: the run `monitoring` queues there has 191 new
+rows, and trains.
+
+Open the hints one at a time, only when you are stuck.
+
+<details>
+<summary>Hint 1: which kind of task?</summary>
+
+The same kind as `promotion_gate` (§10): a `@task.branch` that returns the
+`task_id` to run, here first in the Dag. The skip path needs a task of its own
+that leads to `done`, whose trigger rule already lets either branch through.
+
+</details>
+
+<details>
+<summary>Hint 2: which ids did the newest training run have?</summary>
+
+`prepare_windows` answers the same question in `src/project_tagger/monitoring.py`:
+`registry.latest_training_run()` and `registry.load_split_ids()`. The splits
+hold ids after `data.preprocess`, which drops rows without a title or a tag, so
+compare against `data.preprocess(data.load_labeled())`, not the table as read.
+
+</details>
+
+<details>
+<summary>Hint 3: what else has to wait?</summary>
+
+A branch skips the tasks it did not pick, and everything that waits on them.
+`create_study` and `trial_budget` wait on nothing, so they would still run,
+and `create_study` would leave an MLflow run behind.
+
+</details>
+
+<details>
+<summary>Solution</summary>
+
+In `dags/04_mlops.py`, add the Param:
+
+```python
+        "force": Param(False, type="boolean", description="Train even if no row is new."),
+```
+
+Add the branch, and the task its skip path leads to:
+
+```python
+    @task.branch
+    def check_new_rows(*, params: Mapping[str, Any]) -> str:
+        """Train only if the newest training run is missing some row, or if forced."""
+        latest = registry.latest_training_run()
+        if params["force"] or latest is None:
+            return "prepare_data"
+        trained_on = {i for ids in registry.load_split_ids(latest).values() for i in ids}
+        new = set(data.preprocess(data.load_labeled())["id"]) - trained_on
+        print(f"{len(new)} rows the newest training run did not have")
+        return "prepare_data" if new else "no_new_rows"
+
+    no_new_rows = EmptyOperator(task_id="no_new_rows")
+```
+
+And wire them in, with `create_study` and `trial_budget` after the data:
+
+```python
+    new_rows = check_new_rows()
+    paths = prepare_data()
+    new_rows >> [paths, no_new_rows]
+    no_new_rows >> done
+
+    approved_data_gate = validate_training_data(paths)
+    study = create_study()
+    budget = trial_budget()
+    # The two tasks with no input wait for the data too, so a skip reaches them.
+    paths >> [study, budget]
+    results = run_trials.partial(study_name=study, paths=paths).expand(n_trials=budget)
+```
+
+The rule compares with the newest training run, not the champion's, for the
+reason `retrain_or_wait` gives: if that run was rejected, training again on
+the same rows only repeats it.
+
+</details>
+
 ---
 
 ← [11. Waiting: sensors, deferrable tasks, events](11-waiting-sensors-deferrable-tasks-events.md) · [Index](README.md) · [13. Deadline alerts](13-deadline-alerts.md) →

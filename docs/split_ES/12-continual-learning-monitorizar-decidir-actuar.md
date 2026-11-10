@@ -659,6 +659,126 @@ canary o la copia del shadow, y el promotion gate pasa a ser "las métricas en
 vivo del challenger superan a las del champion" en vez de una puntuación sobre
 un conjunto de test.
 
+### Ejercicio: entrena solo con algo nuevo
+
+`mlops` corre con cada asset event de `labeled_projects`, y `dataops` emite
+uno en cada run que pasa, haya filas nuevas o no. Sin pausa, `dataops` corre
+cada día a las 03:00 (§9), así que `mlops` entrena cada día: la misma búsqueda
+de Optuna sobre las mismas filas, una versión registrada más cada vez y, cuando
+la búsqueda saca por casualidad más nota sobre las mismas filas de test, una
+aprobación para un modelo cuya única ventaja es la suerte. `retrain_or_wait`
+evita que `monitoring` haga esto; para el asset, nada lo evita.
+
+**Tu tarea.** Haz que `mlops` no entrene cuando el último entrenamiento ya
+tenía todas las filas, y añade un Param `force` que haga que un run entrene
+igual.
+
+"Todas las filas" se cuenta por id de proyecto. Un cambio en filas que ya
+existen, como un tag corregido en el origen o la fusión de tags que la §14 hace
+en el transform, no trae ningún id nuevo; para entrenar con él está `force`.
+
+**Terminaste cuando:**
+
+1. Con todas las filas en los splits del champion, como las dejó "Ejecútalo",
+   arranca `dataops`:
+
+   ```bash
+   docker compose exec airflow-scheduler airflow dags trigger dataops
+   ```
+
+   Cuando pasa, su asset event arranca `mlops`, que termina en segundos: la
+   primera task registra `0 rows the newest training run did not have`,
+   `no_new_rows` y `done` están en verde, y todas las demás tasks quedan
+   skipped. MLflow no tiene ningún run nuevo.
+2. Un run que lanzas tú tampoco entrena:
+
+   ```bash
+   docker compose exec airflow-scheduler airflow dags trigger mlops
+   ```
+
+La otra rama se ve en la §14: el run que deja en cola `monitoring` ahí trae
+191 filas nuevas, y entrena.
+
+Abre las pistas de una en una, solo cuando te atasques.
+
+<details>
+<summary>Pista 1: ¿qué tipo de task?</summary>
+
+El mismo que `promotion_gate` (§10): un `@task.branch` que devuelve el
+`task_id` que hay que ejecutar, aquí al principio del Dag. La rama que no
+entrena necesita una task propia que lleve a `done`, cuya trigger rule ya deja
+pasar cualquiera de las dos ramas.
+
+</details>
+
+<details>
+<summary>Pista 2: ¿qué ids tenía el último entrenamiento?</summary>
+
+`prepare_windows` responde la misma pregunta en `src/project_tagger/monitoring.py`:
+`registry.latest_training_run()` y `registry.load_split_ids()`. Los splits
+guardan los ids después de `data.preprocess`, que descarta las filas sin
+título o sin tag, así que compara con `data.preprocess(data.load_labeled())`,
+no con la tabla tal como se lee.
+
+</details>
+
+<details>
+<summary>Pista 3: ¿qué más tiene que esperar?</summary>
+
+Un branch salta las tasks que no eligió, y todo lo que espera por ellas.
+`create_study` y `trial_budget` no esperan por nada, así que correrían igual,
+y `create_study` dejaría un run en MLflow.
+
+</details>
+
+<details>
+<summary>Solución</summary>
+
+En `dags/04_mlops.py`, añade el Param:
+
+```python
+        "force": Param(False, type="boolean", description="Train even if no row is new."),
+```
+
+Añade el branch, y la task a la que lleva la rama que no entrena:
+
+```python
+    @task.branch
+    def check_new_rows(*, params: Mapping[str, Any]) -> str:
+        """Train only if the newest training run is missing some row, or if forced."""
+        latest = registry.latest_training_run()
+        if params["force"] or latest is None:
+            return "prepare_data"
+        trained_on = {i for ids in registry.load_split_ids(latest).values() for i in ids}
+        new = set(data.preprocess(data.load_labeled())["id"]) - trained_on
+        print(f"{len(new)} rows the newest training run did not have")
+        return "prepare_data" if new else "no_new_rows"
+
+    no_new_rows = EmptyOperator(task_id="no_new_rows")
+```
+
+Y conéctalos, con `create_study` y `trial_budget` después de los datos:
+
+```python
+    new_rows = check_new_rows()
+    paths = prepare_data()
+    new_rows >> [paths, no_new_rows]
+    no_new_rows >> done
+
+    approved_data_gate = validate_training_data(paths)
+    study = create_study()
+    budget = trial_budget()
+    # The two tasks with no input wait for the data too, so a skip reaches them.
+    paths >> [study, budget]
+    results = run_trials.partial(study_name=study, paths=paths).expand(n_trials=budget)
+```
+
+La regla compara con el último entrenamiento, no con el del champion, por la
+razón que da `retrain_or_wait`: si ese run se rechazó, entrenar otra vez con
+las mismas filas solo lo repite.
+
+</details>
+
 ---
 
 ← [11. Esperar: sensors, deferrable tasks, eventos](11-esperar-sensors-deferrable-tasks-eventos.md) · [Índice](README.md) · [13. Deadline alerts](13-deadline-alerts.md) →
