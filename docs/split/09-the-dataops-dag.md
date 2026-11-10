@@ -416,9 +416,12 @@ LEFT JOIN {{ source('mlops_course', 'tags') }} AS t
 
 `{{ source('mlops_course', 'projects') }}` compiles to the full table name,
 `` `<project id>.mlops_course.projects` ``. In this data every project has a
-tag. If a later load brings one without a tag, a plain `JOIN` would drop it
-without a trace; the `LEFT JOIN` keeps it with `tag` set to `NULL`, so the
-`not_null` test below fails.
+tag, but a later load could bring one without a tag.
+
+Wrong fix: a plain `JOIN`. It would drop that project without a trace.
+
+The `LEFT JOIN` keeps it with `tag` set to `NULL`, so the `not_null` test
+below fails.
 
 **Add tests.** A dbt *test* is a check on a model's columns, run after the
 model is built. Create `dbt/dbt_transforms/models/labeled_projects/schema.yml`:

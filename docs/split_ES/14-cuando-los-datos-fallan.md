@@ -96,18 +96,24 @@ SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
 `n` es 1564. Los proyectos llegaron antes que sus etiquetas: el etiquetado
 viene después del envío, y va atrasado. No hay nada roto.
 
-**Dónde va el arreglo: en ningún lado, todavía.** Volver a ejecutar da el
-mismo fallo con los mismos datos. Compruébalo con una herramienta que todavía
-no usaste: volver a ejecutar un run desde cualquiera de sus tasks. Abre el run
-en la UI, haz clic en `transform` y haz clic en el botón de flecha circular
-arriba a la derecha del panel de la task, a la izquierda de **✓ / ✗** (o pulsa
+**Dónde va el arreglo: en ningún lado, todavía.**
+
+Soluciones incorrectas:
+
+- **Volver a ejecutar.** Da el mismo fallo con los mismos datos.
+- **Relajar el test.** Dejaría llegar proyectos sin etiqueta al entrenamiento,
+  donde `preprocess` los descarta sin avisar.
+
+Hay que esperar las etiquetas.
+
+Comprueba que volver a ejecutar no sirve, con una herramienta que todavía no
+usaste: volver a ejecutar un run desde cualquiera de sus tasks. Abre el run en
+la UI, haz clic en `transform` y haz clic en el botón de flecha circular arriba
+a la derecha del panel de la task, a la izquierda de **✓ / ✗** (o pulsa
 **Shift+C**). Se abre el diálogo **Clear Task Instance**. **Downstream** viene
 seleccionado, así que también se limpian las tasks que vienen después. Elige
 **Confirm**: `transform` vuelve a correr en el mismo run, y falla igual, tras
 sus reintentos.
-
-Relajar el test dejaría llegar proyectos sin etiqueta al entrenamiento, donde
-`preprocess` los descarta sin avisar. Hay que esperar las etiquetas.
 
 El fallo muestra dos cosas más. Primero, `labeled_projects` ya tiene las 191
 filas sin tag: `dbt build` escribe la tabla y después la testea. Lo que las
@@ -174,10 +180,13 @@ del 3800 al 3803, las cuatro con fecha `2026-10-16 09:00:00`. La exportación
 reenvió cuatro proyectos viejos como nuevos.
 
 **Dónde va el arreglo: en el origen.** El bug está en el origen, y solo quien
-lo administra puede decir cuál de los ids es el real. Repórtalo, con la
-consulta. Borrar las copias en BigQuery no sirve: el siguiente sync reemplaza
-la tabla entera con la exportación, copias incluidas. Hasta que llegue una
-exportación corregida, el gate detiene el pipeline.
+lo administra puede decir cuál de los ids es el real.
+
+Solución incorrecta: borrar las copias en BigQuery. El siguiente sync
+reemplaza la tabla entera con la exportación, copias incluidas.
+
+Repórtalo, con la consulta. Hasta que llegue una exportación corregida, el
+gate detiene el pipeline.
 
 El log de `validate_tags` tiene una línea más, un aviso, no un fallo:
 `expect_column_values_to_be_in_set:tag` con `'misc'` en sus detalles. Los

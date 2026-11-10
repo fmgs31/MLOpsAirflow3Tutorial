@@ -93,17 +93,23 @@ SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
 `n` is 1564. The projects arrived before their labels: labelling follows
 submission, and it is behind. Nothing is broken.
 
-**Where the fix belongs: nowhere, yet.** Re-running gives the same failure on
-the same data. See it with a tool you have not used yet: re-running a run from
-any of its tasks. Open the run in the UI, click `transform`, and click the
-circular-arrow button at the top right of the task panel, left of **✓ / ✗**
-(or press **Shift+C**). The **Clear Task Instance** dialog opens.
-**Downstream** is preselected, so the tasks after it are cleared too. Choose
-**Confirm**: `transform` runs again in the same run, and fails the same way,
-after its retries.
+**Where the fix belongs: nowhere, yet.**
 
-Relaxing the test would let unlabelled projects reach training, where
-`preprocess` silently drops them. Wait for the labels.
+Wrong fixes:
+
+- **Re-running.** It gives the same failure on the same data.
+- **Relaxing the test.** It would let unlabelled projects reach training,
+  where `preprocess` silently drops them.
+
+Wait for the labels.
+
+Check that re-running does not help, with a tool you have not used yet:
+re-running a run from any of its tasks. Open the run in the UI, click
+`transform`, and click the circular-arrow button at the top right of the task
+panel, left of **✓ / ✗** (or press **Shift+C**). The **Clear Task Instance**
+dialog opens. **Downstream** is preselected, so the tasks after it are cleared
+too. Choose **Confirm**: `transform` runs again in the same run, and fails the
+same way, after its retries.
 
 The failure shows two more things. First, `labeled_projects` already has the
 191 untagged rows: `dbt build` writes the table, then tests it. What kept
@@ -171,10 +177,13 @@ Four rows, each a 2020 project paired with a copy under a new id, 3800 to
 as new.
 
 **Where the fix belongs: upstream.** The bug is in the source, and only its
-owner can say which id is real. Report it, with the query. Deleting the
-copies in BigQuery does not help: the next sync overwrites the table with the
-export, copies included. Until a corrected export arrives, the gate holds the
-pipeline.
+owner can say which id is real.
+
+Wrong fix: deleting the copies in BigQuery. The next sync overwrites the table
+with the export, copies included.
+
+Report it, with the query. Until a corrected export arrives, the gate holds
+the pipeline.
 
 `validate_tags`'s log has one more line, a warning, not a failure:
 `expect_column_values_to_be_in_set:tag` with `'misc'` in its details. The new

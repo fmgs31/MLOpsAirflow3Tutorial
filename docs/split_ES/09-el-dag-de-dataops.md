@@ -429,9 +429,13 @@ LEFT JOIN {{ source('mlops_course', 'tags') }} AS t
 
 `{{ source('mlops_course', 'projects') }}` se compila al nombre completo de la
 tabla, `` `<project id>.mlops_course.projects` ``. En estos datos todos los
-proyectos tienen tag. Si una carga posterior trae uno sin tag, un `JOIN` normal
-lo descartaría sin dejar rastro; el `LEFT JOIN` lo conserva con `tag` en `NULL`,
-y el test `not_null` de abajo falla.
+proyectos tienen tag, pero una carga posterior podría traer uno sin tag.
+
+Solución incorrecta: un `JOIN` normal. Descartaría ese proyecto sin dejar
+rastro.
+
+El `LEFT JOIN` lo conserva con `tag` en `NULL`, y el test `not_null` de abajo
+falla.
 
 **Añade tests.** Un *test* de dbt es una comprobación sobre las columnas de un
 model, que se ejecuta después de construirlo. Crea
