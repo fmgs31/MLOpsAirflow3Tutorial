@@ -27,8 +27,8 @@ dbt after the suites have checked them.
 
 **Isolation.** Keep your ML dependencies out of Airflow's environment. dbt
 (§9) and alibi-detect (§12) pin versions Airflow's environment cannot accept,
-so each has its own virtualenv in the image, one called from a
-`BashOperator`, the other through `@task.external_python`. That works for a
+so each has its own virtualenv in the image, one run as a separate program
+(§14), the other through `@task.external_python`. That works for a
 few tools and one team. With many teams, give each task its own container
 image with `KubernetesPodOperator` (or `DockerOperator`): Airflow's image then
 holds only Airflow, and each team upgrades its libraries without touching

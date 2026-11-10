@@ -91,12 +91,19 @@ it. Each file is a whole table, as a Full Refresh sync expects: the rows of
 | `day1_projects.csv` | 1755 | `batch_1/projects.csv`, plus the 191 new projects, `created_on` moved to 11 September – 15 October 2026 |
 | `day2_projects.csv` | 1759 | day 1, plus four old projects (ids 65, 847, 1668, 2268) re-sent under ids 3800–3803 |
 | `day2_tags.csv` | 1755 | `batch_1/tags.csv`, plus the new projects' tags |
-| `day3_projects.csv` | 1755 | day 1, with the new projects' `created_on` written `MM/DD/YYYY HH:MM:SS` |
+| `day3_projects.csv` | 1755 | day 1, changed for the §14 exercise (below) |
+
+<details>
+<summary>Spoiler: what <code>day3_projects.csv</code> changes (the answer to the §14 day 3 exercise)</summary>
+
+The new projects' `created_on` is written `MM/DD/YYYY HH:MM:SS`.
+
+</details>
 
 The dates are moved so the batch is the newest data in the warehouse: the
 holdout's March–October 2020 is mapped onto the five weeks after the newest
 paper in `batch_1/`, in the same order and with the same relative spacing.
-The new dates, the re-sent rows and the date format are made for §14. The tags
+The new dates, the re-sent rows and the day 3 change are made for §14. The tags
 are not changed: upstream published the holdout with
 `reinforcement-learning`, `graph-learning` and `time-series` already
 collapsed into `other`, a value neither `tags.csv` nor `batch_1/` uses.

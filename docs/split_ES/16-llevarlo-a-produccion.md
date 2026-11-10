@@ -30,7 +30,7 @@ suites las hayan comprobado.
 **Aislamiento.** Mantén tus dependencias de ML fuera del entorno de Airflow.
 dbt (§9) y alibi-detect (§12) fijan versiones que el entorno de Airflow no
 puede aceptar, así que cada uno tiene su propio virtualenv en la imagen, uno
-llamado desde un `BashOperator` y el otro a través de
+ejecutado como un programa aparte (§14) y el otro a través de
 `@task.external_python`. Eso funciona para unas pocas herramientas y un
 equipo. Con muchos equipos, dale a cada task su propia imagen de contenedor
 con `KubernetesPodOperator` (o `DockerOperator`): la imagen de Airflow solo

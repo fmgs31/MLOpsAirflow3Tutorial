@@ -6,7 +6,7 @@ becomes answering the pipeline when a check fails. This section loads a
 second batch of projects over three deliveries, each with a problem real loads
 have. For the first two it shows where the problem appears, how to find the
 rows behind it, where the fix belongs and how much to re-run; the third is
-yours. Then the same batch sets off the drift monitor of §12.
+yours. The same batch then sets off the drift monitor of §12.
 
 | Delivery | What arrives | What is wrong | Where it shows up |
 |---|---|---|---|
@@ -24,8 +24,8 @@ weeks after the newest arXiv paper of §12, making them the newest rows in the
 warehouse, and the first three problems in the table are added on top. The
 fourth is not added: Made With ML published these tags with the three rarest
 already merged into `other`.
-[`scripts/make_batch_2.py`](../../scripts/make_batch_2.py) builds the files;
-[`datasets/README.md`](../../datasets/README.md) lists what each contains.
+[`datasets/README.md`](../../datasets/README.md) explains how the files are
+built and what each contains.
 
 Each sync in §9 is **Full Refresh Overwrite**, so each file is the whole table
 as the source would export it that day: the 1564 rows it already sent, then
@@ -96,21 +96,32 @@ SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
 submission, and it is behind. Nothing is broken.
 
 **Where the fix belongs: nowhere, yet.** Re-running gives the same failure on
-the same data. Relaxing the test would let unlabelled projects reach
-training, where `preprocess` silently drops them. Wait for the labels.
+the same data. See it with a tool you have not used yet: re-running a run from
+any of its tasks. Open the run in the UI, click `transform`, and click the
+circular-arrow button at the top right of the task panel, left of **✓ / ✗**
+(or press **Shift+C**). The **Clear Task Instance** dialog opens.
+**Downstream** is preselected, so the tasks after it are cleared too. Choose
+**Confirm**: `transform` runs again in the same run, and fails the same way,
+after its retries.
+
+Relaxing the test would let unlabelled projects reach training, where
+`preprocess` silently drops them. Wait for the labels.
 
 The failure shows two more things. First, `labeled_projects` already has the
 191 untagged rows: `dbt build` writes the table, then tests it. What kept
 them from training is the next gate: `validate_transformed` did not run, so
-no asset event was emitted. That gate protects only what waits for the asset.
-Anything reading the table on its own gets the untagged rows: `monitoring`
-(§12), scheduled on a cron rather than on the asset, and a hand-started run
-of `mlops`, stopped only by its own check, `validate_training_data` (§10).
+no asset event was emitted. That gate protects only the Dags scheduled on the
+asset: they run when the event is emitted, and none was. But the table already
+holds the untagged rows, and any Dag that reads it without waiting for the
+event gets them. There are two such cases: `monitoring` (§12), which runs on
+its cron and reads the table anyway, and `mlops` triggered by hand, because a
+manual trigger does not wait for the asset. Then the only thing that stops it
+is its own check, `validate_training_data` (§10).
 §16 shows the pattern that keeps a table that fails its tests from being
-published at all. Second, the wait: `transform` ran three times, a minute
-apart, because `dataops` gives every task `retries=2`. Retries help when the
-cause goes away by itself (a network error, a busy API); a data problem fails
-the same way every time. That is why the GX gates raise
+published at all. Second, the wait: each time, `transform` ran three times, a
+minute apart, because `dataops` gives every task `retries=2`. Retries help
+when the cause goes away by itself (a network error, a busy API); a data
+problem fails the same way every time. That is why the GX gates raise
 `AirflowFailException`, which skips the retries (§9). `transform`, a
 `BashOperator` running dbt, cannot tell a failed test from a lost
 connection, so it retries both.
@@ -136,7 +147,8 @@ docker compose exec airflow-scheduler airflow dags trigger dataops
 ```
 
 **Checkpoint.** This time the run fails within a minute at
-`validate_projects`, with no retry. `validate_tags` is green; `transform`,
+`validate_projects`, with no retry. Both syncs are green, and so is
+`validate_tags`, though this time it checks new tags; `transform`,
 `validate_transformed` and `quality_report.summarize` are `upstream_failed`.
 
 **Read the failure.** `validate_projects`'s log ends with the failed
@@ -171,7 +183,7 @@ pipeline.
 tags include a value the source never used before. The expectation is
 non-critical (§9), so the run went on. "The drift alarm" comes back to it.
 
-### Day 3: a new date format
+### Day 3: the corrected export
 
 Days 1 and 2 answered each question for you. Day 3 is yours: below are the
 delivery and the goal; the diagnosis and the fix are up to you.
@@ -188,14 +200,9 @@ docker compose exec airflow-scheduler airflow dags trigger dataops
 
 **Your task.** The run fails. The source's owner confirms this export is
 right: it is how the source sends its data from now on. Get this run to
-`success` without extracting the data again, and leave a check behind so that
-next time something like this is a dbt `FAIL` with a count of rows.
-
-One tool you have not used yet: re-running a run from any of its tasks. Open
-the run in the UI, click a task, and choose **Clear Task Instance**.
-**Downstream** is preselected, so the tasks after it are cleared too. Choose
-**Confirm**, and the run restarts from that task. Which task to clear is part
-of the exercise.
+`success`, and leave a check behind so that next time something like this is
+a dbt `FAIL` with a count of rows. Re-run it by clearing a task, as on day 1;
+which task to clear is part of the exercise.
 
 **Done when:**
 

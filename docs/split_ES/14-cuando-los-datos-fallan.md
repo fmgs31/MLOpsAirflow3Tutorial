@@ -25,9 +25,8 @@ cinco semanas siguientes al paper de arXiv más nuevo de la §12, para que sean
 las filas más nuevas del warehouse, y encima se añadieron los tres primeros
 problemas de la tabla. El cuarto no se añadió: Made With ML publicó estos tags
 con los tres más raros ya fusionados en `other`.
-[`scripts/make_batch_2.py`](../../scripts/make_batch_2.py) genera los
-archivos y [`datasets/README.md`](../../datasets/README.md) detalla qué trae
-cada uno.
+[`datasets/README.md`](../../datasets/README.md) explica cómo se generan los
+archivos y qué trae cada uno.
 
 Cada sync de la §9 es **Full Refresh Overwrite**, así que cada archivo es la
 tabla entera tal como la exportaría el origen ese día: las 1564 filas que ya
@@ -100,19 +99,29 @@ SELECT COUNT(*) AS n FROM `<project id>.mlops_course.tags`
 viene después del envío, y va atrasado. No hay nada roto.
 
 **Dónde va el arreglo: en ningún lado, todavía.** Volver a ejecutar da el
-mismo fallo con los mismos datos. Relajar el test dejaría llegar proyectos
-sin etiqueta al entrenamiento, donde `preprocess` los descarta sin avisar. Hay
-que esperar las etiquetas.
+mismo fallo con los mismos datos. Compruébalo con una herramienta que todavía
+no usaste: volver a ejecutar un run desde cualquiera de sus tasks. Abre el run
+en la UI, haz clic en `transform` y haz clic en el botón de flecha circular
+arriba a la derecha del panel de la task, a la izquierda de **✓ / ✗** (o pulsa
+**Shift+C**). Se abre el diálogo **Clear Task Instance**. **Downstream** viene
+seleccionado, así que también se limpian las tasks que vienen después. Elige
+**Confirm**: `transform` vuelve a correr en el mismo run, y falla igual, tras
+sus reintentos.
+
+Relajar el test dejaría llegar proyectos sin etiqueta al entrenamiento, donde
+`preprocess` los descarta sin avisar. Hay que esperar las etiquetas.
 
 El fallo muestra dos cosas más. Primero, `labeled_projects` ya tiene las 191
 filas sin tag: `dbt build` escribe la tabla y después la testea. Lo que las
 mantuvo lejos del entrenamiento es el gate siguiente: `validate_transformed`
-no corrió, así que no se emitió ningún asset event. Ese gate solo protege a lo
-que espera al asset. Lo que lee la tabla por su cuenta recibe las filas sin
-tag: `monitoring` (§12), programado con un cron y no con el asset, y un run de
-`mlops` arrancado a mano, que solo detiene su propia comprobación,
+no corrió, así que no se emitió ningún asset event. Ese gate solo protege a los
+Dags programados con el asset: corren cuando se emite el evento, y no se
+emitió. Pero la tabla ya tiene las filas sin tag, y cualquier Dag que la lea
+sin esperar el evento las recibe. Hay dos casos: `monitoring` (§12), que corre
+con su cron y lee la tabla igual, y `mlops` ejecutado a mano, porque un trigger
+manual no espera el asset. Ahí lo único que lo frena es su propia comprobación,
 `validate_training_data` (§10). La §16 muestra el patrón que evita que una
-tabla que no pasa sus tests llegue a publicarse. Segundo, la espera:
+tabla que no pasa sus tests llegue a publicarse. Segundo, la espera: cada vez,
 `transform` corrió tres veces, con un minuto entre cada una, porque `dataops`
 da `retries=2` a todas sus tasks. Los reintentos sirven cuando la causa se va
 sola (un error de red, una API ocupada); un problema de datos falla igual cada
@@ -141,9 +150,9 @@ docker compose exec airflow-scheduler airflow dags trigger dataops
 ```
 
 **Comprobación.** Esta vez el run falla en menos de un minuto en
-`validate_projects`, sin reintentos. `validate_tags` está en verde;
-`transform`, `validate_transformed` y `quality_report.summarize` en
-`upstream_failed`.
+`validate_projects`, sin reintentos. Los dos syncs están en verde, y también
+`validate_tags`, aunque esta vez valida tags nuevos; `transform`,
+`validate_transformed` y `quality_report.summarize` en `upstream_failed`.
 
 **Lee el fallo.** El log de `validate_projects` termina con la expectation que
 falló y algunas de las filas que la rompieron:
@@ -177,7 +186,7 @@ El log de `validate_tags` tiene una línea más, un aviso, no un fallo:
 tags nuevos traen un valor que el origen nunca había usado. La expectation no
 es crítica (§9), así que el run siguió. "La alarma de drift" vuelve sobre él.
 
-### Día 3: un formato de fecha nuevo
+### Día 3: la exportación corregida
 
 En los días 1 y 2 el tutorial respondió cada pregunta por ti. El día 3 es
 tuyo: abajo están la entrega y el objetivo; el diagnóstico y el arreglo te
@@ -195,15 +204,9 @@ docker compose exec airflow-scheduler airflow dags trigger dataops
 
 **Tu tarea.** El run falla. Quien administra el origen confirma que esta
 exportación está bien: así manda sus datos a partir de ahora. Consigue que
-este run termine en `success` sin volver a extraer los datos, y deja un
-control para que la próxima vez algo así sea un `FAIL` de dbt con una
-cantidad de filas.
-
-Una herramienta que todavía no usaste: volver a ejecutar un run desde
-cualquiera de sus tasks. Abre el run en la UI, haz clic en una task y elige
-**Clear Task Instance**. **Downstream** viene seleccionado, así que también se
-limpian las tasks que vienen después. Elige **Confirm**, y el run vuelve a
-empezar desde esa task. Qué task limpiar es parte del ejercicio.
+este run termine en `success`, y deja un control para que la próxima vez algo
+así sea un `FAIL` de dbt con una cantidad de filas. Vuelve a ejecutarlo
+limpiando una task, como en el día 1; qué task limpiar es parte del ejercicio.
 
 **Terminaste cuando:**
 
