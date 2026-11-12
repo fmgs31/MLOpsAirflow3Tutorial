@@ -39,8 +39,7 @@ it sleeps when it found nothing to do: **1 second** on this stack.
 So nothing in Airflow is instant, and nothing is very slow either. When
 `dataops` publishes its asset in §10, the `mlops` run appears not *because* the
 task finished, but because the next Scheduler loop noticed the event the task
-recorded — a second later at most. What you *will* notice is how long the
-upstream tasks take, which has nothing to do with the Scheduler.
+recorded — a second later at most.
 
 Parsing is a separate clock, and you are about to depend on it. The Dag
 processor re-parses every file, changed or not, every `[dag_processor]
@@ -73,9 +72,7 @@ this is the mechanism behind §1's "swap the Executor, not the Dag".
 
 That is why `docker compose ps` shows no Executor container: `LocalExecutor` is
 a *component of the Scheduler process*, not a service. The Scheduler imports it
-and forks children from there. Set `AIRFLOW__CORE__EXECUTOR` to
-`CeleryExecutor` and workers become real machines you deploy and scale
-separately. The seam between "one laptop" and "a cluster" is a config value.
+and forks children from there.
 
 So "worker" means something slightly different per Executor: a forked
 subprocess here, a Celery worker process there, a pod in Kubernetes. Constant
@@ -129,11 +126,9 @@ a year of runs, task instances and XComs does not remove itself.
 
 ### The lifecycle of one task
 
-These terms are precise, and mixing them up makes error messages confusing. A
-**Dag** is the graph you wrote. A **Dag run** is one execution of it,
-identified by a `run_id`, and it is `queued`, `running`, `success` or `failed`
-— nothing else. A **task instance** is one task inside one Dag run, with many
-more states, because more can happen to it:
+A **Dag run** (§1) is identified by a `run_id`, and it is `queued`, `running`,
+`success` or `failed` — nothing else. A **task instance** has many more states,
+because more can happen to it:
 
 ```
                                                  ┌─► success              done

@@ -4,8 +4,7 @@ Everything you need to define Dags, tasks and assets is in `airflow.sdk`, the
 Task SDK (operators come from the providers, §6).
 
 You are going to write `dags/01_hello_airflow3.py`: four tasks that build a
-greeting, shout it, count its words and print the result. It is small, and
-every idea in it comes back in every later Dag.
+greeting, shout it, count its words and print the result.
 
 ### Build it
 
@@ -170,8 +169,7 @@ make_greeting ─┬─► shout ──────┬─► report
 
 The last line matters: **the decorator only defines the Dag; calling the
 function registers it.** A file that defines a Dag without calling it imports
-cleanly and appears nowhere — the most common first mistake, and the hardest to
-spot, because there is no error to read.
+cleanly and appears nowhere, with no error to read.
 
 Save the file. If you want, compare it with
 [`solutions/01_hello_airflow3.py`](../../solutions/01_hello_airflow3.py): the
@@ -229,14 +227,11 @@ the file as text and skips it unless the lowercased contents contain `airflow`
 *and* either `dag` or `asset`. Without the comment, `zz_broken_on_purpose.py`
 is never parsed, listed or reported: silence, not an error. A real Dag file
 always passes, since `from airflow.sdk import dag` alone contains both words.
-The skipped files are the ones missing a word: a helper module with no Dag,
-which is right, or a throwaway experiment like `zz_broken_on_purpose.py`. So
-when a file is missing, this is the second thing to check.
+When a file is missing, this is the second thing to check.
 
-The third cause is the beginner mistake from "Build it": a Dag defined but
-never called. It imports cleanly, so `list-import-errors` is empty too; the only
-symptom is a missing Dag. Check `list-import-errors` first, then the bottom of
-the file.
+The third cause is a Dag defined but never called ("Build it"):
+`list-import-errors` is empty too. Check `list-import-errors` first, then the
+bottom of the file.
 
 ### Run it
 

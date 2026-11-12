@@ -191,9 +191,7 @@ lista de sus eventos, porque un run puede recoger varios eventos del mismo
 asset (el apartado "Cuándo arranca el consumidor", al final de esta sección).
 La API pública de Airflow no tiene un tipo para esos eventos, de ahí
 `Sequence[Any]`; los campos que conviene conocer son `extra`, `timestamp`, y
-`source_dag_id` y `source_run_id`, el Dag run que emitió el evento. Como con
-`ti`, estas anotaciones son para ti y para tu editor: Airflow inyecta los
-argumentos por nombre e ignora sus tipos.
+`source_dag_id` y `source_run_id`, el Dag run que emitió el evento.
 
 Hasta aquí, un asset, un productor y un consumidor. Un pipeline más grande
 necesita más piezas; dos salen más adelante en este tutorial:

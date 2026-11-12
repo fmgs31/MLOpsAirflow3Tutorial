@@ -183,8 +183,7 @@ events, because one run can pick up several events of the same asset ("When
 the consumer runs", at the end of this section). Airflow's public API has no
 type for those events, hence `Sequence[Any]`; the fields worth knowing are
 `extra`, `timestamp`, and `source_dag_id` and `source_run_id`, the Dag run
-that emitted the event. As with `ti`, these annotations are for you and your
-editor: Airflow injects the arguments by name and ignores their types.
+that emitted the event.
 
 So far, one asset, one producer and one consumer. A bigger pipeline needs
 more pieces; two come up later in this tutorial:

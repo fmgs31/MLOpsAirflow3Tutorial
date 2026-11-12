@@ -187,8 +187,8 @@ The `| default(...)` on `ds` is the template's version of §4's `.get()`. `ds`
 derives from `logical_date`, which an asset-triggered run, or one triggered
 from the CLI without a logical date, does not have (§7 explains why). Without
 the default, the task fails while rendering, before it executes, with
-`UndefinedError: 'ds' is undefined`. `airflow dags test` never shows this, just
-as it never showed §4's `KeyError`: it always gives the run a logical date.
+`UndefinedError: 'ds' is undefined`, which `airflow dags test` never shows
+(§4).
 
 If all you need is a date for the run, to name a file for example, use
 `{{ dag_run.run_after }}`: every run has one, so no default is needed. It is
@@ -416,9 +416,7 @@ train(experiment_name="project_tagger_{{ run_id }}", min_f1=0.65)
 ```
 
 With `min_f1=65` this Dag loads without errors, and the mistake shows up only
-when a run reaches `train`. That difference is the whole reason for the class;
-a step with no such need is better as a `@task`, which is what this repo uses
-throughout.
+when a run reaches `train`.
 
 > This holds for a value written in the Dag file. A param (§4) arrives when the
 > run is triggered, after parsing, so neither the class nor the `@task` can
@@ -478,9 +476,7 @@ def export_labeled_projects(day: str) -> str:
 ```
 
 The task names two Connections, `warehouse` and `aws_default`, never a
-password. If the step were only "copy the query's result to S3",
-`SqlToS3Operator` would do it as one task with no code; hooks are for when your
-own logic sits in the middle. A service with no hook can still use a
+password. A service with no hook can still use a
 Connection: `BaseHook.get_connection("warehouse")`, on the class every hook
 derives from, returns the Connection itself — host, login, password, extra —
 for you to pass to any client library.

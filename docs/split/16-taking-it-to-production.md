@@ -33,8 +33,7 @@ few tools and one team. With many teams, give each task its own container
 image with `KubernetesPodOperator` (or `DockerOperator`): Airflow's image then
 holds only Airflow, and each team upgrades its libraries without touching
 anyone else's. Heavy compute belongs on a cluster (Ray, Spark, EMR, Dataproc)
-that Airflow triggers and tracks: Airflow is an orchestrator, not a compute
-engine.
+that Airflow triggers and tracks (§3).
 
 **Serving the model.** Here, nothing outside MLflow loads the model. In
 production something does, such as a Dag that re-tags every project or one
@@ -146,8 +145,7 @@ before anyone else can reach the UI.
   Scheduler, Triggerer and Dag processor status; the UI Home page shows the
   same.
 
-Then the ordinary hygiene: `airflow db clean` on a schedule (otherwise the
-Metadata database grows forever), deadline alerts on the Dags that matter
+Then the ordinary hygiene: `airflow db clean` on a schedule (§3), deadline alerts on the Dags that matter
 (§13), and Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — wired to
 `on_failure_callback` or an `AsyncCallback`.
 

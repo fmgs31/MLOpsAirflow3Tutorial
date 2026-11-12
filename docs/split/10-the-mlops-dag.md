@@ -101,11 +101,6 @@ Each column is one system, as in the §9 diagram:
    (or keep_current_model)   │                   │  to the new version │
 ```
 
-BigQuery is read once, in step 1; every later task reads the snapshot files,
-so the whole run works on the same data. MLflow ends up with the study's run,
-the trials as its child runs, and the final run, the only one with the model
-file.
-
 ### Links to MLflow
 
 A run of this Dag leaves three things in MLflow worth opening: the study's
@@ -255,8 +250,7 @@ change mid-run (a `dataops` run can finish in the middle); the snapshot keeps
 every task of this run on the same rows, even one retried an hour later. The
 files are Parquet, not CSV: Parquet stores each column's type, so `created_on`
 comes back as a timestamp, not a string; a CSV is only text, and the types are
-guessed again on every read. The task returns the paths, a small dict: XComs
-carry a pointer to the data, not the data itself (§6).
+guessed again on every read. The task returns the paths, a small dict.
 
 `data.save_snapshot` writes four files: the table as read
 (`labeled_projects.parquet`), which the §9 suite checks, and the model's input
@@ -407,9 +401,7 @@ Whether they overlap is up to the Executor, bounded by the narrowest of the
 fan-out runs **two at a time, in two waves**. Raise the cap and all four
 overlap; remove it and `[core] max_active_tasks_per_dag` (16) is the next
 limit up. Capping a training task is not a toy setting: four instances at once
-means four copies of the data in memory. When the limited resource is shared,
-say a database that accepts only a few connections, a `pool` (§3) sets the
-same kind of cap across every task and Dag that uses it.
+means four copies of the data in memory.
 
 Last, the task that reads the search's result:
 
@@ -461,9 +453,7 @@ that made it, the trial its hyperparameters came from, and its snapshot
 split, so what the model was built on stays in MLflow after the snapshot
 folder is gone; §12 reads it. Then the task **registers** the model: every
 final model becomes a new version of `project_tagger`, promoted or not, so a
-rejected candidate is still there to inspect. The task returns only small,
-JSON-serialisable values (run id, version number, f1, slice metrics); the
-model itself stays in MLflow.
+rejected candidate is still there to inspect.
 
 The slice metrics are the f1 on each **evaluation slice**: a subgroup of the
 test set picked by a rule in `evaluate.py` (short texts; texts that mention
@@ -522,8 +512,7 @@ same 764 rows; new rows arrive in §12. The `old` part is only logged; §12
 comes back to it.
 
 `compare_with_champion` is a task of its own so that the Graph shows it and
-its log names the version it compared with, part by part. It takes
-`train_best`'s output, which carries the new version, so it runs after it.
+its log names the version it compared with, part by part.
 
 Next, the **promotion gate**, which decides whether the new model goes to
 production. Unlike the §9 gates, it does not fail when the answer is no: it is
@@ -712,7 +701,7 @@ and change **Options → Dependencies** (§5):
 
 ### Watch the whole chain fire
 
-This is the payoff of §8. Un-pause the consumer, `mlops`, first, so it is
+Un-pause the consumer, `mlops`, first, so it is
 listening, then the producer's Dag, `dataops`:
 
 ```bash
@@ -721,10 +710,8 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
 Nothing happens on the first line: `mlops`'s schedule is an asset, and no
-event has arrived. The second starts everything without a trigger, by the §7
-rule: `dataops` has a cron and a 2025 `start_date`, so once it is un-paused
-the Scheduler creates and starts the run for the most recent 03:00 UTC it
-missed. Give it a few minutes. Near the end, the `mlops` run stops at
+event has arrived. The second starts everything without a trigger (§7). Give
+it a few minutes. Near the end, the `mlops` run stops at
 `approve_promotion`: open the run in the UI, click `approve_promotion`, and
 answer the prompt on its **Required Actions** tab, under
 `summarize_candidate`'s numbers, or let the default approve it after 60
@@ -741,15 +728,12 @@ with that as its `logical_date` and a `start_date` of a few minutes ago. (The
 `manual__` run from `airflow dags test` in §9 is there too.) And `mlops` has a
 run nobody triggered: id beginning `asset_triggered__`, `running` if you were
 quick, `success` once its trials and the final model are done, with an **empty**
-`logical_date`: asset-triggered runs have no logical date, like a run
-triggered from the CLI without one (§7). In the UI, **Assets** shows the edge
+`logical_date` (§7). In the UI, **Assets** shows the edge
 that caused it.
 
 Almost all the wait is the tools: the two Airbyte syncs in `dataops`, twenty
 trials and a final fit in `mlops`, and up to a minute at `approve_promotion`.
-Airflow adds little: one Scheduler loop to create the `dataops` run after the
-un-pause, and one more to create the `mlops` run once the asset event is
-recorded (§3, §8). If nothing has appeared after a few minutes, check that both
+If nothing has appeared after a few minutes, check that both
 Dags are un-paused and that the `dataops` run succeeded — a failed
 `validate_transformed` emits no event, by design.
 
@@ -799,8 +783,7 @@ them: MLflow stores it as a logged model of its own, listed on the run's
 > A `manual__` run this time. When it succeeds: one more event, one more
 > `asset_triggered__` run of `mlops`, one more model version in MLflow. Every
 > success of the producer emits an event, however the producer was started,
-> and the consumer runs on it (events that arrive while `mlops` is busy share
-> its next run, §8). Whether version 2 becomes `champion` depends on its f1
+> and the consumer runs on it. Whether version 2 becomes `champion` depends on its f1
 > against version 1's on this run's test split. Same data means the same split
 > (both runs' `test.parquet` hold the same ids) and no new rows:
 > `compare_with_champion` logs `all test rows` and `old test rows`, the same

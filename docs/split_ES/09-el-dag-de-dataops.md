@@ -610,9 +610,7 @@ tabla no pasa su suite, y con eso detiene todo lo que va aguas abajo:
         return {"suite": result.suite, "results": result.results}
 ```
 
-`AirflowFailException` hace fallar la task sin reintentos, diga lo que diga
-`retries`. Los datos malos siguen siendo malos en un reintento, así que
-reintentar solo retrasaría la alerta. Las tasks devuelven los resultados por
+`AirflowFailException` se salta los reintentos (§4). Las tasks devuelven los resultados por
 expectation, dicts pequeños; las tablas nunca pasan por XCom (§6).
 
 Después `transform`, que ejecuta el `dbt build` que lanzaste a mano, y el gate
@@ -646,9 +644,7 @@ final, cuyo outlet es el asset con el que se programará `mlops`:
 
 Un `BashOperator` falla cuando su comando termina con error, así que un test de
 dbt fallido hace fallar `transform`, y la salida de dbt queda como log de la
-task. El outlet va en la validación final, no en `transform`, como explicó la §8: así
-el evento significa "han llegado datos buenos". La suite de GX comprueba lo que
-no comprueban los tests de dbt, como el número de filas y el conjunto de tags.
+task.
 
 Por último, un **task group** y las conexiones entre tasks. `@task_group`
 dibuja varias tasks como un único nodo plegable en la vista Graph:
@@ -729,12 +725,9 @@ Una task de Airbyte fallida suele indicar una Connection o una Variable mal
 puesta: compruébalo con `airflow connections get my_airbyte_conn` y
 `airflow variables list`.
 
-> **`airflow dags test` no es un dry run.** Airbyte volvió a sincronizar las dos
-> tablas, dbt reconstruyó `labeled_projects`, y hay un asset event
-> `labeled_projects` real en la Metadata database, visible en la página Assets
-> con el `extra` que le pusiste. Todavía no hay nada programado con ese asset,
-> así que no pasa nada más, y según la §8 no pasará: cuando `mlops` aparezca en la §10 este evento
-> ya será historia, y Airflow no recupera eventos pasados.
+> **`airflow dags test` no es un dry run** (§4). Airbyte volvió a sincronizar
+> las dos tablas, dbt reconstruyó `labeled_projects`, y hay un asset event
+> `labeled_projects` real, con el `extra` que le pusiste, en la página Assets.
 
 Ejecutar el Dag dos veces deja el warehouse igual que ejecutarlo una: cada sync
 reemplaza su tabla, y dbt reconstruye `labeled_projects` desde cero. Esa
@@ -783,9 +776,7 @@ empiezan por `backfill__`. Ten claro qué viene después antes de hacerlo:
 `--reprocess-behavior` decide qué hacer con las franjas que ya tienen un run —
 `none`, `failed` o `completed` — que es la diferencia entre "rellena los huecos"
 y "rehaz el mes". En la UI: Dag → **Trigger** → **Backfill**, que hace un dry-run
-del rango y te dice cuántos runs va a crear antes de confirmar. Por esto mismo
-no se puede hacer backfill de un Dag programado con assets (§5): no tiene
-franjas, solo eventos.
+del rango y te dice cuántos runs va a crear antes de confirmar.
 
 ### Alternativas
 

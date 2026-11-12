@@ -340,8 +340,7 @@ Después, decidir:
         return "continue_serving"
 ```
 
-Airflow inyecta `params` y `ti` en `decide` por el nombre del parámetro, como
-`ti` en la §6. `retrain_or_wait` no es una task sino una función normal, así
+`retrain_or_wait` no es una task sino una función normal, así
 que nadie le inyecta nada: recibe el `ti` de `decide` como argumento.
 
 `decide` solo devuelve el `task_id` de la rama, así que los números con los que
@@ -470,8 +469,8 @@ Termina conectando las tasks:
 monitoring_dag()
 ```
 
-`decide` devuelve el `task_id` de la rama que hay que ejecutar. No hay join al
-final, porque nada tiene que correr después de todas ellas.
+No hay join al final, porque nada tiene que correr después de ninguna de las
+ramas.
 
 ### Ejecútalo
 
@@ -528,7 +527,7 @@ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 ```
 
 `mlops` tiene ahora un run `manual__…` recién creado por este Dag, en `queued`
-porque `mlops` está en pausa. Un Dag decidió que otro Dag debía correr.
+porque `mlops` está en pausa.
 
 > **Cambia la política, cambia la decisión.** El umbral es un param, así que a
 > un run se le puede dar otro:
@@ -541,10 +540,8 @@ porque `mlops` está en pausa. Un Dag decidió que otro Dag debía correr.
 > Ningún p-value queda por debajo de 0, así que ningún test informa de drift y
 > solo cuenta el f1, cuya caída está por debajo de `max_f1_drop`: `decide()`
 > devuelve `continue_serving`, la rama de reentrenamiento queda skipped y el
-> run termina en segundos. Mismos datos, mismo modelo en producción, otra
-> decisión: el desenlace depende de la política, y para eso es un param. Aquí,
-> además, es la peor política: el f1 sí bajó, y el reentrenamiento de abajo lo
-> recupera.
+> run termina en segundos. Aquí es la peor política: el f1 sí bajó, y el
+> reentrenamiento de abajo lo recupera.
 
 **Deja correr el reentrenamiento.** El run creado por `trigger_retraining`
 espera porque `mlops` sigue en pausa. Quítale la pausa:
@@ -565,15 +562,9 @@ por el mismo hash. `compare_with_champion` escribe tres líneas, `all`, `new` y
 | `old`: las 157 con las que se evaluó el champion | normalmente uno o dos puntos por debajo | en torno a 0.89, su `f1_baseline` |
 
 `promotion_gate` escribe `f1=… clears the champion's … on the 162 new test
-rows - promoting`, y `approve_promotion` te espera, como en la §10. Esta es la
-decisión para la que existe la aprobación: los números están en el aviso, y el
-modelo en MLflow. Apruébalo en su pestaña **Required Actions**, o deja que el
+rows - promoting`, y `approve_promotion` te espera, como en la §10. Apruébalo en su pestaña **Required Actions**, o deja que el
 default lo apruebe a los 60 segundos, y `promote_model` mueve `champion` a la
 versión nueva.
-
-Drift tratado: el modelo nuevo aprendió de 638 de los papers, y en los 162
-restantes, que ninguno de los dos modelos ha visto, saca entre 8 y 14 puntos
-más que el champion.
 
 Pregunta al monitor una vez más:
 
@@ -628,11 +619,6 @@ corrige los errores de hoy y vuelve a cometer los de antes. Este Dag lo evita
 entrenando siempre con la tabla etiquetada completa. Vale con este tamaño, pero
 cuando la tabla sea demasiado grande para cargarla y entrenar con ella en una
 sola task, habrá que entrenar con una parte y el olvido volverá a ser un riesgo.
-
-Por eso también `promotion_gate`, en la §10, compara con el modelo en
-producción sobre las mismas filas de test, y no solo con un umbral fijo: un
-modelo reentrenado peor que el actual no debería publicarse solo porque saltó
-un monitor.
 
 La línea `old` de `compare_with_champion` es donde se ve el olvido: el f1 del
 modelo nuevo sobre las filas de test del propio champion. En el run de

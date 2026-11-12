@@ -83,7 +83,7 @@ docker compose logs airflow-scheduler | grep "DEADLINE MISSED"
 
 **Comprobación.** Una línea `DEADLINE MISSED` con el contexto del run, unos 30
 segundos después del trigger, mientras `slow_step` (un sleep de 75 segundos)
-sigue corriendo: te enteraste del run lento antes de que terminara. Los
+sigue corriendo. Los
 deadlines perdidos y pendientes también se listan bajo Browse → **Deadlines**.
 
 > **Bug de Airflow 3.3.1 (la versión que instala este tutorial):** con un Dag

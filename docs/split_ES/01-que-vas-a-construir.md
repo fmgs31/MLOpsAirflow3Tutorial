@@ -68,8 +68,7 @@ Los siete Dags los escribes tú, además del paquete que comparten (§8) y del
 proyecto de dbt (§9). `dags/`, la carpeta que lee Airflow, y `dbt/` están
 **vacías** cuando clonas este repo. Cada sección explica una pieza de Airflow,
 te hace construir el Dag que la usa, unas pocas líneas cada vez con el porqué de
-cada una, y luego ejecutarlo y comprobar el resultado. El código te lo damos; tu
-trabajo es teclearlo, comprobar que Airflow lo parsea y verlo ejecutarse.
+cada una, y luego ejecutarlo y comprobar el resultado.
 
 Dos redes de seguridad:
 

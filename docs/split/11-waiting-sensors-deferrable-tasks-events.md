@@ -23,10 +23,9 @@ BigQueryTableExistenceSensor(..., poke_interval=10, timeout=300, deferrable=True
 ```
 
 `poke_interval` and `timeout` apply to all three. `mode` chooses between the
-first two; with `deferrable=True`, `mode` is ignored. Between pokes, `poke`
-keeps the task's process alive, asleep, holding its worker slot;
-`reschedule` ends it, and the task instance sits in `up_for_reschedule` (§3)
-until the Scheduler re-queues it.
+first two; with `deferrable=True`, `mode` is ignored. Between `reschedule`
+pokes the task instance sits in `up_for_reschedule` (§3) until the Scheduler
+re-queues it.
 
 Deferrable needs one term first: a **trigger** is a small piece of
 asynchronous code that waits for one thing (a moment in time, a table, a
@@ -62,9 +61,6 @@ When a check could be either deferrable or `reschedule`, two things decide:
   seconds-long query belongs in a task process. A trigger should only make
   quick asynchronous calls.
 
-`poke` is for waits of seconds: it holds the slot throughout, but the task
-does not restart between pokes.
-
 `dags/05_sensors_and_events.py` chains two sensors. Both waits may be long, so
 neither uses `poke`; the trigger separates them. `wait_for_table` waits for
 the table to exist, which the Google provider has a trigger for, so it is
@@ -86,9 +82,6 @@ step waits, one column per system as in the §9 diagram:
    exits between pokes          │                        │
  3 proceed: 500+ rows           │                        │
 ```
-
-While `wait_for_table` is deferred, no task process exists. `enough_rows`
-checks from its own process, which is gone between pokes.
 
 ### Build it
 
@@ -257,10 +250,7 @@ SELECT * FROM `<your project id>.mlops_course.labeled_projects`
 `states-for-dag-run` shows all three tasks as `success`, and `proceed`'s log
 reads `Data is ready (764 rows)`.
 
-Neither sensor held a worker slot while it waited: `wait_for_table` waited in
-the Triggerer, and `enough_rows` gave its slot back between pokes. In `poke`
-mode each would have held one for its whole wait, doing nothing. Stop at
-either step and the waiting sensor fails on its five-minute `timeout`, and the
+Stop at either step and the waiting sensor fails on its five-minute `timeout`, and the
 tasks after it end `upstream_failed` (§3).
 
 Drop the copy when you are done, in the same query editor:

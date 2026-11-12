@@ -66,8 +66,7 @@ You write all seven Dags yourself, plus the package they share (§8) and the dbt
 project (§9). `dags/`, the folder Airflow reads, and `dbt/` are **empty** when
 you clone this repo. Each section explains a piece of Airflow, has you build the
 Dag that uses it a few lines at a time, with the reason for each, then run it
-and check the result. The code is given; your work is typing it, seeing it parse
-and watching it run.
+and check the result.
 
 Two safety nets:
 

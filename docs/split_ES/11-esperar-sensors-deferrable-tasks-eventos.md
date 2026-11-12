@@ -24,9 +24,8 @@ BigQueryTableExistenceSensor(..., poke_interval=10, timeout=300, deferrable=True
 ```
 
 `poke_interval` y `timeout` se aplican a las tres. `mode` elige entre las dos
-primeras; con `deferrable=True`, `mode` se ignora. Entre pokes, `poke` mantiene
-vivo el proceso de la task, dormido, ocupando su worker slot; `reschedule` lo
-termina, y la task instance queda en `up_for_reschedule` (§3) hasta que el
+primeras; con `deferrable=True`, `mode` se ignora. Entre pokes de
+`reschedule`, la task instance queda en `up_for_reschedule` (§3) hasta que el
 Scheduler la vuelve a encolar.
 
 Deferrable necesita antes un término: un **trigger** es un pequeño fragmento de
@@ -67,9 +66,6 @@ Cuando una comprobación puede ser deferrable o `reschedule`, deciden dos cosas:
   librería de ML o una consulta de varios segundos va en un proceso de task. Un
   trigger solo debería hacer llamadas asíncronas rápidas.
 
-`poke` es para esperas de segundos: ocupa el slot todo el tiempo, pero la task
-no vuelve a arrancar entre pokes.
-
 `dags/05_sensors_and_events.py` encadena dos sensors. Las dos esperas pueden
 ser largas, así que ninguno usa `poke`; los separa el trigger. `wait_for_table`
 espera a que exista la tabla, algo para lo que el provider de Google tiene
@@ -91,10 +87,6 @@ Dónde espera cada paso, una columna por sistema como en el diagrama de la §9:
    sale entre pokes             │                        │
  3 proceed: 500+ filas          │                        │
 ```
-
-Mientras `wait_for_table` está en `deferred`, no existe ningún proceso de la
-task. `enough_rows` comprueba desde su propio proceso, que desaparece entre
-pokes.
 
 ### Constrúyelo
 
@@ -269,10 +261,7 @@ SELECT * FROM `<your project id>.mlops_course.labeled_projects`
 `states-for-dag-run` muestra las tres tasks en `success`, y el log de `proceed`
 dice `Data is ready (764 rows)`.
 
-Ningún sensor ocupó un worker slot mientras esperaba: `wait_for_table` esperó
-en el Triggerer, y `enough_rows` devolvió su slot entre pokes. En modo `poke`
-cada uno habría ocupado uno durante toda su espera, sin hacer nada. Si te
-detienes en cualquiera de los dos pasos, el sensor que espera falla por su
+Si te detienes en cualquiera de los dos pasos, el sensor que espera falla por su
 `timeout` de cinco minutos, y las tasks que van detrás terminan en
 `upstream_failed` (§3).
 

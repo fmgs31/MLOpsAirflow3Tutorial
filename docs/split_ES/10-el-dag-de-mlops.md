@@ -103,11 +103,6 @@ Cada columna es un sistema, como en el diagrama de la §9:
    (o keep_current_model)    │                   │  a la versión nueva │
 ```
 
-BigQuery se lee una sola vez, en el paso 1; todas las tasks siguientes leen los
-archivos del snapshot, así que el run entero trabaja con los mismos datos. En
-MLflow quedan el run del study, los trials como sus runs hijos, y el run
-final, el único con el archivo del modelo.
-
 ### Links a MLflow
 
 Un run de este Dag deja en MLflow tres cosas que vale la pena abrir: el run
@@ -259,7 +254,7 @@ run sobre las mismas filas, incluso una que se reintenta una hora después. Los
 archivos son Parquet, no CSV: Parquet guarda el tipo de cada columna, así que
 `created_on` vuelve como timestamp y no como string; un CSV es solo texto, y
 los tipos se vuelven a adivinar en cada lectura. La task devuelve las rutas,
-un dict pequeño: los XComs llevan un puntero a los datos, no los datos (§6).
+un dict pequeño.
 
 `data.save_snapshot` escribe cuatro archivos: la tabla tal como se leyó
 (`labeled_projects.parquet`), que comprueba la suite de la §9, y la entrada del
@@ -417,10 +412,7 @@ restrictivo de los límites de la §3, y aquí ese es, deliberadamente,
 oleadas**. Sube el tope y las cuatro se solapan; quítalo y
 `[core] max_active_tasks_per_dag` (16) es el siguiente límite. Poner un tope a
 una task de entrenamiento no es un ajuste de juguete: cuatro instancias a la
-vez son cuatro copias de los datos en memoria. Cuando el recurso limitado es
-compartido, por ejemplo una base de datos que solo acepta unas pocas
-conexiones, un `pool` (§3) pone el mismo tipo de tope a todas las tasks y Dags
-que lo usan.
+vez son cuatro copias de los datos en memoria.
 
 Por último, la task que lee el resultado de la búsqueda:
 
@@ -474,9 +466,7 @@ los ids de proyecto de cada split, así que aquello con lo que se construyó el
 modelo sigue en MLflow aunque la carpeta del snapshot ya no exista; la §12 lo
 lee. Después la task **registra** el modelo: cada modelo final pasa a ser una
 versión nueva de `project_tagger`, se promocione o no, así que un candidato
-rechazado sigue ahí para inspeccionarlo. La task devuelve solo valores
-pequeños y serializables a JSON (run id, número de versión, f1, métricas por
-slice); el modelo en sí se queda en MLflow.
+rechazado sigue ahí para inspeccionarlo.
 
 Las métricas por slice son el f1 en cada **slice de evaluación**: un subgrupo
 del conjunto de test que selecciona una regla de `evaluate.py` (textos cortos;
@@ -538,8 +528,7 @@ sección, en la que cada run ve las mismas 764 filas; las filas nuevas llegan
 en la §12. La parte `old` solo va al log; la §12 vuelve a ella.
 
 `compare_with_champion` es una task propia para que el Graph la muestre y su
-log diga con qué versión comparó, parte por parte. Recibe la salida de
-`train_best`, que lleva la versión nueva, así que corre después de ella.
+log diga con qué versión comparó, parte por parte.
 
 A continuación, el **promotion gate**, que decide si el modelo nuevo pasa a
 producción. A diferencia de los gates de la §9, no falla cuando la respuesta
@@ -730,8 +719,7 @@ a **Graph** y ve cambiando **Options → Dependencies** (§5):
 
 ### Mira cómo se dispara la cadena entera
 
-Esta es la recompensa de la §8. Quita la pausa primero al consumidor, `mlops`,
-para que esté a la escucha, y después al Dag del productor, `dataops`:
+Quita la pausa primero al consumidor, `mlops`, para que esté a la escucha, y después al Dag del productor, `dataops`:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags unpause mlops
@@ -739,10 +727,8 @@ docker compose exec airflow-scheduler airflow dags unpause dataops
 ```
 
 Con la primera línea no pasa nada: el schedule de `mlops` es un asset, y no ha
-llegado ningún evento. La segunda lo arranca todo sin ningún trigger, por la
-regla de la §7: `dataops` tiene un cron y un `start_date` de 2025, así que en
-cuanto se le quita la pausa el Scheduler crea y arranca el run que se perdió,
-el de las 03:00 UTC más recientes. Espera unos minutos. Cerca del final, el
+llegado ningún evento. La segunda lo arranca todo sin ningún trigger (§7).
+Espera unos minutos. Cerca del final, el
 run de `mlops` se detiene en `approve_promotion`: abre el run en la UI, haz
 clic en `approve_promotion` y responde al aviso en su pestaña **Required
 Actions**, debajo de los números de `summarize_candidate`, o deja que el
@@ -759,15 +745,12 @@ termina en `T03:00:00+00:00` — la fecha de hoy, o la de ayer si aún no son la
 (El run `manual__` del `airflow dags test` de la §9 también está.) Y `mlops` tiene
 un run que nadie disparó: id que empieza por `asset_triggered__`, `running` si
 has sido rápido, `success` en cuanto terminen sus trials y el modelo final, con
-una `logical_date` **vacía**: los runs disparados por asset no tienen logical
-date, igual que un run disparado desde la CLI sin ella (§7). En la UI,
+una `logical_date` **vacía** (§7). En la UI,
 **Assets** muestra la arista que lo causó.
 
 Casi toda la espera la ponen las herramientas: los dos syncs de Airbyte en
 `dataops`, veinte trials y un entrenamiento final en `mlops`, y hasta un
-minuto en `approve_promotion`. Airflow añade poco: un bucle del Scheduler para
-crear el run de `dataops` tras quitar la pausa, y uno más para crear el run de
-`mlops` cuando se registra el asset event (§3, §8). Si tras unos minutos no ha
+minuto en `approve_promotion`. Si tras unos minutos no ha
 aparecido nada, comprueba que ambos Dags están sin pausa y que el run de
 `dataops` tuvo éxito — un `validate_transformed` fallido no emite evento, por
 diseño.
@@ -820,8 +803,7 @@ como `model`. En **Models**, `project_tagger` tiene la versión 1, con el alias
 > Esta vez, un run `manual__`. Cuando tenga éxito: un evento más, un run
 > `asset_triggered__` más de `mlops` y una versión más del modelo en MLflow.
 > Cada éxito del productor emite un evento, se arrancara como se arrancara, y
-> el consumidor se ejecuta con él (los eventos que llegan mientras `mlops` está
-> ocupado comparten su siguiente run, §8). Que la versión 2 pase a ser
+> el consumidor se ejecuta con él. Que la versión 2 pase a ser
 > `champion` depende de su f1 frente al de la versión 1 sobre el split de test
 > de este run. Mismos datos implica el mismo split (los `test.parquet` de los
 > dos runs tienen los mismos ids) y ninguna fila nueva: `compare_with_champion`

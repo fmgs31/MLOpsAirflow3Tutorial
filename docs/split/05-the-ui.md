@@ -1,7 +1,6 @@
 ## 5. The UI
 
-The UI is at <http://localhost:8080>. Much of this tutorial is easier to see
-than to read, so take the tour now that there is a Dag to look at.
+The UI is at <http://localhost:8080>.
 
 The nav is **Home · Dags · Assets · Browse · Admin** at the top and **Docs**, a
 clock and **User** at the bottom.
@@ -51,9 +50,7 @@ The tabs on the right follow what you select:
   and a task waiting on a human adds **Required Actions**.
 
 **Do it now.** Open `hello_airflow3` and look at the Graph: `make_greeting`
-fanning out to `shout` and `count_words`, both fanning back into `report` — the
-shape the last lines of §4 build by passing `message` to two tasks and both
-results to `report`.
+fanning out to `shout` and `count_words`, both fanning back into `report`.
 
 **The Dag version selector.** Each time you save a change to a Dag file,
 Airflow creates a new version — `v1`, `v2`, … — and every Dag run records the
@@ -90,9 +87,7 @@ on trigger"* checkbox, ticked by default, un-pauses it as the run is created;
 untick it and the run stays **queued** until you un-pause the Dag (§7).
 
 Type another single word in `greeting` — leave *Unpause* ticked if it is
-there — and submit. The same `Param` now reaches the same task by a third
-route: a default in the file, `--conf` on the command line, a form in the
-browser.
+there — and submit.
 
 Now read what it did. In the **Runs** tab, click the new run, then `report` in
 the graph, and open **Logs**: your word in capitals and `(7 words)`, the line

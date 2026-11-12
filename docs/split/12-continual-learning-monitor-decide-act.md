@@ -332,8 +332,7 @@ Then decide:
         return "continue_serving"
 ```
 
-Airflow injects `params` and `ti` into `decide` by parameter name, as with
-`ti` in §6. `retrain_or_wait` is not a task but a plain function, so nothing
+`retrain_or_wait` is not a task but a plain function, so nothing
 is injected into it: it gets `decide`'s `ti` as an argument.
 
 `decide` returns only the `task_id` of the branch, so the numbers it decides
@@ -461,8 +460,8 @@ Finish with the wiring:
 monitoring_dag()
 ```
 
-`decide` returns the `task_id` of the branch to run. There is no join at the
-end, because nothing needs to run after all of them.
+There is no join at the end, because nothing needs to run after any of the
+branches.
 
 ### Run it
 
@@ -519,7 +518,7 @@ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 ```
 
 `mlops` now has a fresh `manual__…` run created by this Dag, `queued` because
-`mlops` is paused. One Dag decided another Dag should run.
+`mlops` is paused.
 
 > **Change the policy, change the decision.** The threshold is a param, so a
 > run can be given another one:
@@ -531,10 +530,8 @@ docker compose exec airflow-scheduler airflow dags list-runs mlops -o plain
 >
 > No p-value is below 0, so no test reports drift and only the f1 counts,
 > whose drop is under `max_f1_drop`: `decide()` returns `continue_serving`,
-> the retraining branch is skipped, and the run is over in seconds. Same data,
-> same production model, another decision: the outcome depends on the policy,
-> which is the point of making it a param. Here it is also the worse policy:
-> the f1 did drop, and the retrain below wins it back.
+> the retraining branch is skipped, and the run is over in seconds. It is the
+> worse policy here: the f1 did drop, and the retrain below wins it back.
 
 **Let the retraining run.** The run `trigger_retraining` created waits because
 `mlops` is still paused. Un-pause it:
@@ -554,14 +551,10 @@ the champion was tested on, plus 162 of the papers, by the same hash.
 | `old`: the 157 the champion was tested on | usually a point or two lower | around 0.89, its `f1_baseline` |
 
 `promotion_gate` logs `f1=… clears the champion's … on the 162 new
-test rows - promoting`, and `approve_promotion` waits for you, as in §10. This
-is the decision the approval is for: the numbers are in the prompt, the model
-in MLflow. Approve it on its **Required Actions** tab, or let the default
+test rows - promoting`, and `approve_promotion` waits for you, as in §10.
+Approve it on its **Required Actions** tab, or let the default
 approve it after 60 seconds, and `promote_model` moves `champion` to the new
 version.
-
-Drift treated: the new model learned from 638 of the papers, and on the other
-162, which neither model has seen, it scores 8 to 14 points above the champion.
 
 Ask the monitor once more:
 
@@ -615,10 +608,6 @@ today's errors and brings back old ones. This Dag sidesteps it by always
 training on the full labelled table. That works at this size, but once the
 table is too big to load and train on in a single task, you will have to train
 on part of it, and forgetting becomes a risk again.
-
-That is also why `promotion_gate` in §10 compares against the production
-model on the same test rows, not just a fixed threshold: a retrained model
-worse than what is serving should not ship just because a monitor fired.
 
 The `old` line of `compare_with_champion` is where forgetting shows: the new
 model's f1 on the champion's own test rows. In this section's retraining run

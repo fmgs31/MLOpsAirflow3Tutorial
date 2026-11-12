@@ -81,7 +81,7 @@ docker compose logs airflow-scheduler | grep "DEADLINE MISSED"
 
 **Checkpoint.** One `DEADLINE MISSED` line with the run's context, about 30
 seconds after the trigger, while `slow_step` (a 75-second sleep) is still
-running: you heard about the slow run before it finished. Missed and pending
+running. Missed and pending
 deadlines are also listed under Browse → **Deadlines**.
 
 > **Airflow 3.3.1 bug (the version this tutorial installs):** on a Dag that sets

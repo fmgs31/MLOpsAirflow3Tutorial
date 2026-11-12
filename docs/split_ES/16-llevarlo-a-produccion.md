@@ -35,7 +35,7 @@ equipo. Con muchos equipos, dale a cada task su propia imagen de contenedor
 con `KubernetesPodOperator` (o `DockerOperator`): la imagen de Airflow solo
 contiene Airflow, y cada equipo actualiza sus librerías sin tocar las de nadie
 más. El cómputo pesado pertenece a un clúster (Ray, Spark, EMR, Dataproc) que
-Airflow dispara y sigue: Airflow es un orquestador, no un motor de cómputo.
+Airflow dispara y sigue (§3).
 
 **Servir el modelo.** Aquí nada fuera de MLflow carga el modelo. En producción
 algo lo hace, como un Dag que vuelve a etiquetar todos los proyectos o uno que
@@ -150,8 +150,7 @@ identidad real antes de que nadie más pueda llegar a la UI.
   database, el Scheduler, el Triggerer y el Dag processor; la página Home de la
   UI muestra lo mismo.
 
-Y luego el mantenimiento de siempre: `airflow db clean` programado (si no, la
-Metadata database crece indefinidamente), deadline alerts en los Dags que
+Y luego el mantenimiento de siempre: `airflow db clean` programado (§3), deadline alerts en los Dags que
 importan (§13), y Notifiers — `SlackWebhookNotifier`, `SmtpNotifier` — conectados a
 `on_failure_callback` o a un `AsyncCallback`.
 

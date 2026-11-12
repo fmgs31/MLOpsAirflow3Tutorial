@@ -4,8 +4,7 @@ Todo lo que necesitas para definir Dags, tasks y assets está en `airflow.sdk`,
 el Task SDK (los operators vienen de los providers, §6).
 
 Vas a escribir `dags/01_hello_airflow3.py`: cuatro tasks que construyen un
-saludo, lo gritan, cuentan sus palabras e imprimen el resultado. Es pequeño, y
-cada idea que contiene reaparece en todos los Dags posteriores.
+saludo, lo gritan, cuentan sus palabras e imprimen el resultado.
 
 ### Constrúyelo
 
@@ -176,8 +175,7 @@ make_greeting ─┬─► shout ──────┬─► report
 
 La última línea importa: **el decorador solo define el Dag; llamar a la función
 lo registra.** Un archivo que define un Dag sin llamarlo se importa sin errores
-y no aparece en ningún sitio — el error de principiante más común, y el más
-difícil de ver, porque no hay ningún error que leer.
+y no aparece en ningún sitio, sin ningún error que leer.
 
 Guarda el archivo. Si quieres, compáralo con
 [`solutions/01_hello_airflow3.py`](../../solutions/01_hello_airflow3.py): el
@@ -237,15 +235,12 @@ defecto), primero lee el archivo como texto y se lo salta salvo que el
 contenido en minúsculas contenga `airflow` *y* además `dag` o `asset`. Sin el
 comentario, `zz_broken_on_purpose.py` no se parsea, no se lista ni se reporta
 nunca: silencio, no un error. Un archivo de Dag real siempre pasa, porque
-`from airflow.sdk import dag` ya contiene las dos palabras. Los que se salta son
-los que no tienen alguna: un módulo auxiliar sin Dag, que es lo correcto, o un
-experimento desechable como `zz_broken_on_purpose.py`. Así que cuando un
-archivo no está, esto es lo segundo que hay que comprobar.
+`from airflow.sdk import dag` ya contiene las dos palabras. Cuando un archivo
+no está, esto es lo segundo que hay que comprobar.
 
-La tercera causa es el error de principiante de "Constrúyelo": un Dag definido
-pero nunca llamado. Se importa sin errores, así que `list-import-errors`
-también está vacío; el único síntoma es un Dag que no está. Mira primero
-`list-import-errors`, y después el final del archivo.
+La tercera causa es un Dag definido pero nunca llamado ("Constrúyelo"):
+`list-import-errors` también está vacío. Mira primero `list-import-errors`, y
+después el final del archivo.
 
 ### Ejecútalo
 

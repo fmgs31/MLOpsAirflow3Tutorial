@@ -1,8 +1,6 @@
 ## 5. La UI
 
-La UI está en <http://localhost:8080>. Buena parte de este tutorial se entiende
-mejor viéndolo que leyéndolo, así que haz el recorrido ahora que hay un Dag que
-mirar.
+La UI está en <http://localhost:8080>.
 
 La navegación es **Home · Dags · Assets · Browse · Admin** arriba y, abajo,
 **Docs**, un reloj y **User**.
@@ -55,9 +53,7 @@ Las pestañas de la derecha dependen de lo que selecciones:
   mapeada, y una task que espera a una persona añade **Required Actions**.
 
 **Hazlo ahora.** Abre `hello_airflow3` y mira el Graph: `make_greeting` se abre
-hacia `shout` y `count_words`, y las dos vuelven a juntarse en `report` — la
-forma que construyen las últimas líneas de la §4 al pasar `message` a dos tasks
-y los resultados de ambas a `report`.
+hacia `shout` y `count_words`, y las dos vuelven a juntarse en `report`.
 
 **El selector de versión del Dag.** Cada vez que guardas un cambio en un
 archivo de Dag, Airflow crea una versión nueva — `v1`, `v2`, … — y cada Dag run
@@ -95,9 +91,7 @@ crear el run; desmárcala y el run se queda **queued** hasta que quites la pausa
 (§7).
 
 Escribe otra palabra suelta en `greeting` — deja *Unpause* marcada si aparece —
-y envía. El mismo `Param` llega ahora a la misma task por una tercera vía: un
-valor por defecto en el archivo, `--conf` en la línea de comandos, un
-formulario en el navegador.
+y envía.
 
 Ahora mira el resultado. En la pestaña **Runs**, haz clic en el run nuevo,
 luego en `report` en el grafo, y abre **Logs**: tu palabra en mayúsculas y

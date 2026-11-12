@@ -62,8 +62,6 @@ opcional, y sin ella no hay pasado que recuperar: al quitar la pausa, un
 schedule cron normalmente espera a su siguiente hora, y uno `timedelta`
 arranca al momento.
 
-Dos cosas sobre scheduling que te ahorrarán una tarde de depuración:
-
 **`catchup` es `False` por defecto** (`[scheduler] catchup_by_default`).
 Quitar la pausa a un Dag con cron y un `start_date` de 2025 no crea un run por
 cada franja desde entonces. Crea **uno**, inmediatamente porque ya va con
@@ -89,9 +87,6 @@ mlops   asset_triggered__2026-09-09T08:23:16+00:00  success  2026-09-09T08:23:16
 mlops   manual__2026-09-09T08:22:31+00:00           success  2026-09-09T08:22:32   2026-09-09T08:22:31
 ```
 
-Usa `run_after` cuando quieras decir "cuándo le tocaba arrancar a este run":
-todo run lo tiene.
-
 > **La trampa, antes de disparar nada:** en un run sin logical date,
 > `logical_date` falta en el task context y `ds`, `ts` y compañía están
 > *undefined* en las plantillas. Los dos accesos fallan en tiempo de
@@ -105,10 +100,6 @@ todo run lo tiene.
 > "{{ ds | default('none') }}"     # fine
 > "{{ dag_run.run_after }}"        # fine — every run has one
 > ```
->
-> Escribiste la forma segura de ambas en la §4 y la §6, y por eso los runs que
-> vas a disparar desde la CLI tienen éxito. `mlops` (§10), que corre por asset,
-> no lee `logical_date` ni `ds` en ninguna parte.
 
 ### Runs manuales
 
@@ -126,8 +117,6 @@ docker compose exec airflow-scheduler airflow dags trigger hello_airflow3 -c '{"
 - **`-r/--run-id`** nombra el run. Sin él obtienes `manual__<timestamp>`.
 - **`-l/--logical-date`** fija la logical date. Sin ella el run no tiene
   ninguna (ver *`logical_date` puede estar vacía*).
-- En la UI es el botón **Trigger**, con el formulario generado a partir de tus
-  `params` (§5).
 
 Pausar un Dag impide que el Scheduler le cree runs programados (el tema de
 *`catchup` es `False` por defecto*) y que arranque ninguno de sus runs, ni
@@ -160,9 +149,6 @@ mucho que esperes: el Scheduler lo ve en cada iteración del bucle y lo omite a
 propósito. Poco después del `unpause`, `list-runs` muestra el mismo `run_id`
 como `success`, con una `start_date` (la del run, no la del Dag) posterior a su
 `run_after`: arrancó cuando quitaste la pausa, no cuando lo disparaste.
-
-El formulario de trigger de la UI tiene una casilla *"Unpause … on trigger"*
-para esto.
 
 Hay dos formas más de arrancar un run. La REST API hace lo mismo que `trigger`,
 por HTTP: `POST /api/v2/dags/{dag_id}/dagRuns`, que es lo que llama el botón de

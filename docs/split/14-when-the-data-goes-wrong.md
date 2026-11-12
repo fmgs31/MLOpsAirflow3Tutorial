@@ -32,16 +32,12 @@ the new ones. A delivery is a change of URL in an Airbyte source: open
 
 ### Before you start
 
-Pause `mlops`:
+Pause `mlops`, as in §12, so it does not train on the new projects before
+"The drift alarm" compares them with what the production model knows:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags pause mlops
 ```
-
-A passing `dataops` run emits the asset event that starts `mlops` (§8), which
-here would train a model on the new projects before `monitoring` compares
-them with what the production model knows. That comparison is "The drift
-alarm". `dataops` stays un-paused, as §10 left it.
 
 ### Day 1: projects without tags
 
@@ -121,9 +117,7 @@ which only its own check, `validate_training_data` (§10), stops. §16 shows the
 pattern that keeps a table that fails its tests from being published at all.
 
 **Retries only add wait.** Each time, `transform` ran three times, a minute
-apart, because `dataops` gives every task `retries=2`. Retries help
-when the cause goes away by itself (a network error, a busy API); a data
-problem fails the same way every time. That is why the GX gates raise
+apart, because `dataops` gives every task `retries=2`. That is why the GX gates raise
 `AirflowFailException`, which skips the retries (§9). `transform`, a
 `BashOperator` running dbt, cannot tell a failed test from a lost
 connection, so it retries both.
@@ -371,11 +365,7 @@ MANUAL INSPECTION NEEDED
 ```
 
 and `inspect` fails with `manual inspection needed - nothing was retrained
-or rolled back`. The run ends there, in seconds: it needs a person, and
-nothing was retrained. That is the rule `decide` was written with in §12: a
-label the model has never seen means the label space moved, and retraining on
-data nobody understands yet is how a worse model ships. A drift alarm is a
-question; the inspection is yours.
+or rolled back`: the §12 rule for a label the model has never seen.
 
 The current window is exactly the 191 new projects: none of their ids is in
 the production model's `split_ids.json`. In it, `misc` is about 14%, though
@@ -504,9 +494,7 @@ The queued `mlops` run starts and trains on all 1755 projects. Its gate may
 well keep the current model: the f1 did not drop, so there is little to win
 on the 49 new test rows, and `below the champion's … on the 49 new test rows
 - not promoting` is a normal outcome; if the gate lets it through,
-`approve_promotion` waits for you, as in §10. The new projects are in,
-checked and labelled like the old ones, and every model from now on trains
-on them. The sources keep their day 2 and day 3 URLs: that is your data now.
+`approve_promotion` waits for you, as in §10. The sources keep their day 2 and day 3 URLs: that is your data now.
 
 ---
 

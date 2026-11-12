@@ -45,8 +45,7 @@ or do nothing.
 
 **Unit tests on the workload** — [`tests/test_project_tagger.py`](../../tests/test_project_tagger.py).
 Nothing in `src/project_tagger/` imports Airflow, so the ML code is tested
-without a Scheduler: Airflow orchestrates the code, it does not contain it. Nor
-do the tests touch BigQuery or the MLflow server, which would make them slow
+without a Scheduler. Nor do the tests touch BigQuery or the MLflow server, which would make them slow
 and dependent on credentials and the network. Each test hands the code the
 dataframe a query would have returned, and Optuna and MLflow run against SQLite
 files in a temporary folder, where pytest's `monkeypatch` (which replaces a
@@ -57,7 +56,7 @@ environment it is **skipped**, not failed.
 **Data tests** — the GX suites and dbt's tests (§9). They run where the data
 is: as gates in every pipeline run, not in CI. A code test proves the pipeline
 does what you meant; a data test, that today's data is what the pipeline
-expects. You need both.
+expects.
 
 **Whole-run tests** — `airflow dags test <dag_id>` executes a real Dag run
 inside the command itself (§4), and `airflow tasks test <dag_id> <task_id>`
@@ -73,16 +72,14 @@ docker compose run --rm --entrypoint pytest airflow-cli /opt/airflow/tests -q
 container, defined under a compose profile, that `run` creates and `--rm`
 removes when it ends.
 
-**Checkpoint.** A row of dots, one `s`, and `45 passed, 1 skipped`, in
-well under a minute:
+**Checkpoint.**
 
 ```
 ..............................s...............                           [100%]
 45 passed, 1 skipped in 23.78s
 ```
 
-The `s` is the drift test. None of them needs a Scheduler, BigQuery or MLflow,
-so they are fast enough to run on every commit.
+The `s` is the drift test.
 
 When one fails, the message names the file and what is missing (`mlops has no
 retries`, `Dags not yet written in /opt/airflow/dags: ['monitoring']`); the fix

@@ -194,8 +194,7 @@ El `| default(...)` sobre `ds` es la versión en plantilla del `.get()` de la
 §4. `ds` deriva de `logical_date`, y un run disparado por asset, o desde la CLI
 sin logical date, no la tiene (la §7 explica por qué). Sin el default, la task
 falla al renderizar, antes de ejecutarse, con `UndefinedError: 'ds' is
-undefined`. `airflow dags test` nunca enseña este fallo, igual que no enseñó el
-`KeyError` de la §4: siempre le da una logical date al run.
+undefined`, que `airflow dags test` nunca enseña (§4).
 
 Si solo necesitas una fecha del run, por ejemplo para nombrar un archivo, usa
 `{{ dag_run.run_after }}`: todo run tiene una, así que no hace falta ningún
@@ -432,9 +431,7 @@ train(experiment_name="project_tagger_{{ run_id }}", min_f1=0.65)
 ```
 
 Con `min_f1=65` este Dag carga sin errores, y el fallo solo aparece cuando un
-run llega a `train`. Esa diferencia es la única razón para usar la clase; un
-paso sin esa necesidad queda mejor como `@task`, que es lo que usa este repo de
-principio a fin.
+run llega a `train`.
 
 > Esto vale para un valor escrito en el archivo del Dag. Un param (§4) llega
 > al disparar el run, después de parsear, así que ni la clase ni el `@task`
@@ -496,9 +493,7 @@ def export_labeled_projects(day: str) -> str:
 ```
 
 La task nombra dos Connections, `warehouse` y `aws_default`, nunca una
-contraseña. Si el paso fuera solo "copia el resultado de la consulta a S3",
-`SqlToS3Operator` lo haría como una única task sin código; los hooks son para
-cuando tu propia lógica va en medio. Un servicio sin hook también puede usar
+contraseña. Un servicio sin hook también puede usar
 una Connection: `BaseHook.get_connection("warehouse")`, de la clase de la que
 derivan todos los hooks, devuelve la Connection en sí — host, login, password,
 extra — para que se la pases a cualquier librería cliente.

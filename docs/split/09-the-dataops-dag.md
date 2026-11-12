@@ -592,9 +592,7 @@ downstream, when the table fails its suite:
         return {"suite": result.suite, "results": result.results}
 ```
 
-`AirflowFailException` fails the task without retrying, whatever `retries`
-says. Bad data stays bad on a retry, so retrying would only delay the alert.
-The tasks return per-expectation results, small dicts; the tables themselves
+`AirflowFailException` skips the retries (§4). The tasks return per-expectation results, small dicts; the tables themselves
 never go through XCom (§6).
 
 Then `transform`, which runs the `dbt build` you ran by hand, and the final
@@ -627,10 +625,7 @@ gate, whose outlet is the asset `mlops` will be scheduled on:
 ```
 
 A `BashOperator` fails when its command exits with an error, so a failing dbt
-test fails `transform`, and dbt's output is the task log. The outlet is on the
-final validation, not on `transform`, as §8 explained: the event then means
-"good data arrived". The GX suite checks what dbt's tests do not, such as the
-row count and the set of tags.
+test fails `transform`, and dbt's output is the task log.
 
 Last, a **task group** and the wiring. `@task_group` draws several tasks as one
 collapsible node in the Graph view:
@@ -709,12 +704,9 @@ A failed task? Compare with [`solutions/03_dataops.py`](../../solutions/03_datao
 A failed Airbyte task usually means a wrong Connection or Variable: check with
 `airflow connections get my_airbyte_conn` and `airflow variables list`.
 
-> **`airflow dags test` is not a dry run.** Airbyte re-synced both tables, dbt
-> rebuilt `labeled_projects`, and a real `labeled_projects` asset event is in
-> the Metadata database, with your `extra`, on the Assets page. Nothing is
-> scheduled on that asset yet, so nothing else happens, and per §8 nothing
-> will: when `mlops` appears in §10 this event is already in the past, and
-> Airflow does not replay past events.
+> **`airflow dags test` is not a dry run** (§4). Airbyte re-synced both
+> tables, dbt rebuilt `labeled_projects`, and a real `labeled_projects` asset
+> event, with your `extra`, is on the Assets page.
 
 Running the Dag twice leaves the warehouse as running it once did: each sync
 replaces its table, and dbt rebuilds `labeled_projects` from scratch. That
@@ -762,8 +754,7 @@ beginning `backfill__`. Know what follows before you do it:
 `none`, `failed` or `completed` — which is the difference between "fill the
 gaps" and "redo the month". In the UI: Dag → **Trigger** → **Backfill**, which
 dry-runs the range and tells you how many runs it will create before you
-commit. This is also why an asset-scheduled Dag cannot be backfilled (§5): it
-has no slices, only events.
+commit.
 
 ### Alternatives
 

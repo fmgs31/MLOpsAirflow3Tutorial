@@ -41,8 +41,7 @@ cuánto duerme cuando no encontró nada que hacer: **1 segundo** en este stack.
 Así que nada en Airflow es instantáneo, ni tampoco muy lento. Cuando `dataops`
 publica su asset en la §10, el run de `mlops` no aparece *porque* la task
 terminó, sino porque el siguiente bucle del Scheduler vio el evento que la task
-registró — como mucho un segundo después. Lo que *sí* vas a notar es lo que
-tardan las tasks de aguas arriba, que no tiene nada que ver con el Scheduler.
+registró — como mucho un segundo después.
 
 El parseo sigue su propio ritmo, y vas a depender de él enseguida. El Dag
 processor vuelve a parsear cada archivo, haya cambiado o no, cada
@@ -77,10 +76,7 @@ del Dag: ese es el mecanismo detrás del "cambias el Executor, no el Dag" de la
 
 Por eso `docker compose ps` no muestra ningún contenedor de Executor:
 `LocalExecutor` es un *componente del proceso del Scheduler*, no un servicio. El
-Scheduler lo importa y desde ahí crea procesos hijo con `fork`. Cambia
-`AIRFLOW__CORE__EXECUTOR` a `CeleryExecutor` y los workers pasan a ser máquinas
-reales que despliegas y escalas por separado. Lo que separa "un portátil" de
-"un clúster" es un valor de configuración.
+Scheduler lo importa y desde ahí crea procesos hijo con `fork`.
 
 Así que "worker" significa algo ligeramente distinto según el Executor: aquí un
 subproceso creado con `fork`, allí un proceso worker de Celery, allá un pod en
@@ -136,11 +132,9 @@ runs, task instances y XComs no se borra solo.
 
 ### El ciclo de vida de una task
 
-El vocabulario es preciso, y mezclar los términos vuelve confusos los mensajes
-de error. Un **Dag** es el grafo que escribiste. Un **Dag run** es una
-ejecución de él, identificada por un `run_id`, y está `queued`, `running`,
-`success` o `failed` — ninguno más. Una **task instance** es una task dentro de
-un Dag run, con muchos más estados, porque le pueden pasar más cosas:
+Un **Dag run** (§1) se identifica por un `run_id`, y está `queued`, `running`,
+`success` o `failed` — ninguno más. Una **task instance** tiene muchos más
+estados, porque le pueden pasar más cosas:
 
 ```
                                                   ┌─► success              terminada

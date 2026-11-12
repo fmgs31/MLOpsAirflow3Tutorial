@@ -34,17 +34,13 @@ guarda.
 
 ### Antes de empezar
 
-Pausa `mlops`:
+Pausa `mlops`, como en la §12, para que no entrene con los proyectos nuevos
+antes de que "La alarma de drift" los compare con lo que conoce el modelo en
+producción:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags pause mlops
 ```
-
-Un run de `dataops` que tiene éxito emite el asset event que arranca `mlops`
-(§8), que aquí entrenaría un modelo con los proyectos nuevos antes de que
-`monitoring` los compare con lo que conoce el modelo en producción. Esa
-comparación es "La alarma de drift". `dataops` sigue sin pausa, como lo dejó
-la §10.
 
 ### Día 1: proyectos sin tags
 
@@ -127,9 +123,7 @@ tabla que no pasa sus tests llegue a publicarse.
 
 **Los reintentos solo añaden espera.** Cada vez, `transform` corrió tres veces,
 con un minuto entre cada una, porque `dataops` da `retries=2` a todas sus
-tasks. Los reintentos sirven cuando la causa se va
-sola (un error de red, una API ocupada); un problema de datos falla igual cada
-vez. Por eso los gates de GX lanzan `AirflowFailException`, que se salta los
+tasks. Por eso los gates de GX lanzan `AirflowFailException`, que se salta los
 reintentos (§9). `transform`, un `BashOperator` que ejecuta dbt, no distingue
 un test fallido de una conexión perdida, así que reintenta los dos.
 
@@ -384,11 +378,7 @@ MANUAL INSPECTION NEEDED
 ```
 
 `inspect` falla con `manual inspection needed - nothing was retrained or
-rolled back`. El run termina ahí, en segundos: necesita a una persona, y no se
-reentrenó nada. Es la regla con la que se escribió `decide` en la §12: un
-label que el modelo nunca vio significa que el espacio de labels se movió, y
-reentrenar con datos que nadie entiende todavía es como sale a producción un
-modelo peor. Una alarma de drift es una pregunta; la inspección te toca a ti.
+rolled back`: la regla de la §12 para un label que el modelo nunca vio.
 
 La ventana actual son exactamente los 191 proyectos nuevos: ninguno de sus ids
 está en el `split_ids.json` del modelo en producción. En ella, `misc` ronda
@@ -520,9 +510,8 @@ El run de `mlops` que dejó en cola el monitor arranca y entrena con los 1755
 proyectos. Es bien posible que su gate se quede con el modelo actual: el f1 no
 bajó, así que hay poco que ganar en las 49 filas de test nuevas, y `below the
 champion's … on the 49 new test rows - not promoting` es un desenlace normal;
-si el gate lo deja pasar, `approve_promotion` te espera, como en la §10. Los
-proyectos nuevos están cargados, revisados y etiquetados igual que los
-viejos, y desde ahora cada modelo entrena con ellos. Las sources se quedan con
+si el gate lo deja pasar, `approve_promotion` te espera, como en la §10. Las
+sources se quedan con
 sus URLs del día 2 y del día 3: ahora esos son tus datos.
 
 ---
