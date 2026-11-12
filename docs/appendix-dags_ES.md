@@ -10,12 +10,6 @@ principio a fin, en orden de lectura, tal y como está en
 comentarios, que explican los detalles en el punto en que importan. El código y sus
 comentarios se dejan en inglés: son los archivos que de verdad se ejecutan.
 
-> Estos listados se **inyectan desde los archivos** con
-> [`scripts/sync_readme.py`](../scripts/sync_readme.py) y se verifican con
-> [`tests/test_readme_listings.py`](../tests/test_readme_listings.py): edita una
-> solución sin volver a ejecutar el script y la suite de tests falla. No pueden
-> desincronizarse del código que realmente corre.
-
 Primero, el paquete que importan `dataops` y `mlops` (§8): `.airflowignore`,
 y después `project_tagger_orchestration/`.
 <details>

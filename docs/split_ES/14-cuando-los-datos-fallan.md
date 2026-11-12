@@ -115,19 +115,19 @@ seleccionado, así que también se limpian las tasks que vienen después. Elige
 **Confirm**: `transform` vuelve a correr en el mismo run, y falla igual, tras
 sus reintentos.
 
-El fallo muestra dos cosas más. Primero, `labeled_projects` ya tiene las 191
-filas sin tag: `dbt build` escribe la tabla y después la testea. Lo que las
-mantuvo lejos del entrenamiento es el gate siguiente: `validate_transformed`
-no corrió, así que no se emitió ningún asset event. Ese gate solo protege a los
-Dags programados con el asset: corren cuando se emite el evento, y no se
-emitió. Pero la tabla ya tiene las filas sin tag, y cualquier Dag que la lea
-sin esperar el evento las recibe. Hay dos casos: `monitoring` (§12), que corre
-con su cron y lee la tabla igual, y `mlops` ejecutado a mano, porque un trigger
-manual no espera el asset. Ahí lo único que lo frena es su propia comprobación,
+**La tabla ya está publicada.** `labeled_projects` ya tiene las 191 filas sin
+tag: `dbt build` escribe la tabla y después la testea. Lo que las mantuvo
+lejos del entrenamiento es el gate siguiente: `validate_transformed` no corrió,
+así que no se emitió ningún asset event. Eso solo protege a los Dags
+programados con el asset. Cualquier Dag que lea la tabla sin esperar el evento
+recibe las filas sin tag: `monitoring` (§12), que corre con su cron, y `mlops`
+ejecutado a mano, al que solo frena su propia comprobación,
 `validate_training_data` (§10). La §16 muestra el patrón que evita que una
-tabla que no pasa sus tests llegue a publicarse. Segundo, la espera: cada vez,
-`transform` corrió tres veces, con un minuto entre cada una, porque `dataops`
-da `retries=2` a todas sus tasks. Los reintentos sirven cuando la causa se va
+tabla que no pasa sus tests llegue a publicarse.
+
+**Los reintentos solo añaden espera.** Cada vez, `transform` corrió tres veces,
+con un minuto entre cada una, porque `dataops` da `retries=2` a todas sus
+tasks. Los reintentos sirven cuando la causa se va
 sola (un error de red, una API ocupada); un problema de datos falla igual cada
 vez. Por eso los gates de GX lanzan `AirflowFailException`, que se salta los
 reintentos (§9). `transform`, un `BashOperator` que ejecuta dbt, no distingue

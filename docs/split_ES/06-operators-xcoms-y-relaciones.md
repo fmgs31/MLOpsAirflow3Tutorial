@@ -11,7 +11,6 @@ vienen en `apache-airflow-providers-standard`, ya instalado:
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.providers.standard.sensors.filesystem import FileSensor
 ```
 
 Aparte de estos, casi cualquier sistema tiene un provider — S3, Snowflake,
@@ -350,11 +349,9 @@ no tiene:
   botón por enlace. Cada enlace es una subclase de `BaseOperatorLink` cuyo
   método `get_link` calcula la URL para cada task instance, normalmente la
   página del trabajo que la task lanzó en el servicio con el que habla: el job
-  de Databricks, la consulta de BigQuery. Ninguna de las clases que hay debajo
-  de un `@task` (`_PythonDecoratedOperator`, `PythonOperator`, `BaseOperator`)
-  lo acepta como argumento — `@task(operator_extra_links=...)` falla con
-  `TypeError` —, ni ningún operator de los providers instalados en este stack.
-  Para tener botones propios hace falta una clase propia.
+  de Databricks, la consulta de BigQuery. `@task` no tiene argumento para
+  esto: `@task(operator_extra_links=...)` falla con `TypeError` (la §10
+  muestra cómo sortearlo).
 
 Los operators de los providers necesitan estas cosas, y por eso son clases. El
 paso de entrenamiento de abajo necesita la primera: falla cuando el f1 del
@@ -447,13 +444,12 @@ principio a fin.
 > rechace un trigger con `min_f1=65` antes de crear el run.
 
 **¿De qué clase heredar?** De la clase cuyo comportamiento quieras conservar.
-`BaseOperator`, del que parte la guía de Airflow para operators propios, trae
-lo que comparten todas las tasks (`task_id`, reintentos, plantillas) y deja
-`execute` para ti: es el padre para un operator que hace algo nuevo, como
-`ProjectTaggerTrainOperator`. Para tener lo que hace un operator ya hecho más
-algo, hereda de ese operator, que es lo habitual: la misma guía lo hace para
-añadir `template_fields` a un operator existente, y la mayoría de los operators
-de los providers derivan de otro operator, no de `BaseOperator` directamente.
+`BaseOperator` trae lo que comparten todas las tasks (`task_id`, reintentos,
+plantillas) y deja `execute` para ti: es el padre para un operator que hace
+algo nuevo, como `ProjectTaggerTrainOperator`. Para tener lo que hace un
+operator ya hecho más algo, hereda de ese operator, que es lo habitual: la
+mayoría de los operators de los providers derivan de otro operator, no de
+`BaseOperator` directamente.
 
 `PythonOperator`, por ejemplo, es el padre para llamar a una función más algo
 extra: `BranchPythonOperator`, `ShortCircuitOperator`,

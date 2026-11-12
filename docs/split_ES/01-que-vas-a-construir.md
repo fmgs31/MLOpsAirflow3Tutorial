@@ -184,8 +184,7 @@ tests de drift de *Monitoring*. Lo nuevo es cómo se combinan:
   usa una versión anterior.
 - **Para ejecutarlo, no solo para leerlo.** Escribes tú los siete Dags, paso a
   paso, sobre un stack de Docker que levantas con un comando, con soluciones y
-  tests para comprobar tu trabajo. Cada comando se ha probado contra un stack
-  real.
+  tests para comprobar tu trabajo.
 - **Un problema que resuelves por tu cuenta.** Hasta la §14, este tutorial,
   como la lección de orquestación, te guía en cada paso. En la §14 una entrega
   rompe el pipeline y solo recibes el objetivo: encontrar la causa, decidir

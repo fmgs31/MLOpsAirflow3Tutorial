@@ -55,10 +55,8 @@ slice:
 The Dag's `start_date` is where the slices begin: no run is ever scheduled for
 an earlier slice. It only governs the runs the Scheduler creates; a manual
 trigger works even with a `start_date` in the future. It is also optional, and
-without one there is no past to catch up on: on un-pause, a cron schedule waits
-for its next time, unless the last one passed within a tenth of the interval,
-five minutes at least (2.4 hours on a daily schedule). A `timedelta` schedule
-starts as soon as you un-pause.
+without one there is no past to catch up on: on un-pause, a cron schedule
+usually waits for its next time, and a `timedelta` schedule starts at once.
 
 Two things about scheduling that will save you an afternoon:
 

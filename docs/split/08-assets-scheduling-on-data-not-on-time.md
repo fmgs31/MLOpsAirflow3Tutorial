@@ -117,8 +117,7 @@ decorator's `outlets=` argument:
 ```
 
 Those assets are the task's **outlets**, and the task is their **producer**.
-(The opposite, `inlets=`, declares what a task reads; this tutorial does not
-use it.) Each time the task succeeds, Airflow records an **asset event**: the
+Each time the task succeeds, Airflow records an **asset event**: the
 record that the asset has just been updated.
 
 **Who consumes it.** A Dag consumes an asset by putting it in its `schedule=`:
@@ -195,7 +194,7 @@ more pieces; two come up later in this tutorial:
 | `mlops` to wait for two assets, or to make do with either one | `AssetAll(a, b)` / `AssetAny(a, b)` in the `schedule` (§10) |
 | a Dag to start on a message from an outside system, with no producer in Airflow | `AssetWatcher` (§11) |
 
-§16 shows how to use four more.
+§16 shows how to use three more.
 
 ### When the consumer runs
 
@@ -214,8 +213,7 @@ three events, and `triggering_asset_events` in `prepare_data` lists them all.
 > does not replay it**: the opposite of §7, where a *manual* trigger creates
 > the run and the pause only holds it. The same goes for a consumer that did
 > not exist yet when the event was written: the `dataops` run you make in §9
-> emits an event that `mlops`, written in §10, never sees. (Checked all three
-> ways on this stack.)
+> emits an event that `mlops`, written in §10, never sees.
 
 ---
 

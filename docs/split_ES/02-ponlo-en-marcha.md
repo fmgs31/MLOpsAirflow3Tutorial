@@ -159,8 +159,7 @@ logs/           task logs, one directory per dag_id / run_id / task_id
 Cualquier ajuste de `airflow.cfg` también se puede definir como variable de
 entorno `AIRFLOW__SECTION__KEY`: la `[cabecera]` bajo la que está el ajuste y
 el nombre del ajuste, en mayúsculas y unidos por **doble** guion bajo. Un
-guion bajo *dentro* de cualquiera de los dos nombres sigue siendo simple. El
-nombre de la variable no se traduce: va en inglés y sin tildes.
+guion bajo *dentro* de cualquiera de los dos nombres sigue siendo simple.
 
 ```
 airflow.cfg                          variable de entorno

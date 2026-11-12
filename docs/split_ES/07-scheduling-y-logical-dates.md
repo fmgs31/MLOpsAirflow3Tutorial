@@ -59,10 +59,8 @@ La `start_date` del Dag marca dónde empiezan las franjas: nunca se programa un
 run para una franja anterior. Solo afecta a los runs que crea el Scheduler; un
 trigger manual funciona aunque la `start_date` esté en el futuro. También es
 opcional, y sin ella no hay pasado que recuperar: al quitar la pausa, un
-schedule cron espera a su siguiente hora, salvo que la última haya pasado hace
-menos de una décima parte del intervalo, con un mínimo de cinco minutos (2,4
-horas en un schedule diario). Un schedule `timedelta` arranca en cuanto le
-quitas la pausa.
+schedule cron normalmente espera a su siguiente hora, y uno `timedelta`
+arranca al momento.
 
 Dos cosas sobre scheduling que te ahorrarán una tarde de depuración:
 

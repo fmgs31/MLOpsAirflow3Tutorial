@@ -8,13 +8,12 @@ Execution API (§3), es para workers fuera de tu clúster.
 
 Cambiar de Executor cambia dónde pueden vivir los archivos. `mlops` y
 `monitoring` escriben sus snapshots en `data/snapshots/` (§10, §12), una
-carpeta en la única máquina que corre todas las tasks de este stack. Con
-Celery o Kubernetes la siguiente task puede correr en una máquina sin esa
-carpeta, así que los snapshots van a almacenamiento de objetos, un bucket de
-GCS o S3 al que llegan todos los workers, con una regla de ciclo de vida que
-los borra pasado un tiempo (retención); en este stack nada los borra. Nada que
-tenga que durar depende de ellos: con qué se entrenó y se evaluó cada modelo
-en producción está en MLflow, con su run (`split_ids.json`, §10).
+carpeta de la única máquina que corre todas las tasks de este stack. Con
+Celery o Kubernetes la siguiente task puede correr en otra máquina, sin esa
+carpeta, así que los snapshots van a un bucket de GCS o S3 al que llegan todos
+los workers, con una regla de ciclo de vida que borre los antiguos (aquí nada
+los borra). Borrarlos es seguro: con qué se entrenó y evaluó cada modelo en
+producción queda en MLflow, en su run (`split_ids.json`, §10).
 
 **Write, audit, publish.** En `dataops`, `dbt build` escribe
 `labeled_projects` antes de que corran las comprobaciones, así que una tabla
@@ -69,7 +68,7 @@ dag_bundle_config_list = [
 ```
 
 **Más maquinaria de assets.** La §8 cubrió un asset, un productor y un
-consumidor. Otras cuatro piezas cubren necesidades que aparecen cuando un
+consumidor. Otras tres piezas cubren necesidades que aparecen cuando un
 pipeline crece.
 
 *Una task que decide mientras corre qué asset produce* — por ejemplo, un export
@@ -100,19 +99,6 @@ def project_counts() -> dict:
     return {"projects": data.count_rows("projects")}
 ```
 
-*Rellenar el `extra` de un evento sin `outlet_events`.* La task hace `yield` de
-un `Metadata` por asset en vez de asignar `outlet_events[…].extra`:
-
-```python
-from airflow.sdk import Metadata
-
-@task(outlets=[LABELED_PROJECTS])
-def validate_transformed():
-    df = data.load_labeled()
-    ...
-    yield Metadata(LABELED_PROJECTS, {"rows": len(df)})
-```
-
 *Runs por partición.* `CronPartitionTimetable` se dispara como un cron y
 además le da a cada run una **partition key**: un string que nombra la parte de
 los datos que le toca al run, por defecto la fecha del run (`run_offset=-1` la
@@ -139,28 +125,24 @@ y gasta CPU para nada.
 **Secretos.** Nunca en el código del Dag, en los `kwargs` de un bundle ni en
 la `uri` o el `extra` de un asset (los extras de asset se guardan en texto
 plano). Usa Connections, Variables o un secrets backend (HashiCorp Vault, AWS
-Secrets Manager, Google Secret Manager) del que Airflow lee las Connections y
-Variables, así que nunca llegan a estar en la Metadata database. Define
-`AIRFLOW_FERNET_KEY` en `.env` (`env.example` explica cómo generar una) para
-cifrar lo que sí esté en la Metadata database. Dos cosas que hace este stack y
-que uno de producción no debería: la clave de la service account de GCP es un
-archivo montado en todos los contenedores, cuando una plataforma como GKE les
-daría a los workers una identidad propia (Workload Identity), sin clave que se
-pueda filtrar; y las credenciales de Airbyte se teclean en un comando de la
-CLI, cuando las guardaría un secrets backend.
+Secrets Manager, Google Secret Manager), del que Airflow las lee sin guardarlas
+en la Metadata database. Define `AIRFLOW_FERNET_KEY` en `.env` (`env.example`
+explica cómo generar una) para cifrar lo que sí se guarde allí. Dos cosas que
+hace este stack y uno de producción no debería: la clave de la service account
+de GCP es un archivo montado en todos los contenedores, cuando una plataforma
+como GKE les daría a los workers una identidad propia (Workload Identity), sin
+clave que se pueda filtrar; y las credenciales de Airbyte se teclean en un
+comando de la CLI, cuando las guardaría un secrets backend.
 
 **Auth.** Cambia el Simple auth manager por FAB (§2) o por un proveedor de
 identidad real antes de que nadie más pueda llegar a la UI.
 
-**Observabilidad.** La parte que la gente se salta hasta que hay un incidente.
-Tres capas:
+**Observabilidad.** Tres capas:
 
 - **Metrics** — `[metrics] statsd_on = True` para StatsD/Datadog, o
   `[metrics] otel_on = True` para enviar OpenTelemetry a un collector. Vigila
   `scheduler.tasks.starving`, `executor.open_slots`, `dagrun.duration.failed` y
-  `dag_processing.import_errors`. Los nombres de métrica llevan `dag_id`/`task_id`
-  como **tags**; `[metrics] legacy_names_on` (por defecto `True`) también exporta
-  la forma antigua con el nombre como sufijo.
+  `dag_processing.import_errors`.
 - **Traces** — `[traces] otel_on = True` envía spans de los bucles del Scheduler
   y de los runs de task, para encontrar *qué* task de un Dag lento se volvió
   más lenta.

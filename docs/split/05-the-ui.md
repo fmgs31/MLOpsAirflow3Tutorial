@@ -1,9 +1,7 @@
 ## 5. The UI
 
-The UI, at <http://localhost:8080>, is a React app on top of the api-server's
-API: the public REST API plus its own endpoints under `/ui/`. Much of this
-tutorial is easier to see than to read, so take the tour now that there is a
-Dag to look at.
+The UI is at <http://localhost:8080>. Much of this tutorial is easier to see
+than to read, so take the tour now that there is a Dag to look at.
 
 The nav is **Home · Dags · Assets · Browse · Admin** at the top and **Docs**, a
 clock and **User** at the bottom.
@@ -34,14 +32,8 @@ of that row:
   indicators marking where the code changed between runs.
 - **Filter** (a funnel): pick a task and show only what is upstream or
   downstream of it.
-- **Task Filters** (a magnifying glass, Graph only). It appears only when there
-  is something to filter — a run is selected, or the Dag has task groups or
-  more than one kind of operator — so on `hello_airflow3` you see it once you
-  open a run. It filters by state, task group, duration and **Min. map index**
-  ("shows mapped tasks expanded to at least this index"): it keeps the mapped
-  tasks, like `run_trials` (§10), with an instance at that map index or higher
-  and dims every other node, so 0 keeps every mapped task.
-- **Download graph image**, the arrow at the bottom right of the Graph.
+- **Task Filters** (a magnifying glass, Graph only): filter the nodes by state,
+  task group or duration. On `hello_airflow3` it appears once you open a run.
 
 The tabs on the right follow what you select:
 
@@ -153,12 +145,6 @@ timezone.
 
 **User** — language, light/dark mode, whether a Dag opens on Grid or Graph, an
 API token generator, and logout.
-
-> Two menus can appear that this stack does not show. **Security** comes with
-> an auth manager that has users and roles to manage; this stack runs the
-> Simple auth manager, with everyone an admin. **Plugins** appears when an
-> installed plugin adds pages to the nav; this stack's only plugin, OpenLineage,
-> adds none.
 
 ---
 

@@ -7,6 +7,9 @@ solución de principio a fin, en orden de lectura, inyectada desde
 [`scripts/sync_readme.py`](../../scripts/sync_readme.py) y verificada por
 [`tests/test_readme_listings.py`](../../tests/test_readme_listings.py), de modo
 que los listados no pueden quedar desfasados respecto al código que se ejecuta.
+[`tests/test_readme_build_steps.py`](../../tests/test_readme_build_steps.py)
+comprueba que los bloques de "Constrúyelo", concatenados en orden, dan Dags que
+se importan sin errores.
 
 La última ejecución completa de la §1 a la §12, con cada comando tal como está
 escrito, fue el 2026-11-05, contra `apache/airflow:3.3.1`.

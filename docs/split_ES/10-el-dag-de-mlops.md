@@ -409,13 +409,6 @@ registra cada trial en MLflow como un **run hijo**: un run con padre, que la
 UI de MLflow pliega debajo de él. La búsqueda nunca ve test, así que la
 puntuación de test del modelo final sigue siendo una estimación honesta.
 
-Un run hijo se abre normalmente con `mlflow.start_run(nested=True)` dentro del
-bloque `with mlflow.start_run():` del padre, lo que solo funciona en el
-proceso que abrió el padre. Aquí lo abrió `create_study` y los trials corren
-en las instancias de `run_trials`, así que `train.py` nombra el padre
-explícitamente: `mlflow.start_run(parent_run_id=...)`, con el id leído del
-study.
-
 **Cuántas instancias de `run_trials` corren a la vez se fija en su
 decorador.** `.expand()` no dice "en paralelo", solo "cuatro task instances
 separadas". Que se solapen o no es asunto del Executor, acotado por el más
@@ -677,21 +670,23 @@ Termina el archivo conectando las tasks:
 mlops()
 ```
 
-`approved_data_gate >> results` coloca `validate_training_data` aguas arriba
-de *todas* las instancias mapeadas de `run_trials`, sin llevar datos, solo el
-orden: ningún trial arranca sobre datos que no han pasado sus comprobaciones.
-`promotion_gate` recibe los resultados de `train_best` y de
-`compare_with_champion` (que a su vez espera a `train_best`), así que las tres
-corren en ese orden; `summarize_candidate` recibe los mismos dos, así que corre
-a la vez que `promotion_gate`. `[summary, decision] >> approve_promotion` es un
-fan-in (§9): `approve_promotion` espera a los dos. La arista desde `summary`
-también es solo de orden, como `approved_data_gate >> results`:
-`approve_promotion` lee el resumen a través de un template, no de un
-argumento, así que Airflow no ve la dependencia por sí solo, y sin la arista
-el aviso podría construirse antes de que el resumen exista. La arista desde
-`decision`, que sigue hasta
-`promote_model` y `done`, es la primera rama de `promotion_gate`; la última
-línea es la segunda, y `done` las une.
+El cableado tiene tres tipos de arista:
+
+- **De datos.** `promotion_gate` recibe los resultados de `train_best` y de
+  `compare_with_champion` (que a su vez espera a `train_best`), así que las
+  tres corren en ese orden; `summarize_candidate` recibe los mismos dos, así
+  que corre a la vez que `promotion_gate`.
+- **Solo de orden.** `approved_data_gate >> results` coloca
+  `validate_training_data` aguas arriba de *todas* las instancias mapeadas de
+  `run_trials`: ningún trial arranca sobre datos que no han pasado sus
+  comprobaciones. La arista de `summary` a `approve_promotion` es del mismo
+  tipo: `approve_promotion` lee el resumen a través de un template, no de un
+  argumento, así que Airflow no ve la dependencia por sí solo, y sin la arista
+  el aviso podría construirse antes de que el resumen exista.
+- **Ramas.** `decision >> approve_promotion >> promote_model >> done` es la
+  primera rama de `promotion_gate`, `decision >> keep_current_model >> done`
+  la segunda, y `done` las une. `approve_promotion` espera a `summary` y a
+  `decision`: un fan-in (§9).
 
 `@task` no tiene argumento para extra links, así que el cableado los pone en el
 operator que hay detrás de cada llamada a una task: `best.operator` es el de
@@ -782,10 +777,7 @@ clic en `run_trials` y lee su pestaña **Task Instances**: cuatro filas, map
 index del 0 al 3, cada una con su hora de inicio y de fin. Dos arrancan
 juntas; cada una de las otras dos arranca cuando termina una del primer par.
 *Show Gantt* (§5), disponible ahora que hay un run seleccionado, las dibuja
-como dos oleadas de barras. En el **Graph**, prueba el filtro **Min. map
-index** (§5): en 3, todos los nodos se atenúan menos `run_trials`, la única
-mapped task, que tiene una instancia con map index 3; en 4 también se atenúa.
-O léelo desde la CLI:
+como dos oleadas de barras. O léelo desde la CLI:
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain

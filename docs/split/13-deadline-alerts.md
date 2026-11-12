@@ -89,10 +89,7 @@ deadlines are also listed under Browse → **Deadlines**.
 > fine, and the moment it marks the run successful it fails with
 > `psycopg2.ProgrammingError: can't adapt type 'dict'` (out of
 > `DagRun.update_state`). Runs the Scheduler starts are not affected, so test
-> such Dags through the Scheduler. That is why this section puts the deadline on
-> a separate Dag rather than on `mlops`: the §10 "Try it" runs `mlops` with
-> `airflow dags test` to pass it a variable with `-e`, and that would stop
-> working.
+> such Dags through the Scheduler.
 > [Details.](../troubleshooting.md)
 
 Reference: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_alerts.py).

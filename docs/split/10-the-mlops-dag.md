@@ -400,12 +400,6 @@ each trial to MLflow as a **child run**: a run with a parent, which the MLflow
 UI folds under it. The search never sees test, so the final model's test score
 stays an honest estimate.
 
-A child run is usually opened with `mlflow.start_run(nested=True)` inside the
-parent's `with mlflow.start_run():` block, which only works in the process
-that opened the parent. Here `create_study` opened it and the trials run in
-the `run_trials` instances, so `train.py` names the parent explicitly:
-`mlflow.start_run(parent_run_id=...)`, with the id read from the study.
-
 **How many `run_trials` instances run at once is set in its decorator.**
 `.expand()` does not say "in parallel", only "four separate task instances".
 Whether they overlap is up to the Executor, bounded by the narrowest of the
@@ -657,19 +651,23 @@ Finish the file with the wiring:
 mlops()
 ```
 
-`approved_data_gate >> results` puts `validate_training_data` upstream of
-*every* mapped instance of `run_trials`, carrying only the order, no data: no
-trial starts on data that failed its checks. `promotion_gate` takes the results
-of `train_best` and `compare_with_champion` (which itself waits for
-`train_best`), so the three run in that order; `summarize_candidate` takes the
-same two, so it runs alongside `promotion_gate`.
-`[summary, decision] >> approve_promotion` is a fan-in (§9):
-`approve_promotion` waits for both. The edge from `summary` is order-only, like
-`approved_data_gate >> results`: `approve_promotion` reads the summary through
-a template, not an argument, so Airflow sees no dependency on its own, and
-without the edge the prompt could be built before the summary exists. The edge
-from `decision`, on to `promote_model` and `done`, is `promotion_gate`'s first
-branch; the last line is its second, and `done` joins them.
+The wiring has three kinds of edge:
+
+- **Data.** `promotion_gate` takes the results of `train_best` and
+  `compare_with_champion` (which itself waits for `train_best`), so the three
+  run in that order; `summarize_candidate` takes the same two, so it runs
+  alongside `promotion_gate`.
+- **Order only.** `approved_data_gate >> results` puts
+  `validate_training_data` upstream of *every* mapped instance of
+  `run_trials`: no trial starts on data that failed its checks. The edge from
+  `summary` to `approve_promotion` is the same kind: `approve_promotion` reads
+  the summary through a template, not an argument, so Airflow sees no
+  dependency on its own, and without the edge the prompt could be built before
+  the summary exists.
+- **Branches.** `decision >> approve_promotion >> promote_model >> done` is
+  `promotion_gate`'s first branch, `decision >> keep_current_model >> done` its
+  second, and `done` joins them. `approve_promotion` waits for both `summary`
+  and `decision`: a fan-in (§9).
 
 `@task` has no argument for extra links, so the wiring sets them on the
 operator behind each task call: `best.operator` is `best_params`'s.
@@ -759,10 +757,8 @@ Now the two waves of `run_trials`. Open that `mlops` run in the UI, click
 `run_trials`, and read its **Task Instances** tab: four rows, map index 0 to 3,
 each with its own start and end time. Two start together; each of the other
 two starts when one of the first pair finishes. *Show Gantt* (§5), available
-now that a run is selected, draws them as two waves of bars. On the **Graph**,
-try the **Min. map index** filter (§5): at 3, every node dims except
-`run_trials`, the only mapped task, which has an instance at map index 3; at 4
-it dims too. Or read it off the CLI:
+now that a run is selected, draws them as two waves of bars. Or read it off
+the CLI:
 
 ```bash
 docker compose exec airflow-scheduler airflow tasks states-for-dag-run mlops <the asset_triggered__ run id> -o plain

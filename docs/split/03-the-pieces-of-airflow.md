@@ -28,9 +28,6 @@ process of its own ("The Executor", below). All are running in your stack now:
 | **Executor** | Where tasks actually run. `LocalExecutor` here; Celery or Kubernetes in production |
 | **Metadata DB** | State of everything: runs, task instances, XComs, connections |
 
-The Scheduler, the Executor and the Metadata database decide most of how your
-Dags behave, so each gets its own section.
-
 ### The Scheduler, and why things happen "a moment later"
 
 The Scheduler is a loop. It wakes up, asks the Metadata database which Dag runs
@@ -192,9 +189,6 @@ itself.
 ```bash
 curl -s localhost:8080/api/v2/monitor/health
 ```
-
-(In PowerShell, `curl` is an alias for `Invoke-WebRequest` and rejects `-s`;
-use `curl.exe`.)
 
 You should get `healthy` four times: one JSON object each for the Metadata
 database, Scheduler, Triggerer and Dag processor, the last three with the time

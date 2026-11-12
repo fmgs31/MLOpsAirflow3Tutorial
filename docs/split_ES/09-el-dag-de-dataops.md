@@ -355,9 +355,7 @@ models:
 Un model se puede guardar como *view* (se guarda la consulta, que se vuelve a
 ejecutar cada vez que se lee) o como *table* (se guarda el resultado). Una
 tabla se reconstruye desde cero en cada ejecución, así que ejecutar dbt dos
-veces deja la misma tabla. Una tercera opción, *incremental*, agrega solo las
-filas nuevas a la tabla existente en vez de reemplazarla; este tutorial no la
-usa.
+veces deja la misma tabla.
 
 **Configura la conexión.** dbt lee su conexión de un *profile*. Crea
 `dbt/dbt_transforms/profiles.yml`:
@@ -506,9 +504,7 @@ e.ExpectTableRowCountToBeBetween(min_value=500),
 
 `validate.run_suite(df, "projects")` valida un dataframe contra esa suite. En
 su resultado, `.passed` dice si la suite ha pasado y `.failures` lista las
-expectations que han fallado. (GX tiene también operators de Airflow, pero en octubre
-de 2026 su paquete no se puede instalar junto a Airflow 3.3.1, así que las
-tasks llaman a GX directamente.)
+expectations que han fallado.
 
 Cada expectation es *crítica* salvo que se marque lo contrario. Una
 expectation crítica que falla hace fallar la suite; una no crítica solo
@@ -557,14 +553,6 @@ DEFAULT_ARGS = {
 )
 def dataops():
 ```
-
-`AirbyteTriggerSyncOperator` viene del provider de Airbyte y `BashOperator`
-del standard (§6); la imagen instala los providers de Airbyte y de Google
-(`requirements-image.txt`). `AirflowFailException` y
-`OutletEventAccessorsProtocol`, el tipo de `outlet_events` (§8), vienen del
-Task SDK (§4). Los imports de `project_tagger_orchestration` y `project_tagger`
-funcionan como en la §8, tanto cuando el Dag processor parsea el archivo
-como cuando corre una task.
 
 `max_active_runs=1` limita el Dag a un run a la vez; un segundo run espera en
 `queued` hasta que termine el primero.
@@ -787,12 +775,10 @@ empiezan por `backfill__`. Ten claro qué viene después antes de hacerlo:
   datos pasados. Un pipeline cuyo origen se puede consultar por fecha le pasa
   al origen el `data_interval_start` y el `data_interval_end` del run (§7), y ahí es
   donde los backfills justifican su existencia.
-- La CLI en 3.3.1 solo *crea* backfills. Mientras uno no ha terminado, la
-  página del Dag muestra un banner *Backfill in progress* con un botón de pausa
-  y otro de stop; stop lo cancela. La API también lo cancela — `PUT
-  /api/v2/backfills/{id}/cancel`, sin token en este stack, donde todos son
-  admin. Cancelarlo marca como `failed` los runs del backfill aún en cola.
-  Pausar el Dag es el freno de emergencia: un Dag en pausa no arranca nada.
+- La CLI solo *crea* backfills. Mientras uno no ha terminado, la página del
+  Dag muestra un banner *Backfill in progress* con un botón de pausa y otro de
+  stop; stop lo cancela y marca como `failed` sus runs aún en cola. Pausar el
+  Dag es el freno de emergencia: un Dag en pausa no arranca nada.
 
 `--reprocess-behavior` decide qué hacer con las franjas que ya tienen un run —
 `none`, `failed` o `completed` — que es la diferencia entre "rellena los huecos"

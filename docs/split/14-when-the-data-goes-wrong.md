@@ -111,19 +111,17 @@ dialog opens. **Downstream** is preselected, so the tasks after it are cleared
 too. Choose **Confirm**: `transform` runs again in the same run, and fails the
 same way, after its retries.
 
-The failure shows two more things. First, `labeled_projects` already has the
-191 untagged rows: `dbt build` writes the table, then tests it. What kept
-them from training is the next gate: `validate_transformed` did not run, so
-no asset event was emitted. That gate protects only the Dags scheduled on the
-asset: they run when the event is emitted, and none was. But the table already
-holds the untagged rows, and any Dag that reads it without waiting for the
-event gets them. There are two such cases: `monitoring` (§12), which runs on
-its cron and reads the table anyway, and `mlops` triggered by hand, because a
-manual trigger does not wait for the asset. Then the only thing that stops it
-is its own check, `validate_training_data` (§10).
-§16 shows the pattern that keeps a table that fails its tests from being
-published at all. Second, the wait: each time, `transform` ran three times, a
-minute apart, because `dataops` gives every task `retries=2`. Retries help
+**The table is already published.** `labeled_projects` already has the 191
+untagged rows: `dbt build` writes the table, then tests it. What kept them from
+training is the next gate: `validate_transformed` did not run, so no asset
+event was emitted. That protects only the Dags scheduled on the asset. Any Dag
+that reads the table without waiting for the event gets the untagged rows:
+`monitoring` (§12), which runs on its cron, and `mlops` triggered by hand,
+which only its own check, `validate_training_data` (§10), stops. §16 shows the
+pattern that keeps a table that fails its tests from being published at all.
+
+**Retries only add wait.** Each time, `transform` ran three times, a minute
+apart, because `dataops` gives every task `retries=2`. Retries help
 when the cause goes away by itself (a network error, a busy API); a data
 problem fails the same way every time. That is why the GX gates raise
 `AirflowFailException`, which skips the retries (§9). `transform`, a

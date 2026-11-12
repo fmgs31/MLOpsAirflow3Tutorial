@@ -30,9 +30,6 @@ stack:
 | **Executor** | Donde corren de verdad las tasks. `LocalExecutor` aquí; Celery o Kubernetes en producción |
 | **Metadata DB** | El estado de todo: runs, task instances, XComs, connections |
 
-El Scheduler, el Executor y la Metadata database deciden casi todo sobre cómo
-se comportan tus Dags, así que cada uno tiene su propio apartado.
-
 ### El Scheduler, y por qué las cosas pasan "un momento después"
 
 El Scheduler es un bucle. Se despierta, pregunta a la Metadata database qué Dag
@@ -201,9 +198,6 @@ database y consultar `DagRun` por su cuenta.
 ```bash
 curl -s localhost:8080/api/v2/monitor/health
 ```
-
-(En PowerShell, `curl` es un alias de `Invoke-WebRequest` y rechaza `-s`; usa
-`curl.exe`.)
 
 Deberías obtener `healthy` cuatro veces: un objeto JSON por cada uno de la
 Metadata database, el Scheduler, el Triggerer y el Dag processor, los tres

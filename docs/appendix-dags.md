@@ -9,12 +9,6 @@ to end, in reading order, as it sits in [`solutions/`](../solutions/) — the sa
 code you typed, plus the comments, which explain the details at the point they
 matter.
 
-> These listings are **injected from the files** by
-> [`scripts/sync_readme.py`](../scripts/sync_readme.py) and verified by
-> [`tests/test_readme_listings.py`](../tests/test_readme_listings.py): edit a
-> solution without re-running the script and the test suite fails. They cannot
-> drift out of sync with the code that actually runs.
-
 First, the package `dataops` and `mlops` import (§8): `.airflowignore`, then
 `project_tagger_orchestration/`.
 <details>

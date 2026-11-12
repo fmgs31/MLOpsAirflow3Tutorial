@@ -1,11 +1,7 @@
 ## 4. Your first Dag
 
 Everything you need to define Dags, tasks and assets is in `airflow.sdk`, the
-Task SDK (operators come from the providers, §6):
-
-```python
-from airflow.sdk import dag, task, DAG, Param, Asset, chain, Label
-```
+Task SDK (operators come from the providers, §6).
 
 You are going to write `dags/01_hello_airflow3.py`: four tasks that build a
 greeting, shout it, count its words and print the result. It is small, and

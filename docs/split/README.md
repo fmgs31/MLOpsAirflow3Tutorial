@@ -12,8 +12,7 @@ whether to retrain.
 It follows Made With ML's [orchestration lesson](https://madewithml.com/courses/mlops/orchestration/),
 rebuilt for Airflow 3 and made to run, step by step, on your machine.
 Airflow, MLflow and Airbyte run locally in Docker; the warehouse is BigQuery,
-on a Google Cloud project you create in §9. Commands are checked against a
-real stack; [§17](17-appendix-and-provenance.md) says which, and when.
+on a Google Cloud project you create in §9.
 
 **Assumed:** Python, the command line, Docker installed, and a Google account
 for Google Cloud's Free Trial (it asks for a card, and charges nothing unless

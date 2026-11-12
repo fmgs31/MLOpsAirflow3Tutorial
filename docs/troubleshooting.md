@@ -51,9 +51,7 @@ airflow dags trigger deadline_alerts
 ```
 
 That path works correctly — `solutions/07_deadline_alerts.py` fires its callback at
-exactly +30s. This is why §13 puts the deadline on a separate Dag rather than on
-`mlops`: the §10 "Try it" runs `mlops` with `airflow dags test` to pass it a
-variable with `-e`, and that would stop working.
+exactly +30s.
 
 ## `KeyError: 'logical_date'` — but only on some runs
 
@@ -209,9 +207,6 @@ export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 It silences the check rather than fixing the fork-safety violation, so treat it
 as a local-development convenience only. On a Mac, running the stack in Docker
 avoids the whole class of problem — which is what this repo does by default.
-
-*(macOS-specific; not reproducible on the Windows/Docker stack everything else
-here was verified on.)*
 
 ## `pytest /opt/airflow/tests` becomes `C:/Program Files/Git/opt/airflow/tests`
 

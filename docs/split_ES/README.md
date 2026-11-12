@@ -12,9 +12,7 @@ monitorización decide si hay que reentrenar.
 Sigue la [lección de orquestación](https://madewithml.com/courses/mlops/orchestration/)
 de Made With ML, reconstruida para Airflow 3 y preparada para ejecutarse, paso
 a paso, en tu máquina. Airflow, MLflow y Airbyte corren en local con Docker; el
-warehouse es BigQuery, en un proyecto de Google Cloud que creas en la §9. Los
-comandos se comprueban contra un stack real; la
-[§17](17-apendice-y-procedencia.md) dice cuáles, y cuándo.
+warehouse es BigQuery, en un proyecto de Google Cloud que creas en la §9.
 
 **Se asume:** Python, la línea de comandos, Docker instalado, y una cuenta de
 Google para el Free Trial de Google Cloud (pide una tarjeta, y no cobra nada

@@ -9,11 +9,11 @@ makes possible, is for workers outside your cluster.
 Changing Executor changes where files can live. `mlops` and `monitoring` write
 their snapshots to `data/snapshots/` (§10, §12), a folder on the one machine
 that runs every task in this stack. With Celery or Kubernetes the next task
-can run on a machine without that folder, so the snapshots go to object
-storage, a GCS or S3 bucket every worker can reach, with a lifecycle rule that
-deletes them after a set time (retention); nothing in this stack deletes them.
-Nothing that has to last depends on them: what each production model was
-trained and tested on is in MLflow, with its run (`split_ids.json`, §10).
+can run on another machine, without that folder, so the snapshots go to a GCS
+or S3 bucket every worker can reach, with a lifecycle rule that deletes old
+ones (nothing here deletes them). Deleting them is safe: what each production
+model was trained and tested on stays in MLflow, with its run
+(`split_ids.json`, §10).
 
 **Write, audit, publish.** In `dataops`, `dbt build` writes
 `labeled_projects` before the checks run on it, so a table that fails them is
@@ -67,7 +67,7 @@ dag_bundle_config_list = [
 ```
 
 **More asset machinery.** §8 covered one asset, one producer and one
-consumer. Four more pieces cover needs that appear as a pipeline grows.
+consumer. Three more pieces cover needs that appear as a pipeline grows.
 
 *A task that decides while it runs which asset it produces* — one export per
 day, say. Its outlet is an `AssetAlias`, a placeholder name, and the task adds
@@ -97,19 +97,6 @@ def project_counts() -> dict:
     return {"projects": data.count_rows("projects")}
 ```
 
-*Setting an event's `extra` without `outlet_events`.* The task `yield`s one
-`Metadata` per asset instead of assigning to `outlet_events[…].extra`:
-
-```python
-from airflow.sdk import Metadata
-
-@task(outlets=[LABELED_PROJECTS])
-def validate_transformed():
-    df = data.load_labeled()
-    ...
-    yield Metadata(LABELED_PROJECTS, {"rows": len(df)})
-```
-
 *Runs per partition.* `CronPartitionTimetable` fires like a cron and also
 gives each run a **partition key**: a string naming the slice of data the run
 is for, by default the run's date (`run_offset=-1` shifts it back one cron
@@ -135,10 +122,10 @@ processor keeps re-parsing unchanged files and burns CPU for nothing.
 **Secrets.** Never in Dag code, bundle `kwargs`, or an asset's `uri` or
 `extra` (asset extras are stored in cleartext). Use Connections, Variables, or
 a secrets backend (HashiCorp Vault, AWS Secrets Manager, Google Secret
-Manager) that Airflow reads Connections and Variables from, so they never sit
-in the Metadata database. Set `AIRFLOW_FERNET_KEY` in `.env` (`env.example`
-shows how to generate one) to encrypt whatever is in the Metadata database.
-Two things this stack does that a production one should not: the GCP
+Manager), which Airflow reads them from without storing them in the Metadata
+database. Set `AIRFLOW_FERNET_KEY` in `.env` (`env.example` shows how to
+generate one) to encrypt whatever is stored there. Two things this stack does
+that a production one should not: the GCP
 service-account key is a file mounted into every container, where a platform
 such as GKE would give the workers their own identity (Workload Identity),
 with no key to leak; and the Airbyte credentials are typed into a CLI command,
@@ -147,14 +134,12 @@ where a secrets backend would hold them.
 **Auth.** Swap the Simple auth manager for FAB (§2) or a real identity provider
 before anyone else can reach the UI.
 
-**Observability.** The part people skip until an incident. Three layers:
+**Observability.** Three layers:
 
 - **Metrics** — `[metrics] statsd_on = True` for StatsD/Datadog, or
   `[metrics] otel_on = True` to push OpenTelemetry to a collector. Watch
   `scheduler.tasks.starving`, `executor.open_slots`, `dagrun.duration.failed`
-  and `dag_processing.import_errors`. Metric names carry `dag_id`/`task_id` as
-  **tags**; `[metrics] legacy_names_on` (default `True`) also exports the older
-  name-suffix form.
+  and `dag_processing.import_errors`.
 - **Traces** — `[traces] otel_on = True` sends spans for Scheduler loops and
   task runs, so you can find *which* task in a slow Dag got slower.
 - **Health** — `GET /api/v2/monitor/health` reports Metadata database,

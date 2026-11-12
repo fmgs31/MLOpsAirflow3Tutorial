@@ -11,7 +11,6 @@ installed:
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.providers.standard.sensors.filesystem import FileSensor
 ```
 
 Beyond these, nearly every system has a provider — S3, Snowflake, BigQuery,
@@ -337,10 +336,8 @@ not get:
   link. Each link is a `BaseOperatorLink` subclass whose `get_link` method
   computes the URL per task instance, usually the page of the job the task
   started on the service it talks to: the Databricks job, the BigQuery query.
-  No class underneath a `@task` (`_PythonDecoratedOperator`, `PythonOperator`,
-  `BaseOperator`) accepts it as an argument — `@task(operator_extra_links=...)`
-  fails with `TypeError` —, nor does any provider operator installed in this
-  stack. Buttons of your own take a class of your own.
+  `@task` has no argument for it: `@task(operator_extra_links=...)` fails with
+  `TypeError` (§10 shows the workaround).
 
 Provider operators need these, which is why they are classes. The training
 step below needs the first: it fails when the model's f1 (its quality metric,
@@ -430,13 +427,12 @@ throughout.
 > makes Airflow reject a trigger with `min_f1=65` before the run is created.
 
 **Which class to subclass?** The one whose behaviour you want to keep.
-`BaseOperator`, where Airflow's guide to custom operators starts, brings what
-all tasks share (`task_id`, retries, templating) and leaves `execute` to you:
-it is the parent for an operator that does something new, like
-`ProjectTaggerTrainOperator`. To get what an existing operator does plus
-something, subclass that operator instead, which is the norm: the same guide
-does it to add `template_fields` to an existing operator, and most provider
-operators derive from another operator, not from `BaseOperator` directly.
+`BaseOperator` brings what all tasks share (`task_id`, retries, templating) and
+leaves `execute` to you: it is the parent for an operator that does something
+new, like `ProjectTaggerTrainOperator`. To get what an existing operator does
+plus something, subclass that operator instead, which is the norm: most
+provider operators derive from another operator, not from `BaseOperator`
+directly.
 
 `PythonOperator`, for example, is the parent for calling a function plus
 something extra: `BranchPythonOperator`, `ShortCircuitOperator`,

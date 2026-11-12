@@ -124,8 +124,7 @@ argumento `outlets=` de su decorador:
 ```
 
 Esos assets son los **outlets** de la task, y la task es su **productor**.
-(Su contrario, `inlets=`, declara los que lee una task; este tutorial no lo
-usa.) Cada vez que la task termina con éxito, Airflow registra un **asset
+Cada vez que la task termina con éxito, Airflow registra un **asset
 event**: la constancia de que ese asset acaba de actualizarse.
 
 **Quién lo consume.** Un Dag consume un asset poniéndolo en su `schedule=`:
@@ -204,7 +203,7 @@ necesita más piezas; dos salen más adelante en este tutorial:
 | que `mlops` espere a dos assets, o que le baste con uno de los dos | `AssetAll(a, b)` / `AssetAny(a, b)` en el `schedule` (§10) |
 | que un Dag arranque con un mensaje de un sistema externo, sin ningún productor en Airflow | `AssetWatcher` (§11) |
 
-La §16 explica cómo se usan otras cuatro.
+La §16 explica cómo se usan otras tres.
 
 ### Cuándo arranca el consumidor
 
@@ -225,7 +224,7 @@ ocupado, el *siguiente* run de `mlops` se lleva los tres eventos, y
 > *manual* crea el run y la pausa solo lo retiene. Lo mismo vale para un
 > consumidor que todavía no existía cuando se escribió el evento: el run de
 > `dataops` que harás en la §9 emite un evento que `mlops`, escrito en la §10,
-> nunca verá. (Comprobado de las tres formas en este stack.)
+> nunca verá.
 
 ---
 

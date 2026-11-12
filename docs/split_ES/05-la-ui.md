@@ -1,9 +1,8 @@
 ## 5. La UI
 
-La UI, en <http://localhost:8080>, es una aplicación React encima de la API
-del api-server: la REST API pública más sus propios endpoints bajo `/ui/`.
-Buena parte de este tutorial se entiende mejor viéndolo que leyéndolo, así que
-haz el recorrido ahora que hay un Dag que mirar.
+La UI está en <http://localhost:8080>. Buena parte de este tutorial se entiende
+mejor viéndolo que leyéndolo, así que haz el recorrido ahora que hay un Dag que
+mirar.
 
 La navegación es **Home · Dags · Assets · Browse · Admin** arriba y, abajo,
 **Docs**, un reloj y **User**.
@@ -37,14 +36,8 @@ extremo de esa fila:
   runs.
 - **Filter** (un embudo): eliges una task y se muestra solo lo que está aguas
   arriba o aguas abajo de ella.
-- **Task Filters** (una lupa, solo en el Graph). Solo aparece cuando hay algo
-  que filtrar — hay un run seleccionado, o el Dag tiene task groups o más de un
-  tipo de operator —, así que en `hello_airflow3` la ves en cuanto abres un run.
-  Filtra por estado, task group, duración y **Min. map index** ("shows mapped
-  tasks expanded to at least this index"): mantiene las mapped tasks, como
-  `run_trials` (§10), con una instancia en ese map index o mayor, y atenúa
-  todos los demás nodos, así que 0 mantiene todas las mapped tasks.
-- **Download graph image**, la flecha abajo a la derecha del Graph.
+- **Task Filters** (una lupa, solo en el Graph): filtra los nodos por estado,
+  task group o duración. En `hello_airflow3` aparece en cuanto abres un run.
 
 Las pestañas de la derecha dependen de lo que selecciones:
 
@@ -163,12 +156,6 @@ en esa zona; haz clic para elegir otra.
 
 **User** — idioma, modo claro/oscuro, si un Dag se abre en Grid o en Graph, un
 generador de tokens de la API y el logout.
-
-> Hay dos menús que pueden aparecer y que este stack no muestra. **Security**
-> viene con un auth manager que tiene usuarios y roles que gestionar; este
-> stack usa el Simple auth manager, con todo el mundo como admin. **Plugins**
-> aparece cuando un plugin instalado añade páginas a la navegación; el único
-> plugin de este stack, OpenLineage, no añade ninguna.
 
 ---
 

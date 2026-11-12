@@ -176,7 +176,7 @@ is new is how they fit together:
   an earlier version.
 - **Made to run, not just to read.** You write the seven Dags step by step, on a
   Docker stack you start with one command, with solutions and tests to check
-  your work. Every command has been run against a real stack.
+  your work.
 - **A problem you solve on your own.** Up to §14, this tutorial, like the
   orchestration lesson, walks you through every step. In §14 a delivery breaks
   the pipeline and you get only the goal: find the cause, decide where the fix

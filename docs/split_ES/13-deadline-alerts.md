@@ -91,10 +91,7 @@ deadlines perdidos y pendientes también se listan bajo Browse → **Deadlines**
 > tasks terminan bien, y en el momento en que marca el run como exitoso falla
 > con `psycopg2.ProgrammingError: can't adapt type 'dict'` (lanzado desde
 > `DagRun.update_state`). Los runs que dispara el Scheduler no tienen el
-> problema, así que prueba esos Dags a través del Scheduler. Por eso esta
-> sección pone el deadline en un Dag aparte y no en `mlops`: el "Pruébalo" de
-> la §10 ejecuta `mlops` con `airflow dags test` para pasarle una variable con
-> `-e`, y dejaría de funcionar.
+> problema, así que prueba esos Dags a través del Scheduler.
 > [Detalles.](../troubleshooting.md)
 
 Referencia: [`solutions/07_deadline_alerts.py`](../../solutions/07_deadline_alerts.py).
